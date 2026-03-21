@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "ReadingProgress": {
+      "title": "Reading Progress",
+      "description": "Stores the user's progress and preferences for a specific PDF file.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user (fixed for personal use)." },
+        "pdfId": { "type": "string", "description": "A unique identifier for the PDF." },
+        "currentPage": { "type": "integer", "description": "The last page the user was reading." },
+        "totalPages": { "type": "integer", "description": "Total number of pages." },
+        "zoom": { "type": "number", "description": "The zoom level." },
+        "scrollX": { "type": "number", "description": "Horizontal scroll position." },
+        "scrollY": { "type": "number", "description": "Vertical scroll position." },
+        "theme": { "type": "string", "enum": ["light", "dark", "sepia"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pdfId", "currentPage"]
+    },
+    "GlobalState": {
+      "title": "Global State",
+      "description": "Tracks the last opened book across all terminals.",
+      "type": "object",
+      "properties": {
+        "lastPdfId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/reading_progress/{progressId}": {
+      "schema": "ReadingProgress",
+      "description": "Collection of reading progress records."
+    },
+    "/global_state/{stateId}": {
+      "schema": "GlobalState",
+      "description": "Global app state."
+    }
+  }
+}

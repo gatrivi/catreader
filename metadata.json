@@ -1,0 +1,5 @@
+{
+  "name": "CatReader",
+  "description": "A minimal, distraction-free PDF reader for personal use with seamless sync.",
+  "requestFramePermissions": []
+}
