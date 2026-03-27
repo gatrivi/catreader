@@ -20,7 +20,8 @@ import {
   X,
   RefreshCw,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Cloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, ReadingProgress } from './services/syncService';
@@ -33,6 +34,13 @@ function cn(...inputs: ClassValue[]) {
 
 // PDF.js worker setup
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+declare var google: any;
+declare var gapi: any;
+
+// Google Drive Config
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || 'AIzaSyBvydI7C1p9ErqnIoY4VqFrM9TeBESTWLg';
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 type Theme = 'light' | 'dark' | 'sepia';
 
@@ -56,9 +64,95 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const [quadrant, setQuadrant] = useState(1);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const uiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const gapiLoaded = useRef(false);
+  const gisLoaded = useRef(false);
+
+  // Load Google Scripts
+  useEffect(() => {
+    const scriptGapi = document.createElement('script');
+    scriptGapi.src = 'https://apis.google.com/js/api.js';
+    scriptGapi.async = true;
+    scriptGapi.onload = () => { gapiLoaded.current = true; };
+    document.body.appendChild(scriptGapi);
+
+    const scriptGis = document.createElement('script');
+    scriptGis.src = 'https://accounts.google.com/gsi/client';
+    scriptGis.async = true;
+    scriptGis.onload = () => { gisLoaded.current = true; };
+    document.body.appendChild(scriptGis);
+
+    return () => {
+      document.body.removeChild(scriptGapi);
+      document.body.removeChild(scriptGis);
+    };
+  }, []);
+
+  const handleGoogleDrive = () => {
+    if (!GOOGLE_CLIENT_ID) {
+      alert('Por favor, configura VITE_GOOGLE_CLIENT_ID en los secretos de AI Studio.');
+      return;
+    }
+
+    const tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      callback: (response: any) => {
+        if (response.access_token) {
+          setGoogleToken(response.access_token);
+          createPicker(response.access_token);
+        }
+      },
+    });
+
+    if (googleToken) {
+      createPicker(googleToken);
+    } else {
+      tokenClient.requestAccessToken();
+    }
+  };
+
+  const createPicker = (token: string) => {
+    gapi.load('picker', () => {
+      const view = new google.picker.View(google.picker.ViewId.DOCS);
+      view.setMimeTypes('application/pdf');
+      
+      const picker = new google.picker.PickerBuilder()
+        .addView(view)
+        .setOAuthToken(token)
+        .setDeveloperKey(GOOGLE_API_KEY)
+        .setCallback(async (data: any) => {
+          if (data.action === google.picker.Action.PICKED) {
+            const file = data.docs[0];
+            const fileId = file.id;
+            const fileName = file.name;
+            
+            setIsSyncing(true);
+            try {
+              const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              const blob = await response.blob();
+              const url = URL.createObjectURL(blob);
+              setFileUrl(url);
+              setFileName(fileName);
+              loadProgress(fileName);
+              setIsLoaded(false);
+            } catch (err) {
+              console.error('Error fetching Google Drive file:', err);
+              alert('Error al descargar el archivo de Google Drive.');
+            } finally {
+              setIsSyncing(false);
+            }
+          }
+        })
+        .build();
+      picker.setVisible(true);
+    });
+  };
 
   // Auto-hide UI
   const resetUITimer = useCallback(() => {
@@ -256,7 +350,9 @@ export default function App() {
             <div className="w-px h-4 bg-white/20 mx-1" />
 
             <div className="flex items-center gap-1">
+              <button onClick={() => { setFileUrl(null); setFileName(''); }} className="p-1.5 hover:bg-white/10 rounded-full" title="Cerrar Libro"><X size={14}/></button>
               <button onClick={() => { setShowLibrary(true); fetchLibrary(); }} className="p-1.5 hover:bg-white/10 rounded-full" title="Biblioteca"><Library size={14}/></button>
+              <button onClick={handleGoogleDrive} className="p-1.5 hover:bg-white/10 rounded-full" title="Google Drive"><Cloud size={14}/></button>
               <label className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer" title="Subir PDF">
                 <Upload size={14}/>
                 <input type="file" accept=".pdf" className="hidden" onChange={onFileChange} />
@@ -317,7 +413,14 @@ export default function App() {
                   <Library size={18} />
                   Abrir Biblioteca
                 </button>
-                <label className="bg-stone-800 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-700 transition-all cursor-pointer flex items-center justify-center gap-2">
+                <button 
+                  onClick={handleGoogleDrive}
+                  className="bg-stone-800 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <Cloud size={18} />
+                  Google Drive
+                </button>
+                <label className="bg-stone-800/50 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-700/50 transition-all cursor-pointer flex items-center justify-center gap-2">
                   <Upload size={18} />
                   Subir Localmente
                   <input type="file" accept=".pdf" className="hidden" onChange={onFileChange} />

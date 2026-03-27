@@ -6,7 +6,7 @@
 // Simple KVDB sync service
 // Using kvdb.io for cross-device progress sync
 
-const BUCKET_ID = import.meta.env.VITE_KVDB_BUCKET || 'catreader_default_bucket';
+const BUCKET_ID = import.meta.env.VITE_KVDB_BUCKET || 'catreader1';
 
 export interface ReadingProgress {
   page: number;
