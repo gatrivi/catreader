@@ -12,6 +12,7 @@ export interface ReadingProgress {
   page: number;
   zoom: number;
   theme: string;
+  scrollRatio: number;
   updatedAt: number;
 }
 

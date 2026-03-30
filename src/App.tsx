@@ -47,9 +47,12 @@ type Theme = 'light' | 'dark' | 'sepia';
 interface LibraryBook {
   id: string;
   title: string;
+  author?: string;
   filename: string;
   type: string;
 }
+
+import { GoogleGenAI, Type } from "@google/genai";
 
 /**
  * CatReader - Main Application Component
@@ -71,20 +74,24 @@ export default function App() {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [zoom, setZoom] = useState<number>(1.0);
   const [theme, setTheme] = useState<Theme>('light');
+  const [scrollRatio, setScrollRatio] = useState<number>(0);
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [library, setLibrary] = useState<LibraryBook[]>([]);
+  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string }>>({});
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const [quadrant, setQuadrant] = useState(1);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [direction, setDirection] = useState(0);
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
   const uiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gapiLoaded = useRef(false);
   const gisLoaded = useRef(false);
+  const lastScrollTime = useRef(0);
 
   // --- Effects ---
   
@@ -270,15 +277,125 @@ export default function App() {
       const res = await fetch('/books.json');
       if (!res.ok) throw new Error('books.json not found');
       const data = await res.json();
-      setLibrary(data);
+      
+      // Load enriched metadata from localStorage
+      const stored = localStorage.getItem('catreader_enriched_metadata');
+      if (stored) {
+        const metadata = JSON.parse(stored);
+        setEnrichedMetadata(metadata);
+        
+        const enriched = data.map((book: LibraryBook) => ({
+          ...book,
+          title: metadata[book.filename]?.title || book.title,
+          author: metadata[book.filename]?.author || ''
+        }));
+        setLibrary(enriched);
+      } else {
+        setLibrary(data);
+      }
     } catch (err) {
       console.error('Failed to fetch library:', err);
     }
   }, []);
 
+  /**
+   * Enriches the library using Gemini LLM magic.
+   * Parses filenames to extract clean titles and authors.
+   */
+  const magicFixLibrary = async () => {
+    if (library.length === 0) return;
+    setIsSyncing(true);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const filenames = library.map(b => b.filename).join('\n');
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Parse these filenames and return a JSON array of objects with 'filename', 'title', and 'author'. 
+        Clean up the titles (remove extensions, underscores, etc.) and identify the author if possible.
+        Filenames:
+        ${filenames}`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                filename: { type: Type.STRING },
+                title: { type: Type.STRING },
+                author: { type: Type.STRING }
+              },
+              required: ["filename", "title", "author"]
+            }
+          }
+        }
+      });
+
+      const enriched = JSON.parse(response.text);
+      const newMetadata = { ...enrichedMetadata };
+      
+      enriched.forEach((item: any) => {
+        newMetadata[item.filename] = { title: item.title, author: item.author };
+      });
+
+      setEnrichedMetadata(newMetadata);
+      localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+      
+      // Update current library state
+      const updatedLibrary = library.map(book => ({
+        ...book,
+        title: newMetadata[book.filename]?.title || book.title,
+        author: newMetadata[book.filename]?.author || ''
+      }));
+      setLibrary(updatedLibrary);
+      
+    } catch (err) {
+      console.error('Magic Fix Error:', err);
+      alert('Error al usar la magia de la IA. Por favor, inténtalo de nuevo.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  /**
+   * Manually updates a book's metadata.
+   */
+  const updateBookMetadata = (filename: string, title: string, author: string) => {
+    const newMetadata = { 
+      ...enrichedMetadata, 
+      [filename]: { title, author } 
+    };
+    setEnrichedMetadata(newMetadata);
+    localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+    
+    setLibrary(prev => prev.map(book => 
+      book.filename === filename ? { ...book, title, author } : book
+    ));
+  };
+
   useEffect(() => {
     fetchLibrary();
   }, [fetchLibrary]);
+
+  /**
+   * Auto-opens the last read book on app mount.
+   */
+  useEffect(() => {
+    const autoOpen = async () => {
+      const lastBookId = localStorage.getItem('catreader_last_book');
+      if (lastBookId && library.length > 0) {
+        const book = library.find(b => b.filename === lastBookId);
+        if (book) {
+          openFromLibrary(book);
+        }
+      }
+    };
+    if (library.length > 0 && !fileUrl) {
+      autoOpen();
+    }
+  }, [library, fileUrl]);
 
   /**
    * Loads reading progress for a specific book from KVDB or localStorage.
@@ -292,19 +409,22 @@ export default function App() {
         setPageNumber(progress.page || 1);
         setZoom(progress.zoom || 1.0);
         setTheme(progress.theme as Theme || 'light');
+        setScrollRatio(progress.scrollRatio || 0);
         setLastSyncTime(progress.updatedAt);
       } else {
         // Fallback to local storage if KVDB is empty
         const local = localStorage.getItem(`catreader_progress_${id}`);
         if (local) {
-          const { page, zoom, theme } = JSON.parse(local);
+          const { page, zoom, theme, scrollRatio } = JSON.parse(local);
           setPageNumber(page || 1);
           setZoom(zoom || 1.0);
           setTheme(theme || 'light');
+          setScrollRatio(scrollRatio || 0);
         } else {
           setPageNumber(1);
           setZoom(1.0);
           setTheme('light');
+          setScrollRatio(0);
         }
       }
     } catch (err) {
@@ -319,14 +439,19 @@ export default function App() {
    * This function is debounced to prevent excessive API calls.
    */
   const saveProgress = useCallback(async () => {
-    if (!fileName || !isLoaded) return;
+    if (!fileName || !isLoaded || !containerRef.current) return;
     
     setIsSyncing(true);
     const now = Date.now();
+    
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+
     const progress: ReadingProgress = { 
       page: pageNumber, 
       zoom, 
       theme,
+      scrollRatio: currentScrollRatio,
       updatedAt: now
     };
     
@@ -349,15 +474,53 @@ export default function App() {
    * This ensures that even if the user closes the tab immediately, progress is saved.
    */
   useEffect(() => {
-    if (fileName && isLoaded) {
+    if (fileName && isLoaded && containerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+      const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+
       const progress = { 
         page: pageNumber, 
         zoom, 
         theme, 
+        scrollRatio: currentScrollRatio,
         updatedAt: Date.now() 
       };
       localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
     }
+  }, [fileName, pageNumber, zoom, theme, isLoaded]);
+
+  // Debounced scroll position save
+  useEffect(() => {
+    if (!fileName || !isLoaded || !containerRef.current) return;
+    
+    const handleScroll = () => {
+      if (!containerRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+      const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+      
+      const progress = { 
+        page: pageNumber, 
+        zoom, 
+        theme, 
+        scrollRatio: currentScrollRatio,
+        updatedAt: Date.now() 
+      };
+      localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
+    };
+
+    const container = containerRef.current;
+    let timeout: NodeJS.Timeout;
+    
+    const debouncedScroll = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(handleScroll, 500);
+    };
+
+    container.addEventListener('scroll', debouncedScroll);
+    return () => {
+      container.removeEventListener('scroll', debouncedScroll);
+      clearTimeout(timeout);
+    };
   }, [fileName, pageNumber, zoom, theme, isLoaded]);
 
   /**
@@ -402,6 +565,9 @@ export default function App() {
     setFileName(book.filename);
     setFileType(book.type);
     
+    // Track last opened book
+    localStorage.setItem('catreader_last_book', book.filename);
+    
     if (book.type === 'txt') {
       try {
         const res = await fetch(url);
@@ -422,14 +588,54 @@ export default function App() {
   };
 
   /**
+   * Restores scroll position for text files after content is loaded.
+   */
+  useEffect(() => {
+    if (fileType === 'txt' && isLoaded && scrollRatio > 0 && containerRef.current) {
+      const { scrollHeight, clientHeight } = containerRef.current;
+      containerRef.current.scrollTo({
+        top: scrollRatio * (scrollHeight - clientHeight),
+        behavior: 'instant'
+      });
+      setScrollRatio(0);
+    }
+  }, [fileType, isLoaded, scrollRatio]);
+
+  /**
    * Changes the current page by a given offset.
    * @param offset - The number of pages to move (e.g., 1 or -1)
    */
   const changePage = (offset: number) => {
     const newPage = Math.min(Math.max(1, pageNumber + offset), numPages);
     if (newPage !== pageNumber) {
+      setDirection(offset);
       setPageNumber(newPage);
-      if (containerRef.current) containerRef.current.scrollTo(0, 0);
+      if (containerRef.current) containerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  };
+
+  /**
+   * Handles wheel events to trigger page turns when at boundaries.
+   */
+  const handleWheel = (e: React.WheelEvent) => {
+    if (!containerRef.current || !isLoaded || showLibrary) return;
+    
+    const now = Date.now();
+    if (now - lastScrollTime.current < 800) return; // Cool down to prevent rapid firing
+
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    
+    // Check if we are at the very top or very bottom
+    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
+    const isAtTop = scrollTop <= 10;
+
+    // Only trigger if the scroll is intentional (deltaY > 50)
+    if (e.deltaY > 60 && isAtBottom && pageNumber < numPages) {
+      changePage(1);
+      lastScrollTime.current = now;
+    } else if (e.deltaY < -60 && isAtTop && pageNumber > 1) {
+      changePage(-1);
+      lastScrollTime.current = now;
     }
   };
 
@@ -551,8 +757,9 @@ export default function App() {
       {/* Main Viewer */}
       <main 
         ref={containerRef}
-        className="flex-1 overflow-auto scrollbar-none"
+        className="flex-1 overflow-auto scrollbar-none relative"
         onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
       >
         {!fileUrl ? (
           <div className="h-full flex flex-col items-center justify-center p-8 text-center">
@@ -591,49 +798,55 @@ export default function App() {
             </motion.div>
           </div>
         ) : (
-          <div className="min-h-full flex justify-center p-0 sm:p-4">
-            {fileType === 'pdf' ? (
-              <div className="relative" style={{ filter: pdfFilter[theme] }}>
-                <Document
-                  file={fileUrl}
-                  onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
-                  loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
-                >
-                  {/* Pre-buffer previous page for faster navigation */}
-                  {pageNumber > 1 && (
-                    <div className="absolute opacity-0 pointer-events-none -z-10">
-                      <Page pageNumber={pageNumber - 1} scale={zoom} renderTextLayer={false} renderAnnotationLayer={false} />
-                    </div>
-                  )}
-                  
-                  {/* Current visible page */}
-                  <Page 
-                    pageNumber={pageNumber} 
-                    scale={zoom} 
-                    renderTextLayer={true}
-                    renderAnnotationLayer={true}
-                    className="shadow-2xl"
-                  />
-                  
-                  {/* Pre-buffer next page for faster navigation */}
-                  {pageNumber < numPages && (
-                    <div className="absolute opacity-0 pointer-events-none -z-10">
-                      <Page pageNumber={pageNumber + 1} scale={zoom} renderTextLayer={false} renderAnnotationLayer={false} />
-                    </div>
-                  )}
-                </Document>
-              </div>
-            ) : fileType === 'txt' ? (
-              <div className={cn("max-w-3xl w-full p-8 font-mono whitespace-pre-wrap leading-relaxed", themeStyles[theme])}>
-                {textContent}
-              </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                <AlertCircle size={48} className="text-amber-500 mb-4" />
-                <h2 className="text-xl font-bold mb-2">Formato no soportado</h2>
-                <p className="text-stone-500">Actualmente solo soportamos PDF y TXT. Estamos trabajando en EPUB y DOCS.</p>
-              </div>
-            )}
+          <div className="min-h-full flex flex-col items-center justify-start p-0 sm:p-8">
+            <AnimatePresence mode="wait" custom={direction}>
+              <motion.div
+                key={`${fileName}-${pageNumber}`}
+                custom={direction}
+                initial={{ x: direction > 0 ? 100 : direction < 0 ? -100 : 0, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: direction > 0 ? -100 : direction < 0 ? 100 : 0, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="flex flex-col items-center"
+              >
+                {fileType === 'pdf' ? (
+                  <div className="relative shadow-2xl" style={{ filter: pdfFilter[theme] }}>
+                    <Document
+                      file={fileUrl}
+                      onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
+                      loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
+                    >
+                      <Page 
+                        pageNumber={pageNumber} 
+                        scale={zoom} 
+                        renderTextLayer={true}
+                        renderAnnotationLayer={true}
+                        onRenderSuccess={() => {
+                          if (scrollRatio > 0 && containerRef.current) {
+                            const { scrollHeight, clientHeight } = containerRef.current;
+                            containerRef.current.scrollTo({
+                              top: scrollRatio * (scrollHeight - clientHeight),
+                              behavior: 'instant'
+                            });
+                            setScrollRatio(0); // Clear after restoring
+                          }
+                        }}
+                      />
+                    </Document>
+                  </div>
+                ) : fileType === 'txt' ? (
+                  <div className={cn("max-w-3xl w-full p-8 font-mono whitespace-pre-wrap leading-relaxed shadow-sm rounded-lg", themeStyles[theme])}>
+                    {textContent}
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                    <AlertCircle size={48} className="text-amber-500 mb-4" />
+                    <h2 className="text-xl font-bold mb-2">Formato no soportado</h2>
+                    <p className="text-stone-500">Actualmente solo soportamos PDF y TXT. Estamos trabajando en EPUB y DOCS.</p>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
           </div>
         )}
       </main>
@@ -689,9 +902,19 @@ export default function App() {
                   <Library className="text-indigo-400" size={24} />
                   <h2 className="text-xl font-bold text-white">Biblioteca</h2>
                 </div>
-                <button onClick={() => setShowLibrary(false)} className="text-stone-500 hover:text-white transition-colors">
-                  <X size={24} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={magicFixLibrary}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all px-3 py-1.5 rounded-xl text-xs font-bold disabled:opacity-50"
+                  >
+                    {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Magic Fix
+                  </button>
+                  <button onClick={() => setShowLibrary(false)} className="text-stone-500 hover:text-white transition-colors">
+                    <X size={24} />
+                  </button>
+                </div>
               </div>
               
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -702,25 +925,47 @@ export default function App() {
                   </div>
                 ) : (
                   library.map(book => (
-                    <button 
+                    <div 
                       key={book.id}
-                      onClick={() => openFromLibrary(book)}
                       className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left group"
                     >
-                      <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                        <BookOpen size={20} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-white font-medium truncate">{book.title}</p>
-                          <span className="text-[8px] bg-stone-800 text-stone-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
-                            {book.type}
-                          </span>
+                      <button 
+                        onClick={() => openFromLibrary(book)}
+                        className="flex-1 flex items-center gap-4 min-w-0"
+                      >
+                        <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
+                          <BookOpen size={20} />
                         </div>
-                        <p className="text-stone-500 text-[10px] font-mono uppercase tracking-tighter">{book.filename}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-medium truncate">{book.title}</p>
+                            <span className="text-[8px] bg-stone-800 text-stone-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                              {book.type}
+                            </span>
+                          </div>
+                          <p className="text-stone-400 text-xs truncate">{book.author || 'Autor desconocido'}</p>
+                          <p className="text-stone-600 text-[8px] font-mono uppercase tracking-tighter truncate">{book.filename}</p>
+                        </div>
+                      </button>
+                      
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newTitle = prompt('Nuevo título:', book.title);
+                            const newAuthor = prompt('Nuevo autor:', book.author || '');
+                            if (newTitle !== null) {
+                              updateBookMetadata(book.filename, newTitle, newAuthor || '');
+                            }
+                          }}
+                          className="p-2 hover:bg-white/10 rounded-lg text-stone-400 hover:text-white transition-colors"
+                          title="Editar metadatos"
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                        <ChevronRight size={16} className="text-stone-700 group-hover:text-white transition-colors" />
                       </div>
-                      <ChevronRight size={16} className="text-stone-700 group-hover:text-white transition-colors" />
-                    </button>
+                    </div>
                   ))
                 )}
               </div>
