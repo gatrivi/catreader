@@ -11,31 +11,6 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // API to list books in /public/books/
-  app.get("/api/books", (req, res) => {
-    const booksDir = path.join(process.cwd(), "public", "books");
-    
-    // Ensure directory exists
-    if (!fs.existsSync(booksDir)) {
-      fs.mkdirSync(booksDir, { recursive: true });
-    }
-
-    try {
-      const files = fs.readdirSync(booksDir);
-      const pdfs = files
-        .filter(file => file.toLowerCase().endsWith(".pdf"))
-        .map(file => ({
-          id: file,
-          title: file.replace(".pdf", ""),
-          filename: file
-        }));
-      res.json(pdfs);
-    } catch (err) {
-      console.error("Error reading books directory:", err);
-      res.status(500).json({ error: "Failed to list books" });
-    }
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

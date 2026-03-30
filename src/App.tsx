@@ -48,11 +48,25 @@ interface LibraryBook {
   id: string;
   title: string;
   filename: string;
+  type: string;
 }
 
+/**
+ * CatReader - Main Application Component
+ * 
+ * This component handles the core functionality of the reader, including:
+ * - Rendering PDFs and Text files
+ * - Managing reading progress (page, zoom, theme)
+ * - Synchronizing progress with KVDB
+ * - Integrating with Google Drive for file picking and uploading
+ * - Managing the local library of books
+ */
 export default function App() {
+  // --- State Management ---
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
+  const [fileType, setFileType] = useState<string>('pdf');
+  const [textContent, setTextContent] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [zoom, setZoom] = useState<number>(1.0);
@@ -66,40 +80,59 @@ export default function App() {
   const [quadrant, setQuadrant] = useState(1);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   
+  // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
   const uiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gapiLoaded = useRef(false);
   const gisLoaded = useRef(false);
 
-  // Load Google Scripts
+  // --- Effects ---
+  
+  /**
+   * Load Google API scripts on component mount.
+   * Required for Google Drive integration.
+   */
   useEffect(() => {
-    const scriptGapi = document.createElement('script');
-    scriptGapi.src = 'https://apis.google.com/js/api.js';
-    scriptGapi.async = true;
-    scriptGapi.onload = () => { gapiLoaded.current = true; };
-    document.body.appendChild(scriptGapi);
+    const loadScripts = () => {
+      const gapiScript = document.createElement('script');
+      gapiScript.src = 'https://apis.google.com/js/api.js';
+      gapiScript.async = true;
+      gapiScript.defer = true;
+      gapiScript.onload = () => { gapiLoaded.current = true; };
+      document.body.appendChild(gapiScript);
 
-    const scriptGis = document.createElement('script');
-    scriptGis.src = 'https://accounts.google.com/gsi/client';
-    scriptGis.async = true;
-    scriptGis.onload = () => { gisLoaded.current = true; };
-    document.body.appendChild(scriptGis);
-
-    return () => {
-      document.body.removeChild(scriptGapi);
-      document.body.removeChild(scriptGis);
+      const gisScript = document.createElement('script');
+      gisScript.src = 'https://accounts.google.com/gsi/client';
+      gisScript.async = true;
+      gisScript.defer = true;
+      gisScript.onload = () => { gisLoaded.current = true; };
+      document.body.appendChild(gisScript);
     };
+    loadScripts();
   }, []);
 
+  /**
+   * Initiates the Google Drive authentication flow.
+   * Prompts for Client ID if not configured in environment variables.
+   */
   const handleGoogleDrive = () => {
     if (!GOOGLE_CLIENT_ID) {
-      alert('Por favor, configura VITE_GOOGLE_CLIENT_ID en los secretos de AI Studio.');
+      const cid = prompt('Por favor, introduce tu Google Client ID (puedes obtenerlo en Google Cloud Console):');
+      if (!cid) return;
+      // We can't set env vars at runtime, but we can use this for the session
+      (window as any)._GOOGLE_CLIENT_ID = cid;
+    }
+
+    const clientId = GOOGLE_CLIENT_ID || (window as any)._GOOGLE_CLIENT_ID;
+
+    if (typeof google === 'undefined' || !google.accounts) {
+      alert('Las librerías de Google aún se están cargando. Por favor, espera un momento.');
       return;
     }
 
     const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file',
       callback: (response: any) => {
         if (response.access_token) {
           setGoogleToken(response.access_token);
@@ -115,10 +148,15 @@ export default function App() {
     }
   };
 
+  /**
+   * Creates and displays the Google Picker UI.
+   * Allows users to select supported documents from their Drive.
+   * @param token - The Google OAuth access token
+   */
   const createPicker = (token: string) => {
     gapi.load('picker', () => {
       const view = new google.picker.View(google.picker.ViewId.DOCS);
-      view.setMimeTypes('application/pdf');
+      view.setMimeTypes('application/pdf,text/plain,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword');
       
       const picker = new google.picker.PickerBuilder()
         .addView(view)
@@ -129,6 +167,7 @@ export default function App() {
             const file = data.docs[0];
             const fileId = file.id;
             const fileName = file.name;
+            const ext = fileName.split('.').pop()?.toLowerCase() || 'pdf';
             
             setIsSyncing(true);
             try {
@@ -139,8 +178,19 @@ export default function App() {
               const url = URL.createObjectURL(blob);
               setFileUrl(url);
               setFileName(fileName);
-              loadProgress(fileName);
-              setIsLoaded(false);
+              setFileType(ext);
+              
+              if (ext === 'txt') {
+                const text = await blob.text();
+                setTextContent(text);
+                setNumPages(1);
+              } else {
+                setTextContent(null);
+              }
+              
+              await loadProgress(fileName);
+              if (ext === 'txt') setIsLoaded(true);
+              else setIsLoaded(false);
             } catch (err) {
               console.error('Error fetching Google Drive file:', err);
               alert('Error al descargar el archivo de Google Drive.');
@@ -154,7 +204,50 @@ export default function App() {
     });
   };
 
-  // Auto-hide UI
+  /**
+   * Uploads a local file to the user's Google Drive.
+   * @param file - The file to upload
+   * @param token - The Google OAuth access token
+   * @returns The ID of the uploaded file, or null if failed
+   */
+  const uploadToDrive = async (file: File, token: string) => {
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+    const mimeTypes: Record<string, string> = {
+      pdf: 'application/pdf',
+      txt: 'text/plain',
+      epub: 'application/epub+zip',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      doc: 'application/msword'
+    };
+
+    const metadata = {
+      name: file.name,
+      mimeType: mimeTypes[ext] || 'application/octet-stream',
+    };
+
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', file);
+
+    try {
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await response.json();
+      console.log('File uploaded to Drive:', data);
+      return data.id;
+    } catch (err) {
+      console.error('Error uploading to Drive:', err);
+      return null;
+    }
+  };
+
+  /**
+   * Resets the auto-hide timer for the UI overlays.
+   * Hides the UI after 4 seconds of inactivity.
+   */
   const resetUITimer = useCallback(() => {
     setShowUI(true);
     if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
@@ -168,10 +261,14 @@ export default function App() {
     return () => { if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); };
   }, [resetUITimer]);
 
-  // Load Library from API
+  /**
+   * Fetches the list of available books from the statically generated books.json.
+   * This file is generated during the build process or via the predev script.
+   */
   const fetchLibrary = useCallback(async () => {
     try {
-      const res = await fetch('/api/books');
+      const res = await fetch('/books.json');
+      if (!res.ok) throw new Error('books.json not found');
       const data = await res.json();
       setLibrary(data);
     } catch (err) {
@@ -183,7 +280,10 @@ export default function App() {
     fetchLibrary();
   }, [fetchLibrary]);
 
-  // Load Progress from KVDB
+  /**
+   * Loads reading progress for a specific book from KVDB or localStorage.
+   * @param id - The unique identifier (filename) of the book
+   */
   const loadProgress = async (id: string) => {
     setIsSyncing(true);
     try {
@@ -214,7 +314,10 @@ export default function App() {
     }
   };
 
-  // Save Progress to KVDB
+  /**
+   * Saves the current reading progress to KVDB and localStorage.
+   * This function is debounced to prevent excessive API calls.
+   */
   const saveProgress = useCallback(async () => {
     if (!fileName || !isLoaded) return;
     
@@ -227,42 +330,101 @@ export default function App() {
       updatedAt: now
     };
     
-    // Save to both for redundancy
-    localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
     await syncService.saveProgress(fileName, progress);
     
     setLastSyncTime(now);
     setIsSyncing(false);
   }, [fileName, pageNumber, zoom, theme, isLoaded]);
 
-  // Debounced save
+  // Debounced save for Cloud Sync
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && fileName) {
       const timer = setTimeout(saveProgress, 3000); // Save every 3 seconds of inactivity
       return () => clearTimeout(timer);
     }
-  }, [saveProgress, isLoaded]);
+  }, [saveProgress, isLoaded, fileName]);
 
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Immediate local storage save for better reliability.
+   * This ensures that even if the user closes the tab immediately, progress is saved.
+   */
+  useEffect(() => {
+    if (fileName && isLoaded) {
+      const progress = { 
+        page: pageNumber, 
+        zoom, 
+        theme, 
+        updatedAt: Date.now() 
+      };
+      localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
+    }
+  }, [fileName, pageNumber, zoom, theme, isLoaded]);
+
+  /**
+   * Handles file selection from the local filesystem.
+   * @param e - The file input change event
+   */
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
       setFileUrl(url);
       setFileName(file.name);
-      loadProgress(file.name);
-      setIsLoaded(false);
+      setFileType(ext);
+      
+      if (ext === 'txt') {
+        const text = await file.text();
+        setTextContent(text);
+        setNumPages(1);
+      } else {
+        setTextContent(null);
+      }
+      
+      await loadProgress(file.name);
+      if (ext === 'txt') setIsLoaded(true);
+      else setIsLoaded(false);
+
+      // If user is signed in to Google, upload to Drive too
+      if (googleToken) {
+        await uploadToDrive(file, googleToken);
+      }
     }
   };
 
-  const openFromLibrary = (book: LibraryBook) => {
+  /**
+   * Opens a book from the local library.
+   * @param book - The library book object to open
+   */
+  const openFromLibrary = async (book: LibraryBook) => {
     const url = `/books/${book.filename}`;
     setFileUrl(url);
     setFileName(book.filename);
-    loadProgress(book.filename);
+    setFileType(book.type);
+    
+    if (book.type === 'txt') {
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        setTextContent(text);
+        setNumPages(1);
+      } catch (err) {
+        console.error('Error loading text file:', err);
+      }
+    } else {
+      setTextContent(null);
+    }
+    
+    await loadProgress(book.filename);
     setShowLibrary(false);
-    setIsLoaded(false);
+    if (book.type === 'txt') setIsLoaded(true);
+    else setIsLoaded(false);
   };
 
+  /**
+   * Changes the current page by a given offset.
+   * @param offset - The number of pages to move (e.g., 1 or -1)
+   */
   const changePage = (offset: number) => {
     const newPage = Math.min(Math.max(1, pageNumber + offset), numPages);
     if (newPage !== pageNumber) {
@@ -423,28 +585,55 @@ export default function App() {
                 <label className="bg-stone-800/50 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-700/50 transition-all cursor-pointer flex items-center justify-center gap-2">
                   <Upload size={18} />
                   Subir Localmente
-                  <input type="file" accept=".pdf" className="hidden" onChange={onFileChange} />
+                  <input type="file" accept=".pdf,.txt" className="hidden" onChange={onFileChange} />
                 </label>
               </div>
             </motion.div>
           </div>
         ) : (
           <div className="min-h-full flex justify-center p-0 sm:p-4">
-            <div className="relative" style={{ filter: pdfFilter[theme] }}>
-              <Document
-                file={fileUrl}
-                onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
-                loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
-              >
-                <Page 
-                  pageNumber={pageNumber} 
-                  scale={zoom} 
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                  className="shadow-2xl"
-                />
-              </Document>
-            </div>
+            {fileType === 'pdf' ? (
+              <div className="relative" style={{ filter: pdfFilter[theme] }}>
+                <Document
+                  file={fileUrl}
+                  onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
+                  loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
+                >
+                  {/* Pre-buffer previous page for faster navigation */}
+                  {pageNumber > 1 && (
+                    <div className="absolute opacity-0 pointer-events-none -z-10">
+                      <Page pageNumber={pageNumber - 1} scale={zoom} renderTextLayer={false} renderAnnotationLayer={false} />
+                    </div>
+                  )}
+                  
+                  {/* Current visible page */}
+                  <Page 
+                    pageNumber={pageNumber} 
+                    scale={zoom} 
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                    className="shadow-2xl"
+                  />
+                  
+                  {/* Pre-buffer next page for faster navigation */}
+                  {pageNumber < numPages && (
+                    <div className="absolute opacity-0 pointer-events-none -z-10">
+                      <Page pageNumber={pageNumber + 1} scale={zoom} renderTextLayer={false} renderAnnotationLayer={false} />
+                    </div>
+                  )}
+                </Document>
+              </div>
+            ) : fileType === 'txt' ? (
+              <div className={cn("max-w-3xl w-full p-8 font-mono whitespace-pre-wrap leading-relaxed", themeStyles[theme])}>
+                {textContent}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                <AlertCircle size={48} className="text-amber-500 mb-4" />
+                <h2 className="text-xl font-bold mb-2">Formato no soportado</h2>
+                <p className="text-stone-500">Actualmente solo soportamos PDF y TXT. Estamos trabajando en EPUB y DOCS.</p>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -461,9 +650,18 @@ export default function App() {
             <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-20"><ChevronLeft size={20}/></button>
             <div className="flex flex-col items-center">
               <span className="text-xs font-mono">{pageNumber} / {numPages}</span>
-              <div className="w-24 h-1 bg-white/20 rounded-full mt-1 overflow-hidden">
-                <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${(pageNumber / numPages) * 100}%` }} />
-              </div>
+              <input 
+                type="range" 
+                min={1} 
+                max={numPages || 1} 
+                value={pageNumber} 
+                onChange={(e) => {
+                  const newPage = Number(e.target.value);
+                  setPageNumber(newPage);
+                  if (containerRef.current) containerRef.current.scrollTo(0, 0);
+                }}
+                className="w-32 h-1 bg-white/20 rounded-full mt-1 appearance-none cursor-pointer accent-indigo-500"
+              />
             </div>
             <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-20"><ChevronRight size={20}/></button>
             
@@ -513,7 +711,12 @@ export default function App() {
                         <BookOpen size={20} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">{book.title}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-white font-medium truncate">{book.title}</p>
+                          <span className="text-[8px] bg-stone-800 text-stone-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                            {book.type}
+                          </span>
+                        </div>
                         <p className="text-stone-500 text-[10px] font-mono uppercase tracking-tighter">{book.filename}</p>
                       </div>
                       <ChevronRight size={16} className="text-stone-700 group-hover:text-white transition-colors" />

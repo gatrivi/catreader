@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/generate-library.js",
     "dev": "tsx server.ts",
+    "prebuild": "node scripts/generate-library.js",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
