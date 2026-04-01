@@ -25,8 +25,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, ReadingProgress } from './services/syncService';
+import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { GoogleGenAI } from '@google/genai';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -42,7 +44,7 @@ declare var gapi: any;
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || 'AIzaSyBvydI7C1p9ErqnIoY4VqFrM9TeBESTWLg';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-type Theme = 'light' | 'dark' | 'sepia';
+type Theme = 'light' | 'dim' | 'dark' | 'sepia';
 
 interface LibraryBook {
   id: string;
@@ -73,13 +75,15 @@ export default function App() {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [zoom, setZoom] = useState<number>(1.0);
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setTheme] = useState<Theme>('sepia');
   const [scrollRatio, setScrollRatio] = useState<number>(0);
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [library, setLibrary] = useState<LibraryBook[]>([]);
   const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string }>>({});
+  const [covers, setCovers] = useState<Record<string, string>>({});
+  const [bufferedPages, setBufferedPages] = useState<Set<number>>(new Set());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const [quadrant, setQuadrant] = useState(1);
@@ -293,6 +297,15 @@ export default function App() {
       } else {
         setLibrary(data);
       }
+
+      // Load covers from IndexedDB
+      const loadedCovers: Record<string, string> = {};
+      for (const book of data) {
+        const cover = await coverDB.getCover(book.filename);
+        if (cover) loadedCovers[book.filename] = cover;
+      }
+      setCovers(loadedCovers);
+      
     } catch (err) {
       console.error('Failed to fetch library:', err);
     }
@@ -360,6 +373,46 @@ export default function App() {
   };
 
   /**
+   * Generates a cover image using Gemini 2.5 Flash Image model.
+   */
+  const generateCover = async (e: React.MouseEvent, book: LibraryBook) => {
+    e.stopPropagation();
+    setIsSyncing(true);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: `A beautiful, minimalist book cover for "${book.title}" by ${book.author || 'unknown author'}. Professional, high quality, elegant typography, no extra text.`,
+        config: {
+          imageConfig: {
+            aspectRatio: "3:4",
+            imageSize: "512px"
+          }
+        }
+      });
+
+      let base64Image = '';
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          base64Image = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+
+      if (base64Image) {
+        await coverDB.saveCover(book.filename, base64Image);
+        setCovers(prev => ({ ...prev, [book.filename]: base64Image }));
+      }
+    } catch (err) {
+      console.error('Cover Generation Error:', err);
+      alert('Error al generar la portada. Por favor, inténtalo de nuevo.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  /**
    * Manually updates a book's metadata.
    */
   const updateBookMetadata = (filename: string, title: string, author: string) => {
@@ -408,7 +461,7 @@ export default function App() {
       if (progress) {
         setPageNumber(progress.page || 1);
         setZoom(progress.zoom || 1.0);
-        setTheme(progress.theme as Theme || 'light');
+        setTheme(progress.theme as Theme || 'sepia');
         setScrollRatio(progress.scrollRatio || 0);
         setLastSyncTime(progress.updatedAt);
       } else {
@@ -418,12 +471,12 @@ export default function App() {
           const { page, zoom, theme, scrollRatio } = JSON.parse(local);
           setPageNumber(page || 1);
           setZoom(zoom || 1.0);
-          setTheme(theme || 'light');
+          setTheme(theme || 'sepia');
           setScrollRatio(scrollRatio || 0);
         } else {
           setPageNumber(1);
           setZoom(1.0);
-          setTheme('light');
+          setTheme('sepia');
           setScrollRatio(0);
         }
       }
@@ -610,6 +663,7 @@ export default function App() {
     if (newPage !== pageNumber) {
       setDirection(offset);
       setPageNumber(newPage);
+      setBufferedPages(new Set()); // Reset buffered pages on manual turn
       if (containerRef.current) containerRef.current.scrollTo({ top: 0, behavior: 'instant' });
     }
   };
@@ -626,20 +680,24 @@ export default function App() {
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     
     // Check if we are at the very top or very bottom
-    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
+    const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 10;
     const isAtTop = scrollTop <= 10;
+    
+    // If content fits entirely, any wheel should turn page
+    const fitsEntirely = scrollHeight <= clientHeight + 10;
 
-    // Only trigger if the scroll is intentional (deltaY > 50)
-    if (e.deltaY > 60 && isAtBottom && pageNumber < numPages) {
+    // Only trigger if the scroll is intentional (deltaY > 40)
+    if (e.deltaY > 40 && (isAtBottom || fitsEntirely) && pageNumber < numPages) {
       changePage(1);
       lastScrollTime.current = now;
-    } else if (e.deltaY < -60 && isAtTop && pageNumber > 1) {
+    } else if (e.deltaY < -40 && (isAtTop || fitsEntirely) && pageNumber > 1) {
       changePage(-1);
       lastScrollTime.current = now;
     }
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
+    window.getSelection()?.removeAllRanges(); // Prevent highlighting hidden text
     const width = window.innerWidth;
     const clickX = e.clientX;
     if (clickX > width * 0.7) changePage(1);
@@ -670,15 +728,17 @@ export default function App() {
   }, [isLoaded]);
 
   const themeStyles = {
-    light: 'bg-white text-stone-900',
-    dark: 'bg-black text-stone-100',
-    sepia: 'bg-[#f4ecd8] text-[#5b4636]'
+    light: 'bg-[#f8f9fa] text-stone-900',
+    dim: 'bg-[#334155] text-[#cbd5e1]',
+    dark: 'bg-[#121212] text-[#a3a3a3]',
+    sepia: 'bg-[#e8dcc7] text-[#5c4b37]'
   };
 
   const pdfFilter = {
-    light: '',
-    dark: 'invert(1) hue-rotate(180deg) contrast(0.9)',
-    sepia: 'sepia(0.3) contrast(0.95) brightness(0.95)'
+    light: 'contrast(0.95)',
+    dim: 'invert(0.8) hue-rotate(180deg) brightness(1.2) contrast(0.85)',
+    dark: 'invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.8)',
+    sepia: 'sepia(0.4) contrast(0.9) brightness(0.9)'
   };
 
   return (
@@ -704,6 +764,7 @@ export default function App() {
             <div className="flex items-center gap-1">
               <button onClick={() => setTheme('light')} className={cn("p-1.5 rounded-full", theme === 'light' && "bg-white/20")}><Sun size={14}/></button>
               <button onClick={() => setTheme('sepia')} className={cn("p-1.5 rounded-full", theme === 'sepia' && "bg-white/20")}><Coffee size={14}/></button>
+              <button onClick={() => setTheme('dim')} className={cn("p-1.5 rounded-full", theme === 'dim' && "bg-white/20")}><Moon size={14} className="opacity-70"/></button>
               <button onClick={() => setTheme('dark')} className={cn("p-1.5 rounded-full", theme === 'dark' && "bg-white/20")}><Moon size={14}/></button>
             </div>
 
@@ -719,7 +780,6 @@ export default function App() {
 
             <div className="flex items-center gap-1">
               <button onClick={() => { setFileUrl(null); setFileName(''); }} className="p-1.5 hover:bg-white/10 rounded-full" title="Cerrar Libro"><X size={14}/></button>
-              <button onClick={() => { setShowLibrary(true); fetchLibrary(); }} className="p-1.5 hover:bg-white/10 rounded-full" title="Biblioteca"><Library size={14}/></button>
               <button onClick={handleGoogleDrive} className="p-1.5 hover:bg-white/10 rounded-full" title="Google Drive"><Cloud size={14}/></button>
               <label className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer" title="Subir PDF">
                 <Upload size={14}/>
@@ -762,52 +822,109 @@ export default function App() {
         onWheel={handleWheel}
       >
         {!fileUrl ? (
-          <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="max-w-xs"
-            >
-              <div className="w-16 h-16 bg-indigo-500 rounded-3xl flex items-center justify-center text-white mx-auto mb-6 shadow-xl shadow-indigo-500/40">
-                <BookOpen size={32} />
+          <div className="min-h-full bg-[#8b5a2b] p-8" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, #8b5a2b, #8b5a2b 200px, #5c3a21 200px, #5c3a21 220px)' }}>
+            <div className="max-w-6xl mx-auto pt-10">
+              <div className="flex items-center justify-between mb-12 bg-stone-900/80 backdrop-blur-sm p-4 rounded-2xl border border-white/10 shadow-xl">
+                <div className="flex items-center gap-3">
+                  <Library className="text-amber-500" size={28} />
+                  <h1 className="text-2xl font-serif font-bold text-white">Mi Biblioteca</h1>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={magicFixLibrary}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50"
+                  >
+                    {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                    Magic Fix
+                  </button>
+                  <button 
+                    onClick={handleGoogleDrive}
+                    className="flex items-center gap-2 bg-stone-800 text-white hover:bg-stone-700 transition-all px-4 py-2 rounded-xl text-sm font-bold"
+                  >
+                    <Cloud size={16} />
+                    Drive
+                  </button>
+                  <label className="flex items-center gap-2 bg-stone-800 text-white hover:bg-stone-700 transition-all px-4 py-2 rounded-xl text-sm font-bold cursor-pointer">
+                    <Upload size={16} />
+                    Subir
+                    <input type="file" accept=".pdf,.txt" className="hidden" onChange={onFileChange} />
+                  </label>
+                </div>
               </div>
-              <h1 className="text-3xl font-black mb-2 tracking-tight">CatReader</h1>
-              <p className="text-stone-500 mb-8 text-sm">Your library is automatically detected from <code>/public/books/</code>.</p>
-              
-              <div className="flex flex-col gap-3">
-                <button 
-                  onClick={() => { setShowLibrary(true); fetchLibrary(); }}
-                  className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                >
-                  <Library size={18} />
-                  Abrir Biblioteca
-                </button>
-                <button 
-                  onClick={handleGoogleDrive}
-                  className="bg-stone-800 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-700 transition-all flex items-center justify-center gap-2"
-                >
-                  <Cloud size={18} />
-                  Google Drive
-                </button>
-                <label className="bg-stone-800/50 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-700/50 transition-all cursor-pointer flex items-center justify-center gap-2">
-                  <Upload size={18} />
-                  Subir Localmente
-                  <input type="file" accept=".pdf,.txt" className="hidden" onChange={onFileChange} />
-                </label>
-              </div>
-            </motion.div>
+
+              {library.length === 0 ? (
+                <div className="text-center py-20 text-stone-300/80 font-serif">
+                  <p className="text-xl mb-4">Tu biblioteca está vacía.</p>
+                  <p className="text-sm">Sube un libro o conecta tu Google Drive para empezar.</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-x-12 gap-y-16 justify-center">
+                  {library.map(book => (
+                    <div key={book.id} className="group relative flex flex-col items-center w-36">
+                      <div 
+                        onClick={() => openFromLibrary(book)}
+                        className="relative w-32 h-48 bg-[#f4ecd8] shadow-[5px_5px_15px_rgba(0,0,0,0.6)] rounded-r-md border-l-4 border-[#8b5a2b] cursor-pointer hover:-translate-y-4 transition-transform duration-300 flex flex-col"
+                      >
+                        {covers[book.filename] ? (
+                          <img src={covers[book.filename]} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+                        ) : (
+                          <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
+                            <div className="text-[#5b4636] font-serif font-bold text-sm leading-tight line-clamp-4 mt-2">
+                              {book.title}
+                            </div>
+                            <div className="text-[#8b5a2b] font-serif text-[10px] uppercase tracking-widest line-clamp-2 mb-2">
+                              {book.author || 'Autor Desconocido'}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Book spine effect */}
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-black/10"></div>
+                        <div className="absolute left-1 top-0 bottom-0 w-px bg-white/30"></div>
+                      </div>
+                      
+                      {/* Edit & Cover Actions */}
+                      <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-stone-900/90 p-1.5 rounded-lg shadow-xl border border-white/10 z-10">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newTitle = prompt('Nuevo título:', book.title);
+                            const newAuthor = prompt('Nuevo autor:', book.author || '');
+                            if (newTitle !== null) {
+                              updateBookMetadata(book.filename, newTitle, newAuthor || '');
+                            }
+                          }}
+                          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
+                          title="Editar metadatos"
+                        >
+                          <RefreshCw size={12} />
+                        </button>
+                        <button 
+                          onClick={(e) => generateCover(e, book)}
+                          className="p-1.5 hover:bg-indigo-500/50 rounded text-indigo-300 hover:text-white transition-colors"
+                          title="Generar Portada (IA)"
+                        >
+                          <Sun size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="min-h-full flex flex-col items-center justify-start p-0 sm:p-8">
-            <AnimatePresence mode="wait" custom={direction}>
+            <AnimatePresence mode="popLayout" custom={direction}>
               <motion.div
                 key={`${fileName}-${pageNumber}`}
                 custom={direction}
-                initial={{ x: direction > 0 ? 100 : direction < 0 ? -100 : 0, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: direction > 0 ? -100 : direction < 0 ? 100 : 0, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="flex flex-col items-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex flex-col items-center w-full"
               >
                 {fileType === 'pdf' ? (
                   <div className="relative shadow-2xl" style={{ filter: pdfFilter[theme] }}>
@@ -816,11 +933,13 @@ export default function App() {
                       onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
                       loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
                     >
+                      {/* Current visible page */}
                       <Page 
                         pageNumber={pageNumber} 
                         scale={zoom} 
                         renderTextLayer={true}
                         renderAnnotationLayer={true}
+                        onLoadSuccess={() => setBufferedPages(prev => new Set(prev).add(pageNumber))}
                         onRenderSuccess={() => {
                           if (scrollRatio > 0 && containerRef.current) {
                             const { scrollHeight, clientHeight } = containerRef.current;
@@ -832,6 +951,25 @@ export default function App() {
                           }
                         }}
                       />
+                      
+                      {/* Buffer next 3 pages invisibly */}
+                      {[1, 2, 3].map(offset => {
+                        const p = pageNumber + offset;
+                        if (p <= numPages) {
+                          return (
+                            <div key={`buffer-${p}`} className="absolute opacity-0 pointer-events-none -z-10 top-0 left-0">
+                              <Page 
+                                pageNumber={p} 
+                                scale={zoom} 
+                                renderTextLayer={false} 
+                                renderAnnotationLayer={false}
+                                onLoadSuccess={() => setBufferedPages(prev => new Set(prev).add(p))}
+                              />
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
                     </Document>
                   </div>
                 ) : fileType === 'txt' ? (
@@ -875,105 +1013,27 @@ export default function App() {
                 }}
                 className="w-32 h-1 bg-white/20 rounded-full mt-1 appearance-none cursor-pointer accent-indigo-500"
               />
+              {/* Buffer Indicator */}
+              {fileType === 'pdf' && (
+                <div className="flex gap-1 mt-1">
+                  {[1, 2, 3].map(offset => {
+                    const p = pageNumber + offset;
+                    if (p > numPages) return null;
+                    const isBuffered = bufferedPages.has(p);
+                    return (
+                      <div 
+                        key={`dot-${p}`} 
+                        className={cn("w-1 h-1 rounded-full", isBuffered ? "bg-emerald-400" : "bg-white/20")}
+                        title={isBuffered ? `Página ${p} lista` : `Cargando página ${p}...`}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-20"><ChevronRight size={20}/></button>
             
             {isSyncing && <Loader2 size={12} className="animate-spin absolute -right-6 text-indigo-400" />}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Library Modal */}
-      <AnimatePresence>
-        {showLibrary && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-stone-900 w-full max-w-2xl rounded-3xl border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
-            >
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Library className="text-indigo-400" size={24} />
-                  <h2 className="text-xl font-bold text-white">Biblioteca</h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={magicFixLibrary}
-                    disabled={isSyncing}
-                    className="flex items-center gap-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all px-3 py-1.5 rounded-xl text-xs font-bold disabled:opacity-50"
-                  >
-                    {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                    Magic Fix
-                  </button>
-                  <button onClick={() => setShowLibrary(false)} className="text-stone-500 hover:text-white transition-colors">
-                    <X size={24} />
-                  </button>
-                </div>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {library.length === 0 ? (
-                  <div className="text-center py-20 text-stone-500">
-                    <p className="mb-4">No se han detectado libros en <code>/public/books/</code></p>
-                    <p className="text-xs">Sube tus PDFs a esa carpeta para que aparezcan aquí.</p>
-                  </div>
-                ) : (
-                  library.map(book => (
-                    <div 
-                      key={book.id}
-                      className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left group"
-                    >
-                      <button 
-                        onClick={() => openFromLibrary(book)}
-                        className="flex-1 flex items-center gap-4 min-w-0"
-                      >
-                        <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                          <BookOpen size={20} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-white font-medium truncate">{book.title}</p>
-                            <span className="text-[8px] bg-stone-800 text-stone-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
-                              {book.type}
-                            </span>
-                          </div>
-                          <p className="text-stone-400 text-xs truncate">{book.author || 'Autor desconocido'}</p>
-                          <p className="text-stone-600 text-[8px] font-mono uppercase tracking-tighter truncate">{book.filename}</p>
-                        </div>
-                      </button>
-                      
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const newTitle = prompt('Nuevo título:', book.title);
-                            const newAuthor = prompt('Nuevo autor:', book.author || '');
-                            if (newTitle !== null) {
-                              updateBookMetadata(book.filename, newTitle, newAuthor || '');
-                            }
-                          }}
-                          className="p-2 hover:bg-white/10 rounded-lg text-stone-400 hover:text-white transition-colors"
-                          title="Editar metadatos"
-                        >
-                          <RefreshCw size={14} />
-                        </button>
-                        <ChevronRight size={16} className="text-stone-700 group-hover:text-white transition-colors" />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              <div className="p-4 bg-stone-950/50 text-[10px] text-stone-600 text-center uppercase tracking-widest">
-                Los libros se detectan automáticamente desde <code>/public/books/</code>
-              </div>
-            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
