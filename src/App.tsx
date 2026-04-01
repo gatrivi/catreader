@@ -19,7 +19,6 @@ import {
   BookOpen,
   X,
   RefreshCw,
-  CheckCircle2,
   AlertCircle,
   Cloud
 } from 'lucide-react';
@@ -28,7 +27,7 @@ import { syncService, ReadingProgress } from './services/syncService';
 import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from "@google/genai";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -54,8 +53,6 @@ interface LibraryBook {
   type: string;
 }
 
-import { GoogleGenAI, Type } from "@google/genai";
-
 /**
  * CatReader - Main Application Component
  * 
@@ -79,7 +76,6 @@ export default function App() {
   const [scrollRatio, setScrollRatio] = useState<number>(0);
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [library, setLibrary] = useState<LibraryBook[]>([]);
   const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string }>>({});
   const [covers, setCovers] = useState<Record<string, string>>({});
@@ -346,7 +342,7 @@ export default function App() {
         }
       });
 
-      const enriched = JSON.parse(response.text);
+      const enriched = JSON.parse(response.text || '[]');
       const newMetadata = { ...enrichedMetadata };
       
       enriched.forEach((item: any) => {
@@ -635,7 +631,6 @@ export default function App() {
     }
     
     await loadProgress(book.filename);
-    setShowLibrary(false);
     if (book.type === 'txt') setIsLoaded(true);
     else setIsLoaded(false);
   };
@@ -672,7 +667,7 @@ export default function App() {
    * Handles wheel events to trigger page turns when at boundaries.
    */
   const handleWheel = (e: React.WheelEvent) => {
-    if (!containerRef.current || !isLoaded || showLibrary) return;
+    if (!containerRef.current || !isLoaded || !fileUrl) return;
     
     const now = Date.now();
     if (now - lastScrollTime.current < 800) return; // Cool down to prevent rapid firing
