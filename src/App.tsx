@@ -85,6 +85,8 @@ export default function App() {
   const [quadrant, setQuadrant] = useState(1);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [direction, setDirection] = useState(0);
+  const [isIdle, setIsIdle] = useState(false);
+  const [autoCoverIndex, setAutoCoverIndex] = useState(0);
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -92,6 +94,7 @@ export default function App() {
   const gapiLoaded = useRef(false);
   const gisLoaded = useRef(false);
   const lastScrollTime = useRef(0);
+  const wheelAccumulator = useRef(0);
 
   // --- Effects ---
   
@@ -316,33 +319,25 @@ export default function App() {
     setIsSyncing(true);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      if (!g_apiKey) return;
+      
+      const ai = new GoogleGenAI(g_apiKey);
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
       const filenames = library.map(b => b.filename).join('\n');
       
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Parse these filenames and return a JSON array of objects with 'filename', 'title', and 'author'. 
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: `Parse these filenames and return a JSON array of objects with 'filename', 'title', and 'author'. 
         Clean up the titles (remove extensions, underscores, etc.) and identify the author if possible.
+        Return ONLY valid JSON.
         Filenames:
-        ${filenames}`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                filename: { type: Type.STRING },
-                title: { type: Type.STRING },
-                author: { type: Type.STRING }
-              },
-              required: ["filename", "title", "author"]
-            }
-          }
-        }
+        ${filenames}` }] }]
       });
 
-      const enriched = JSON.parse(response.text || '[]');
+      const response = await result.response;
+      const responseText = response.text();
+      const cleanJson = responseText.replace(/```json|```/g, '').trim();
+      const enriched = JSON.parse(cleanJson || '[]');
       const newMetadata = { ...enrichedMetadata };
       
       enriched.forEach((item: any) => {
@@ -362,55 +357,52 @@ export default function App() {
       
     } catch (err) {
       console.error('Magic Fix Error:', err);
-      alert('Error al usar la magia de la IA. Por favor, inténtalo de nuevo.');
     } finally {
       setIsSyncing(false);
     }
   };
 
   /**
-   * Generates a cover image using Gemini 2.5 Flash Image model.
+   * Internal version of generateCover for automatic use (no UI alerts).
    */
-  const generateCover = async (e: React.MouseEvent, book: LibraryBook) => {
-    e.stopPropagation();
-    setIsSyncing(true);
-    
+  const generateCoverAuto = async (book: LibraryBook) => {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: `A beautiful, minimalist book cover for "${book.title}" by ${book.author || 'unknown author'}. Professional, high quality, elegant typography, no extra text.`,
-        config: {
-          imageConfig: {
-            aspectRatio: "3:4",
-            imageSize: "512px"
-          }
-        }
-      });
-
-      let base64Image = '';
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          base64Image = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-          break;
-        }
-      }
-
-      if (base64Image) {
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      const canvas = document.createElement('canvas');
+      canvas.width = 300;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const gradient = ctx.createLinearGradient(0, 0, 300, 400);
+        const randomHue = Math.floor(Math.random() * 360);
+        gradient.addColorStop(0, `hsl(${randomHue}, 40%, 40%)`);
+        gradient.addColorStop(1, `hsl(${randomHue}, 40%, 15%)`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 300, 400);
+        
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(0, 0, 15, 400);
+        
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = 'bold 24px serif';
+        ctx.textAlign = 'center';
+        
+        const titleLine = book.title.substring(0, 20);
+        ctx.fillText(titleLine, 150, 150);
+        if (book.title.length > 20) ctx.fillText(book.title.substring(20, 40), 150, 185);
+        
+        ctx.font = 'italic 14px serif';
+        ctx.fillText(book.author || 'Desconocido', 150, 240);
+        
+        const base64Image = canvas.toDataURL('image/jpeg');
         await coverDB.saveCover(book.filename, base64Image);
         setCovers(prev => ({ ...prev, [book.filename]: base64Image }));
       }
     } catch (err) {
-      console.error('Cover Generation Error:', err);
-      alert('Error al generar la portada. Por favor, inténtalo de nuevo.');
-    } finally {
-      setIsSyncing(false);
+      console.warn('Auto cover generation failed, skipping.');
     }
   };
 
-  /**
-   * Manually updates a book's metadata.
-   */
   const updateBookMetadata = (filename: string, title: string, author: string) => {
     const newMetadata = { 
       ...enrichedMetadata, 
@@ -427,6 +419,60 @@ export default function App() {
   useEffect(() => {
     fetchLibrary();
   }, [fetchLibrary]);
+
+  /**
+   * Detects idle state and triggers automatic cover generation.
+   */
+  useEffect(() => {
+    if (library.length === 0 || isSyncing) return;
+    
+    const idleTimer = setTimeout(() => {
+      setIsIdle(true);
+    }, 5000); // Wait 5 seconds after mount to start background tasks
+
+    return () => clearTimeout(idleTimer);
+  }, [library.length, isSyncing]);
+
+  /**
+   * Sequentially loads/generates covers when idle.
+   */
+  useEffect(() => {
+    const loadNextCover = async () => {
+      if (!isIdle || autoCoverIndex >= library.length) return;
+      
+      const book = library[autoCoverIndex];
+      
+      // If we already have the cover in state, skip to next
+      if (covers[book.filename]) {
+        setAutoCoverIndex(prev => prev + 1);
+        return;
+      }
+
+      // Check IndexedDB first (extra safety)
+      const existing = await coverDB.getCover(book.filename);
+      if (existing) {
+        setCovers(prev => ({ ...prev, [book.filename]: existing }));
+        setAutoCoverIndex(prev => prev + 1);
+        return;
+      }
+
+      // If no cover, try to generate it (only if we have an API key)
+      if (import.meta.env.VITE_GEMINI_API_KEY) {
+        try {
+          console.log(`Auto-generating cover for: ${book.title}`);
+          await generateCoverAuto(book);
+        } catch (err) {
+          console.error(`Failed to auto-generate cover for ${book.title}:`, err);
+        }
+      }
+      
+      setAutoCoverIndex(prev => prev + 1);
+    };
+
+    const timer = setTimeout(loadNextCover, 3000); // Process next cover every 3 seconds
+    return () => clearTimeout(timer);
+  }, [isIdle, autoCoverIndex, library, covers]);
+
 
   /**
    * Auto-opens the last read book on app mount.
@@ -659,7 +705,25 @@ export default function App() {
       setDirection(offset);
       setPageNumber(newPage);
       setBufferedPages(new Set()); // Reset buffered pages on manual turn
-      if (containerRef.current) containerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+      
+      // If moving to previous page, prepare to scroll to bottom for context continuity
+      if (offset < 0) {
+        setScrollRatio(1);
+      } else {
+        setScrollRatio(0);
+      }
+
+      const container = containerRef.current;
+      if (container) {
+        // Reset scroll position immediately
+        container.scrollTo({ top: 0, behavior: 'instant' });
+        
+        // KINETIC LOCK: Temporarily disable scrolling to swallow momentum bleed
+        container.style.overflowY = 'hidden';
+        setTimeout(() => {
+          if (container) container.style.overflowY = 'auto';
+        }, 800);
+      }
     }
   };
 
@@ -681,13 +745,31 @@ export default function App() {
     // If content fits entirely, any wheel should turn page
     const fitsEntirely = scrollHeight <= clientHeight + 10;
 
-    // Only trigger if the scroll is intentional (deltaY > 40)
-    if (e.deltaY > 40 && (isAtBottom || fitsEntirely) && pageNumber < numPages) {
-      changePage(1);
-      lastScrollTime.current = now;
-    } else if (e.deltaY < -40 && (isAtTop || fitsEntirely) && pageNumber > 1) {
-      changePage(-1);
-      lastScrollTime.current = now;
+    const isBoundary = (e.deltaY > 0 && isAtBottom) || (e.deltaY < 0 && isAtTop) || fitsEntirely;
+
+    if (isBoundary) {
+      wheelAccumulator.current += e.deltaY;
+      
+      // Threshold of 120 (standard mouse notch) to trigger page turn
+      if (Math.abs(wheelAccumulator.current) >= 120) {
+        const direction = wheelAccumulator.current > 0 ? 1 : -1;
+        
+        if (direction === 1 && pageNumber < numPages) {
+          changePage(1);
+          lastScrollTime.current = now;
+          wheelAccumulator.current = 0;
+        } else if (direction === -1 && pageNumber > 1) {
+          changePage(-1);
+          lastScrollTime.current = now;
+          wheelAccumulator.current = 0;
+        } else {
+          // At the end/start of book, don't accumulate forever
+          wheelAccumulator.current = 0;
+        }
+      }
+    } else {
+      // If we are scrolling within the page, reset the boundary accumulator
+      wheelAccumulator.current = 0;
     }
   };
 
@@ -752,8 +834,15 @@ export default function App() {
             className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-900/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
           >
             <div className="flex items-center gap-2 pr-2 border-r border-white/20">
-              <span className="text-xs font-bold tracking-tighter bg-indigo-500 px-1.5 py-0.5 rounded">CAT</span>
-              <span className="text-sm font-medium truncate max-w-[100px]">{fileName || 'Reader'}</span>
+              <button 
+                onClick={() => { setFileUrl(null); setFileName(''); }}
+                className="hover:text-indigo-400 transition-colors p-1"
+                title="Volver a la Biblioteca"
+              >
+                <Library size={18} />
+              </button>
+              <span className="text-xs font-bold tracking-tighter bg-indigo-500 px-1.5 py-0.5 rounded ml-1">CAT</span>
+              <span className="text-sm font-medium truncate max-w-[150px]">{fileName || 'Reader'}</span>
             </div>
             
             <div className="flex items-center gap-1">
@@ -826,14 +915,6 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-3">
                   <button 
-                    onClick={magicFixLibrary}
-                    disabled={isSyncing}
-                    className="flex items-center gap-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50"
-                  >
-                    {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                    Magic Fix
-                  </button>
-                  <button 
                     onClick={handleGoogleDrive}
                     className="flex items-center gap-2 bg-stone-800 text-white hover:bg-stone-700 transition-all px-4 py-2 rounded-xl text-sm font-bold"
                   >
@@ -854,7 +935,7 @@ export default function App() {
                   <p className="text-sm">Sube un libro o conecta tu Google Drive para empezar.</p>
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-x-12 gap-y-16 justify-center">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-x-8 gap-y-12 max-w-5xl mx-auto pb-20 mt-16">
                   {library.map(book => (
                     <div key={book.id} className="group relative flex flex-col items-center w-36">
                       <div 
@@ -895,13 +976,6 @@ export default function App() {
                         >
                           <RefreshCw size={12} />
                         </button>
-                        <button 
-                          onClick={(e) => generateCover(e, book)}
-                          className="p-1.5 hover:bg-indigo-500/50 rounded text-indigo-300 hover:text-white transition-colors"
-                          title="Generar Portada (IA)"
-                        >
-                          <Sun size={12} />
-                        </button>
                       </div>
                     </div>
                   ))}
@@ -911,15 +985,17 @@ export default function App() {
           </div>
         ) : (
           <div className="min-h-full flex flex-col items-center justify-start p-0 sm:p-8">
-            <AnimatePresence mode="popLayout" custom={direction}>
+            <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={`${fileName}-${pageNumber}`}
-                custom={direction}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="flex flex-col items-center w-full"
+                initial={{ opacity: 0, x: direction > 0 ? 20 : -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: direction > 0 ? -20 : 20 }}
+                transition={{ 
+                  duration: 0.2,
+                  ease: "easeInOut"
+                }}
+                className="flex flex-col items-center w-full min-h-screen"
               >
                 {fileType === 'pdf' ? (
                   <div className="relative shadow-2xl" style={{ filter: pdfFilter[theme] }}>
