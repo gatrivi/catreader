@@ -24,3 +24,24 @@ Completed tasks are moved to [completed_tasks.md](file:///c:/zengatrivi/REACTJS/
 
 
 keep a version number always visible in the upper right corneer of the app, and finish each message with it so i can verify  im seeing the correct version
+
+[] please dont fill this file with so much flair it becomes impossible for me to find anything in it. tldr is the policy, yes?
+
+[] use some sort of open api to find the name and author of the books. allow the user to edit them manually. 
+[] same thing for the covers image
+
+[] user should be able to reorganize books in the shelves.
+[] when a new feat is pushed it should not destroy reading progress, that is, if i was on page 20, and there is a new push, if it sends me bacak to page one, something messed up
+
+
+[] after applying changes cleanup refactor, document, then run tests, if there are no breaking changes, push
+
+
+[] there should be a set of tests for core app functionalities, there should not be pushes if they break the app. lol.
+
+[] zoom should also be preserved beteween session. there should be perhaps one zoom per device type.
+
+[] when scrolling the page number should change
+
+
+[] implementation plans should really be little more than tldr
