@@ -363,43 +363,102 @@ export default function App() {
   };
 
   /**
-   * Internal version of generateCover for automatic use (no UI alerts).
+   * Internal version of fetchEnhancedCover for automatic use.
+   * Tries Google Books first, then falls back to AI generation.
    */
-  const generateCoverAuto = async (book: LibraryBook) => {
+  const fetchEnhancedCover = async (book: LibraryBook) => {
     try {
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-      const canvas = document.createElement('canvas');
-      canvas.width = 300;
-      canvas.height = 400;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const gradient = ctx.createLinearGradient(0, 0, 300, 400);
-        const randomHue = Math.floor(Math.random() * 360);
-        gradient.addColorStop(0, `hsl(${randomHue}, 40%, 40%)`);
-        gradient.addColorStop(1, `hsl(${randomHue}, 40%, 15%)`);
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 300, 400);
-        
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.fillRect(0, 0, 15, 400);
-        
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
-        ctx.font = 'bold 24px serif';
-        ctx.textAlign = 'center';
-        
-        const titleLine = book.title.substring(0, 20);
-        ctx.fillText(titleLine, 150, 150);
-        if (book.title.length > 20) ctx.fillText(book.title.substring(20, 40), 150, 185);
-        
-        ctx.font = 'italic 14px serif';
-        ctx.fillText(book.author || 'Desconocido', 150, 240);
-        
-        const base64Image = canvas.toDataURL('image/jpeg');
-        await coverDB.saveCover(book.filename, base64Image);
-        setCovers(prev => ({ ...prev, [book.filename]: base64Image }));
+      // 1. Try Google Books API first
+      const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+      const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
+      const gBooksRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
+      const gBooksData = await gBooksRes.json();
+      
+      const thumbnail = gBooksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail || 
+                        gBooksData.items?.[0]?.volumeInfo?.imageLinks?.smallThumbnail;
+      
+      if (thumbnail) {
+        // Use the professional cover if found (replace http with https for security)
+        const secureThumbnail = thumbnail.replace('http://', 'https://');
+        await coverDB.saveCover(book.filename, secureThumbnail);
+        setCovers(prev => ({ ...prev, [book.filename]: secureThumbnail }));
+        return;
       }
+
+      // 2. Fallback to AI generation (Pollinations.ai)
+      // We use Gemini to create a good visual prompt if possible, otherwise we use a generic one
+      let visualPrompt = `book cover for "${book.title}" by ${book.author || 'unknown author'}, classical library style, high quality, vintage paper texture`;
+      
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      if (g_apiKey) {
+        try {
+          const ai = new GoogleGenAI(g_apiKey);
+          const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: `Create a short, vivid visual prompt (15 words max) for an AI image generator to create a book cover for: "${book.title}" by ${book.author}. Focus on the atmosphere and subject. No text.` }] }]
+          });
+          const response = await result.response;
+          visualPrompt = response.text().trim();
+        } catch (e) { /* ignore AI error, use fallback prompt */ }
+      }
+
+      const aiCoverUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(visualPrompt)}?width=300&height=450&seed=${book.filename.length}&nologo=true`;
+      
+      // We don't necessarily need to save the Pollinations URL to DB since it's dynamic, 
+      // but let's save the dataURL to avoid re-fetching
+      const tempImg = new Image();
+      tempImg.crossOrigin = "anonymous";
+      tempImg.src = aiCoverUrl;
+      await new Promise((resolve) => { tempImg.onload = resolve; tempImg.onerror = resolve; });
+      
+      if (tempImg.complete && tempImg.naturalWidth > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 300;
+        canvas.height = 450;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(tempImg, 0, 0, 300, 450);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          await coverDB.saveCover(book.filename, dataUrl);
+          setCovers(prev => ({ ...prev, [book.filename]: dataUrl }));
+          return;
+        }
+      }
+
+      // 3. Last fallback: The original gradient cover
+      await generateCoverFallback(book);
+      
     } catch (err) {
-      console.warn('Auto cover generation failed, skipping.');
+      console.warn('Enhanced cover generation failed, using fallback.', err);
+      await generateCoverFallback(book);
+    }
+  };
+
+  const generateCoverFallback = async (book: LibraryBook) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 300;
+    canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const gradient = ctx.createLinearGradient(0, 0, 300, 400);
+      const randomHue = Math.floor(Math.random() * 360);
+      gradient.addColorStop(0, `hsl(${randomHue}, 40%, 40%)`);
+      gradient.addColorStop(1, `hsl(${randomHue}, 40%, 15%)`);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 300, 400);
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.fillRect(0, 0, 15, 400);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = 'bold 24px serif';
+      ctx.textAlign = 'center';
+      const titleLine = book.title.substring(0, 20);
+      ctx.fillText(titleLine, 150, 150);
+      if (book.title.length > 20) ctx.fillText(book.title.substring(20, 40), 150, 185);
+      ctx.font = 'italic 14px serif';
+      ctx.fillText(book.author || 'Desconocido', 150, 240);
+      const base64Image = canvas.toDataURL('image/jpeg');
+      await coverDB.saveCover(book.filename, base64Image);
+      setCovers(prev => ({ ...prev, [book.filename]: base64Image }));
     }
   };
 
@@ -460,7 +519,7 @@ export default function App() {
       if (import.meta.env.VITE_GEMINI_API_KEY) {
         try {
           console.log(`Auto-generating cover for: ${book.title}`);
-          await generateCoverAuto(book);
+          await fetchEnhancedCover(book);
         } catch (err) {
           console.error(`Failed to auto-generate cover for ${book.title}:`, err);
         }
@@ -469,28 +528,12 @@ export default function App() {
       setAutoCoverIndex(prev => prev + 1);
     };
 
-    const timer = setTimeout(loadNextCover, 3000); // Process next cover every 3 seconds
+    const timer = setTimeout(loadNextCover, 10000); // Process next cover every 10 seconds to avoid 429s
     return () => clearTimeout(timer);
   }, [isIdle, autoCoverIndex, library, covers]);
 
 
-  /**
-   * Auto-opens the last read book on app mount.
-   */
-  useEffect(() => {
-    const autoOpen = async () => {
-      const lastBookId = localStorage.getItem('catreader_last_book');
-      if (lastBookId && library.length > 0) {
-        const book = library.find(b => b.filename === lastBookId);
-        if (book) {
-          openFromLibrary(book);
-        }
-      }
-    };
-    if (library.length > 0 && !fileUrl) {
-      autoOpen();
-    }
-  }, [library, fileUrl]);
+  // Deep linking logic moved to another effect
 
   /**
    * Loads reading progress for a specific book from KVDB or localStorage.
@@ -559,10 +602,10 @@ export default function App() {
   // Debounced save for Cloud Sync
   useEffect(() => {
     if (isLoaded && fileName) {
-      const timer = setTimeout(saveProgress, 3000); // Save every 3 seconds of inactivity
+      const timer = setTimeout(saveProgress, 15000); // Save every 15 seconds of inactivity
       return () => clearTimeout(timer);
     }
-  }, [saveProgress, isLoaded, fileName]);
+  }, [saveProgress, isLoaded, fileName, pageNumber]); // Adding pageNumber to trigger reset
 
   /**
    * Immediate local storage save for better reliability.
@@ -651,10 +694,24 @@ export default function App() {
   };
 
   /**
+   * Closes the current book and returns to the library view.
+   * Clears the active book state and removes the last book tracker.
+   */
+  const closeBook = () => {
+    setFileUrl(null);
+    setFileName('');
+    setNumPages(0);
+    setIsLoaded(false);
+    setTextContent(null);
+    localStorage.removeItem('catreader_last_book');
+  };
+
+  /**
    * Opens a book from the local library.
    * @param book - The library book object to open
+   * @param forcePage - Optional page number to jump to
    */
-  const openFromLibrary = async (book: LibraryBook) => {
+  const openFromLibrary = async (book: LibraryBook, forcePage?: number) => {
     const url = `/books/${book.filename}`;
     setFileUrl(url);
     setFileName(book.filename);
@@ -676,10 +733,42 @@ export default function App() {
       setTextContent(null);
     }
     
-    await loadProgress(book.filename);
+    if (forcePage) {
+      setPageNumber(forcePage);
+      setScrollRatio(0);
+    } else {
+      await loadProgress(book.filename);
+    }
+    
     if (book.type === 'txt') setIsLoaded(true);
     else setIsLoaded(false);
   };
+
+  /**
+   * Handles deep linking from URL parameters (?book=...&page=...)
+   */
+  useEffect(() => {
+    if (library.length > 0 && !fileUrl) {
+      const params = new URLSearchParams(window.location.search);
+      const bookQuery = params.get('book');
+      const pageQuery = params.get('page');
+      
+      if (bookQuery) {
+        const book = library.find(b => b.filename === bookQuery || b.id === bookQuery);
+        if (book) {
+          const page = pageQuery ? parseInt(pageQuery) : undefined;
+          openFromLibrary(book, page);
+        }
+      } else {
+        // Auto-open last book if no deep link
+        const lastBookId = localStorage.getItem('catreader_last_book');
+        if (lastBookId) {
+          const book = library.find(b => b.filename === lastBookId);
+          if (book) openFromLibrary(book);
+        }
+      }
+    }
+  }, [library]);
 
   /**
    * Restores scroll position for text files after content is loaded.
@@ -696,80 +785,36 @@ export default function App() {
   }, [fileType, isLoaded, scrollRatio]);
 
   /**
-   * Changes the current page by a given offset.
+   * Scrolls to a specific page.
+   * @param targetPage - The page number to scroll to
+   */
+  const scrollToPage = (targetPage: number) => {
+    const pageElement = document.getElementById(`page-${targetPage}`);
+    if (pageElement && containerRef.current) {
+      pageElement.scrollIntoView({ behavior: 'smooth' });
+      setPageNumber(targetPage);
+    }
+  };
+
+  /**
+   * Changes the current page by a given offset (compatibility for buttons).
    * @param offset - The number of pages to move (e.g., 1 or -1)
    */
   const changePage = (offset: number) => {
     const newPage = Math.min(Math.max(1, pageNumber + offset), numPages);
     if (newPage !== pageNumber) {
-      setDirection(offset);
-      setPageNumber(newPage);
-      setBufferedPages(new Set()); // Reset buffered pages on manual turn
-      
-      // If moving to previous page, prepare to scroll to bottom for context continuity
-      if (offset < 0) {
-        setScrollRatio(1);
-      } else {
-        setScrollRatio(0);
-      }
-
-      const container = containerRef.current;
-      if (container) {
-        // Reset scroll position immediately
-        container.scrollTo({ top: 0, behavior: 'instant' });
-        
-        // KINETIC LOCK: Temporarily disable scrolling to swallow momentum bleed
-        container.style.overflowY = 'hidden';
-        setTimeout(() => {
-          if (container) container.style.overflowY = 'auto';
-        }, 800);
-      }
+      scrollToPage(newPage);
     }
   };
 
   /**
-   * Handles wheel events to trigger page turns when at boundaries.
+   * Handles wheel events.
+   * In continuous scroll mode, we just let the native scroll work.
    */
   const handleWheel = (e: React.WheelEvent) => {
-    if (!containerRef.current || !isLoaded || !fileUrl) return;
-    
-    const now = Date.now();
-    if (now - lastScrollTime.current < 800) return; // Cool down to prevent rapid firing
-
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    
-    // Check if we are at the very top or very bottom
-    const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 10;
-    const isAtTop = scrollTop <= 10;
-    
-    // If content fits entirely, any wheel should turn page
-    const fitsEntirely = scrollHeight <= clientHeight + 10;
-
-    const isBoundary = (e.deltaY > 0 && isAtBottom) || (e.deltaY < 0 && isAtTop) || fitsEntirely;
-
-    if (isBoundary) {
-      wheelAccumulator.current += e.deltaY;
-      
-      // Threshold of 120 (standard mouse notch) to trigger page turn
-      if (Math.abs(wheelAccumulator.current) >= 120) {
-        const direction = wheelAccumulator.current > 0 ? 1 : -1;
-        
-        if (direction === 1 && pageNumber < numPages) {
-          changePage(1);
-          lastScrollTime.current = now;
-          wheelAccumulator.current = 0;
-        } else if (direction === -1 && pageNumber > 1) {
-          changePage(-1);
-          lastScrollTime.current = now;
-          wheelAccumulator.current = 0;
-        } else {
-          // At the end/start of book, don't accumulate forever
-          wheelAccumulator.current = 0;
-        }
-      }
-    } else {
-      // If we are scrolling within the page, reset the boundary accumulator
-      wheelAccumulator.current = 0;
+    // We can keep this for UI feedback or leave empty for native scrolling
+    if (showUI) {
+      // Logic remained minimal
     }
   };
 
@@ -782,7 +827,7 @@ export default function App() {
     resetUITimer();
   };
 
-  // Quadrant logic for breadcrumbs
+  // Quadrant logic and scroll position tracking
   useEffect(() => {
     const handleScroll = () => {
       if (!containerRef.current) return;
@@ -797,12 +842,45 @@ export default function App() {
       else if (scrollLeft <= midX && scrollTop > midY) setQuadrant(3);
       else setQuadrant(4);
     };
+
     const container = containerRef.current;
     if (container) {
       container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
+      
+      // Global Page Tracker Observer
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const p = parseInt(entry.target.getAttribute('data-page') || '1');
+              setPageNumber(p);
+            }
+          });
+        },
+        { 
+          threshold: 0.1, 
+          root: container,
+          rootMargin: '-10% 0% -80% 0%' // Trigger when top of page enters top 10% of viewport
+        }
+      );
+
+      const updateObserver = () => {
+        const pages = container.querySelectorAll('.page-wrapper');
+        pages.forEach(p => observer.observe(p));
+      };
+
+      // Observe existing and new pages
+      const mutationObserver = new MutationObserver(updateObserver);
+      mutationObserver.observe(container, { childList: true, subtree: true });
+      updateObserver();
+
+      return () => {
+        container.removeEventListener('scroll', handleScroll);
+        observer.disconnect();
+        mutationObserver.disconnect();
+      };
     }
-  }, [isLoaded]);
+  }, [isLoaded, fileName]);
 
   const themeStyles = {
     light: 'bg-[#f8f9fa] text-stone-900',
@@ -835,7 +913,7 @@ export default function App() {
           >
             <div className="flex items-center gap-2 pr-2 border-r border-white/20">
               <button 
-                onClick={() => { setFileUrl(null); setFileName(''); }}
+                onClick={closeBook}
                 className="hover:text-indigo-400 transition-colors p-1"
                 title="Volver a la Biblioteca"
               >
@@ -863,8 +941,25 @@ export default function App() {
             <div className="w-px h-4 bg-white/20 mx-1" />
 
             <div className="flex items-center gap-1">
-              <button onClick={() => { setFileUrl(null); setFileName(''); }} className="p-1.5 hover:bg-white/10 rounded-full" title="Cerrar Libro"><X size={14}/></button>
+              <button onClick={closeBook} className="p-1.5 hover:bg-white/10 rounded-full" title="Cerrar Libro"><X size={14}/></button>
               <button onClick={handleGoogleDrive} className="p-1.5 hover:bg-white/10 rounded-full" title="Google Drive"><Cloud size={14}/></button>
+              <button 
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('book', fileName);
+                  url.searchParams.set('page', pageNumber.toString());
+                  navigator.clipboard.writeText(url.toString());
+                  alert('Enlace de página copiado');
+                }} 
+                className="p-1.5 hover:bg-white/10 rounded-full" 
+                title="Copiar enlace de página"
+              >
+                <div className="flex flex-col items-center gap-0">
+                  <div className="w-2.5 h-2.5 border border-current flex items-center justify-center">
+                    <div className="w-1 h-1 bg-current" />
+                  </div>
+                </div>
+              </button>
               <label className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer" title="Subir PDF">
                 <Upload size={14}/>
                 <input type="file" accept=".pdf" className="hidden" onChange={onFileChange} />
@@ -976,6 +1071,30 @@ export default function App() {
                         >
                           <RefreshCw size={12} />
                         </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('book', book.filename);
+                            navigator.clipboard.writeText(url.toString());
+                            alert('Enlace copiado al portapapeles');
+                          }}
+                          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
+                          title="Compartir"
+                        >
+                          <Upload size={12} className="rotate-180" />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const randomPage = Math.floor(Math.random() * 20) + 5; // Simplified random for now, will improve after PDF loads
+                            openFromLibrary(book, randomPage);
+                          }}
+                          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
+                          title="Página aleatoria"
+                        >
+                          <span className="text-[10px] font-bold">🎲</span>
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -985,61 +1104,48 @@ export default function App() {
           </div>
         ) : (
           <div className="min-h-full flex flex-col items-center justify-start p-0 sm:p-8">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={`${fileName}-${pageNumber}`}
-                initial={{ opacity: 0, x: direction > 0 ? 20 : -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: direction > 0 ? -20 : 20 }}
-                transition={{ 
-                  duration: 0.2,
-                  ease: "easeInOut"
-                }}
-                className="flex flex-col items-center w-full min-h-screen"
-              >
                 {fileType === 'pdf' ? (
-                  <div className="relative shadow-2xl" style={{ filter: pdfFilter[theme] }}>
+                  <div className="relative shadow-2xl flex flex-col gap-0 py-0" style={{ filter: pdfFilter[theme] }}>
                     <Document
                       file={fileUrl}
                       onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
                       loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
                     >
-                      {/* Current visible page */}
-                      <Page 
-                        pageNumber={pageNumber} 
-                        scale={zoom} 
-                        renderTextLayer={true}
-                        renderAnnotationLayer={true}
-                        onLoadSuccess={() => setBufferedPages(prev => new Set(prev).add(pageNumber))}
-                        onRenderSuccess={() => {
-                          if (scrollRatio > 0 && containerRef.current) {
-                            const { scrollHeight, clientHeight } = containerRef.current;
-                            containerRef.current.scrollTo({
-                              top: scrollRatio * (scrollHeight - clientHeight),
-                              behavior: 'instant'
-                            });
-                            setScrollRatio(0); // Clear after restoring
-                          }
-                        }}
-                      />
-                      
-                      {/* Buffer next 3 pages invisibly */}
-                      {[1, 2, 3].map(offset => {
-                        const p = pageNumber + offset;
-                        if (p <= numPages) {
-                          return (
-                            <div key={`buffer-${p}`} className="absolute opacity-0 pointer-events-none -z-10 top-0 left-0">
+                      {Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
+                        const isVisible = Math.abs(p - pageNumber) <= 3; // 3-page buffer
+                        return (
+                          <div 
+                            key={`page-wrap-${p}`} 
+                            id={`page-${p}`}
+                            data-page={p}
+                            className="page-wrapper bg-white/5"
+                            style={{ 
+                              minHeight: zoom * 842, // A4 aspect ratio height at 72dpi is approx 842
+                              display: 'flex',
+                              justifyContent: 'center',
+                              alignItems: 'center'
+                            }}
+                          >
+                            {isVisible ? (
                               <Page 
                                 pageNumber={p} 
                                 scale={zoom} 
-                                renderTextLayer={false} 
-                                renderAnnotationLayer={false}
-                                onLoadSuccess={() => setBufferedPages(prev => new Set(prev).add(p))}
+                                renderTextLayer={true}
+                                renderAnnotationLayer={true}
+                                loading={<div style={{ height: zoom * 842 }} className="flex items-center justify-center text-stone-500/20 font-serif italic">Cargando página {p}...</div>}
+                                onRenderSuccess={() => {
+                                  if (p === pageNumber && scrollRatio > 0 && containerRef.current) {
+                                    setTimeout(() => {
+                                      const pageEl = document.getElementById(`page-${p}`);
+                                      if (pageEl) pageEl.scrollIntoView({ behavior: 'instant' });
+                                    }, 100);
+                                    setScrollRatio(0);
+                                  }
+                                }}
                               />
-                            </div>
-                          );
-                        }
-                        return null;
+                            ) : null}
+                          </div>
+                        );
                       })}
                     </Document>
                   </div>
@@ -1054,8 +1160,6 @@ export default function App() {
                     <p className="text-stone-500">Actualmente solo soportamos PDF y TXT. Estamos trabajando en EPUB y DOCS.</p>
                   </div>
                 )}
-              </motion.div>
-            </AnimatePresence>
           </div>
         )}
       </main>
@@ -1079,8 +1183,7 @@ export default function App() {
                 value={pageNumber} 
                 onChange={(e) => {
                   const newPage = Number(e.target.value);
-                  setPageNumber(newPage);
-                  if (containerRef.current) containerRef.current.scrollTo(0, 0);
+                  scrollToPage(newPage);
                 }}
                 className="w-32 h-1 bg-white/20 rounded-full mt-1 appearance-none cursor-pointer accent-indigo-500"
               />
