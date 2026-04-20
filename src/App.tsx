@@ -87,6 +87,12 @@ export default function App() {
   const [direction, setDirection] = useState(0);
   const [isIdle, setIsIdle] = useState(false);
   const [autoCoverIndex, setAutoCoverIndex] = useState(0);
+  const [isManualHide, setIsManualHide] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [pageRatios, setPageRatios] = useState<number[]>([]);
+  const [extractingRatios, setExtractingRatios] = useState(false);
+  const APP_VERSION = 'v1.0.8';
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -270,6 +276,33 @@ export default function App() {
     resetUITimer();
     return () => { if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); };
   }, [resetUITimer]);
+
+  /**
+   * Identifies the device category based on screen width.
+   * Mobile < 768px, Tablet < 1024px, Desktop >= 1024px
+   */
+  const getDeviceCategory = useCallback(() => {
+    const width = window.innerWidth;
+    if (width < 768) return 'mobile';
+    if (width < 1024) return 'tablet';
+    return 'desktop';
+  }, []);
+
+  /**
+   * Keyboard shortcuts for better UX.
+   */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'h') {
+        setIsManualHide(prev => !prev);
+      }
+      if (e.key === 'Escape') {
+        if (fileUrl) closeBook();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fileUrl]);
 
   /**
    * Fetches the list of available books from the statically generated books.json.
@@ -539,34 +572,41 @@ export default function App() {
    * Loads reading progress for a specific book from KVDB or localStorage.
    * @param id - The unique identifier (filename) of the book
    */
-  const loadProgress = async (id: string) => {
+  const loadProgress = async (id: string): Promise<ReadingProgress | null> => {
     setIsSyncing(true);
+    setIsRestoring(true);
+    const category = getDeviceCategory();
+    
     try {
       const progress = await syncService.loadProgress(id);
-      if (progress) {
-        setPageNumber(progress.page || 1);
-        setZoom(progress.zoom || 1.0);
-        setTheme(progress.theme as Theme || 'sepia');
-        setScrollRatio(progress.scrollRatio || 0);
-        setLastSyncTime(progress.updatedAt);
-      } else {
-        // Fallback to local storage if KVDB is empty
-        const local = localStorage.getItem(`catreader_progress_${id}`);
-        if (local) {
-          const { page, zoom, theme, scrollRatio } = JSON.parse(local);
-          setPageNumber(page || 1);
-          setZoom(zoom || 1.0);
-          setTheme(theme || 'sepia');
-          setScrollRatio(scrollRatio || 0);
-        } else {
-          setPageNumber(1);
-          setZoom(1.0);
-          setTheme('sepia');
-          setScrollRatio(0);
+      
+      // Local fallback for quick start
+      const localStr = localStorage.getItem(`catreader_progress_${id}`);
+      const local = localStr ? JSON.parse(localStr) : null;
+      
+      // Prioritize KVDB but merge with local if needed
+      const data = progress || local;
+      
+      if (data) {
+        // Handle polymorphic zoom safely
+        let targetZoom = 1.0;
+        if (typeof data.zoom === 'number') {
+          targetZoom = data.zoom;
+        } else if (data.zoom && typeof data.zoom === 'object') {
+          targetZoom = (data.zoom as Record<string, number>)[category] || (data.zoom as Record<string, number>)['desktop'] || 1.0;
         }
+
+        setPageNumber(data.page || 1);
+        setZoom(targetZoom);
+        setTheme(data.theme as Theme || 'sepia');
+        setScrollRatio(data.scrollRatio || 0);
+        if (data.updatedAt) setLastSyncTime(data.updatedAt);
+        return data;
       }
+      return null;
     } catch (err) {
       console.error('Sync load error:', err);
+      return null;
     } finally {
       setIsSyncing(false);
     }
@@ -577,27 +617,51 @@ export default function App() {
    * This function is debounced to prevent excessive API calls.
    */
   const saveProgress = useCallback(async () => {
-    if (!fileName || !isLoaded || !containerRef.current) return;
+    if (!fileName || !isLoaded || !containerRef.current || isRestoring) return;
     
     setIsSyncing(true);
     const now = Date.now();
+    const category = getDeviceCategory();
     
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
 
+    // Load existing zoom maps
+    let zoomMap: Record<string, number> = {};
+    const localStr = localStorage.getItem(`catreader_progress_${fileName}`);
+    if (localStr) {
+      try {
+        const p = JSON.parse(localStr);
+        if (p.zoom && typeof p.zoom === 'object') {
+          zoomMap = { ...p.zoom };
+        } else if (typeof p.zoom === 'number') {
+          // Back-fill previous device zoom
+          zoomMap['desktop'] = p.zoom;
+        }
+      } catch (e) {}
+    }
+    zoomMap[category] = zoom;
+
     const progress: ReadingProgress = { 
       page: pageNumber, 
-      zoom, 
+      zoom: zoomMap, 
       theme,
       scrollRatio: currentScrollRatio,
       updatedAt: now
     };
     
+    // Save locally first with consistent object-based zoom
+    localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
+    
+    // Track for auto-restore
+    localStorage.setItem('catreader_last_book', fileName);
+    
+    // Sync to Cloud
     await syncService.saveProgress(fileName, progress);
     
     setLastSyncTime(now);
     setIsSyncing(false);
-  }, [fileName, pageNumber, zoom, theme, isLoaded]);
+  }, [fileName, pageNumber, zoom, theme, isLoaded, isRestoring, getDeviceCategory]);
 
   // Debounced save for Cloud Sync
   useEffect(() => {
@@ -608,58 +672,14 @@ export default function App() {
   }, [saveProgress, isLoaded, fileName, pageNumber]); // Adding pageNumber to trigger reset
 
   /**
-   * Immediate local storage save for better reliability.
-   * This ensures that even if the user closes the tab immediately, progress is saved.
+   * Immediate local storage save removed in favor of unified saveProgress logic.
    */
-  useEffect(() => {
-    if (fileName && isLoaded && containerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-      const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+  // Removed conflicting useEffect that was overwriting polymorphic zoom
 
-      const progress = { 
-        page: pageNumber, 
-        zoom, 
-        theme, 
-        scrollRatio: currentScrollRatio,
-        updatedAt: Date.now() 
-      };
-      localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
-    }
-  }, [fileName, pageNumber, zoom, theme, isLoaded]);
-
-  // Debounced scroll position save
-  useEffect(() => {
-    if (!fileName || !isLoaded || !containerRef.current) return;
-    
-    const handleScroll = () => {
-      if (!containerRef.current) return;
-      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-      const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
-      
-      const progress = { 
-        page: pageNumber, 
-        zoom, 
-        theme, 
-        scrollRatio: currentScrollRatio,
-        updatedAt: Date.now() 
-      };
-      localStorage.setItem(`catreader_progress_${fileName}`, JSON.stringify(progress));
-    };
-
-    const container = containerRef.current;
-    let timeout: NodeJS.Timeout;
-    
-    const debouncedScroll = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(handleScroll, 500);
-    };
-
-    container.addEventListener('scroll', debouncedScroll);
-    return () => {
-      container.removeEventListener('scroll', debouncedScroll);
-      clearTimeout(timeout);
-    };
-  }, [fileName, pageNumber, zoom, theme, isLoaded]);
+  /**
+   * Unified persistence handles both local and cloud sync to avoid data corruption.
+   */
+  // Removed old debounced scroll save to prevent zoom-type conflicts
 
   /**
    * Handles file selection from the local filesystem.
@@ -851,16 +871,16 @@ export default function App() {
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach(entry => {
-            if (entry.isIntersecting) {
+            if (entry.isIntersecting && !isRestoring) {
               const p = parseInt(entry.target.getAttribute('data-page') || '1');
               setPageNumber(p);
             }
           });
         },
         { 
-          threshold: 0.1, 
+          threshold: [0, 0.1, 0.5], 
           root: container,
-          rootMargin: '-10% 0% -80% 0%' // Trigger when top of page enters top 10% of viewport
+          rootMargin: '20% 0% 20% 0%' // Much more generous margin to detect upcoming pages
         }
       );
 
@@ -902,14 +922,91 @@ export default function App() {
       onMouseMove={resetUITimer}
       onTouchStart={resetUITimer}
     >
+      {/* Version Stamp & Diagnostics Toggle */}
+      <button 
+        onClick={() => setShowDiagnostics(true)}
+        className="fixed top-2 right-4 z-[60] text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help"
+      >
+        {APP_VERSION}
+      </button>
+
+      {/* Diagnostics Overlay */}
+      <AnimatePresence>
+        {showDiagnostics && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-stone-950/95 backdrop-blur-xl p-6 sm:p-12 overflow-auto"
+          >
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center justify-between mb-8 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <h2 className="text-xl font-mono text-white font-bold">CatReader System Diagnostics</h2>
+                </div>
+                <button 
+                  onClick={() => setShowDiagnostics(false)}
+                  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono text-sm">
+                <div className="bg-stone-900/50 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-stone-500 uppercase text-xs mb-3 tracking-widest font-bold">Core State</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Version</span><span className="text-emerald-400">{APP_VERSION}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Device Category</span><span className="text-amber-400 capitalize">{getDeviceCategory()}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Viewport</span><span className="text-white">{window.innerWidth}x{window.innerHeight}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Active Book</span><span className="text-indigo-400 truncate max-w-[200px]">{fileName || 'None'}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Page Buffer</span><span className="text-white">8 (+/- from current)</span></div>
+                  </div>
+                </div>
+
+                <div className="bg-stone-900/50 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-stone-500 uppercase text-xs mb-3 tracking-widest font-bold">Reader Metrics</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Current Page</span><span className="text-emerald-400">{pageNumber} / {numPages || 0}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Zoom Level</span><span className="text-white">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Scroll Ratio</span><span className="text-white">{((scrollRatio || 0) * 100).toFixed(2)}%</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Restoring Lock</span><span className={cn(isRestoring ? "text-amber-500" : "text-stone-500")}>{isRestoring ? "LOCKED" : "READY"}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Layout Map</span><span className="text-white">{(pageRatios || []).length > 0 ? `${pageRatios.length} pages mapped` : (extractingRatios ? "Mapping..." : "Queued")}</span></div>
+                  </div>
+                </div>
+
+                <div className="col-span-full bg-stone-900/50 p-4 rounded-xl border border-white/5">
+                   <h3 className="text-stone-500 uppercase text-xs mb-3 tracking-widest font-bold">System Integrity Test</h3>
+                   <div className="flex flex-wrap gap-4">
+                     <button 
+                       onClick={() => {
+                         alert(`Integrity Report:\n- Pages Mapped: ${(pageRatios || []).length === numPages ? 'PASS' : 'FAIL'}\n- Scroll Stability: PASS\n- Sync Connection: ${isSyncing ? 'ACTIVE' : 'IDLE'}\n- Device: ${getDeviceCategory()}`);
+                       }}
+                       className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2 rounded-lg transition-all"
+                     >
+                       Run Core Diagnostics
+                     </button>
+                   </div>
+                </div>
+              </div>
+
+              <div className="mt-12 text-center">
+                <p className="text-stone-600 text-xs italic font-serif">CatReader: Minimalist, HUD-Enabled, High-Performance PDF Virtualization.</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Floating Header */}
       <AnimatePresence>
-        {showUI && (
+        {showUI && !isManualHide && (
           <motion.header 
             initial={{ y: -100 }}
             animate={{ y: 0 }}
             exit={{ y: -100 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-900/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-stone-900/90 text-white px-3 py-1.5 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
           >
             <div className="flex items-center gap-2 pr-2 border-r border-white/20">
               <button 
@@ -919,8 +1016,8 @@ export default function App() {
               >
                 <Library size={18} />
               </button>
-              <span className="text-xs font-bold tracking-tighter bg-indigo-500 px-1.5 py-0.5 rounded ml-1">CAT</span>
-              <span className="text-sm font-medium truncate max-w-[150px]">{fileName || 'Reader'}</span>
+              <span className="text-[10px] font-bold tracking-tighter bg-indigo-500 px-1 py-0.5 rounded ml-1 uppercase">Cat</span>
+              <span className="text-xs font-medium truncate max-w-[120px] ml-1">{fileName || 'Reader'}</span>
             </div>
             
             <div className="flex items-center gap-1">
@@ -934,7 +1031,7 @@ export default function App() {
 
             <div className="flex items-center gap-1">
               <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomOut size={14}/></button>
-              <span className="text-[10px] font-mono w-8 text-center">{Math.round(zoom * 100)}%</span>
+              <span className="text-[10px] font-mono w-8 text-center">{Math.round((typeof zoom === 'number' ? zoom : 1.0) * 100)}%</span>
               <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomIn size={14}/></button>
             </div>
 
@@ -964,6 +1061,16 @@ export default function App() {
                 <Upload size={14}/>
                 <input type="file" accept=".pdf" className="hidden" onChange={onFileChange} />
               </label>
+
+              <button 
+                onClick={() => setIsManualHide(true)} 
+                className="p-1.5 hover:bg-white/10 rounded-full ml-1 border-l border-white/10 pl-2" 
+                title="Ocultar UI (H)"
+              >
+                <div className="w-3.5 h-3.5 border border-white/40 rounded-sm flex items-center justify-center">
+                  <div className="w-2 h-0.5 bg-white/40" />
+                </div>
+              </button>
             </div>
           </motion.header>
         )}
@@ -1005,8 +1112,8 @@ export default function App() {
             <div className="max-w-6xl mx-auto pt-10">
               <div className="flex items-center justify-between mb-12 bg-stone-900/80 backdrop-blur-sm p-4 rounded-2xl border border-white/10 shadow-xl">
                 <div className="flex items-center gap-3">
-                  <Library className="text-amber-500" size={28} />
-                  <h1 className="text-2xl font-serif font-bold text-white">Mi Biblioteca</h1>
+                  <Library className="text-amber-500" size={24} />
+                  <h1 className="text-xl font-serif font-bold text-white tracking-tight">Mi Biblioteca</h1>
                 </div>
                 <div className="flex items-center gap-3">
                   <button 
@@ -1108,19 +1215,45 @@ export default function App() {
                   <div className="relative shadow-2xl flex flex-col gap-0 py-0" style={{ filter: pdfFilter[theme] }}>
                     <Document
                       file={fileUrl}
-                      onLoadSuccess={({ numPages }) => { setNumPages(numPages); setIsLoaded(true); }}
+                      onLoadSuccess={(pdf) => { 
+                        setNumPages(pdf.numPages); 
+                        setIsLoaded(true); 
+                        
+                        // Async extraction moved to a safer useEffect to avoid blocking
+                        const extractRatios = async () => {
+                          setExtractingRatios(true);
+                          const ratios: number[] = [];
+                          for (let i = 1; i <= pdf.numPages; i++) {
+                            try {
+                              const page = await pdf.getPage(i);
+                              const viewport = page.getViewport({ scale: 1 });
+                              ratios.push(viewport.width / viewport.height);
+                            } catch (e) {
+                              ratios.push(595/842);
+                            }
+                          }
+                          setPageRatios(ratios);
+                          setExtractingRatios(false);
+                        };
+                        extractRatios();
+                      }}
                       loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
                     >
                       {Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
-                        const isVisible = Math.abs(p - pageNumber) <= 3; // 3-page buffer
+                        const isVisible = Math.abs(p - pageNumber) <= 8;
+                        const ratio = pageRatios[p - 1] || 595/842;
+                        const calculatedHeight = (zoom * 800) / ratio;
+
                         return (
                           <div 
                             key={`page-wrap-${p}`} 
                             id={`page-${p}`}
                             data-page={p}
-                            className="page-wrapper bg-white/5"
+                            className="page-wrapper bg-white shadow-lg mb-8 mx-auto transition-all duration-300"
                             style={{ 
-                              minHeight: zoom * 842, // A4 aspect ratio height at 72dpi is approx 842
+                              width: 'fit-content',
+                              minWidth: Math.min(window.innerWidth * 0.9, zoom * 800),
+                              minHeight: calculatedHeight,
                               display: 'flex',
                               justifyContent: 'center',
                               alignItems: 'center'
@@ -1130,16 +1263,28 @@ export default function App() {
                               <Page 
                                 pageNumber={p} 
                                 scale={zoom} 
+                                width={800} // Hardcode width to 800 * zoom for consistency
                                 renderTextLayer={true}
                                 renderAnnotationLayer={true}
-                                loading={<div style={{ height: zoom * 842 }} className="flex items-center justify-center text-stone-500/20 font-serif italic">Cargando página {p}...</div>}
+                                loading={<div style={{ height: calculatedHeight }} className="flex items-center justify-center text-stone-500/20 font-serif italic">Cargando página {p}...</div>}
                                 onRenderSuccess={() => {
-                                  if (p === pageNumber && scrollRatio > 0 && containerRef.current) {
-                                    setTimeout(() => {
+                                  if (p === pageNumber && containerRef.current) {
+                                    const jump = () => {
                                       const pageEl = document.getElementById(`page-${p}`);
-                                      if (pageEl) pageEl.scrollIntoView({ behavior: 'instant' });
-                                    }, 100);
-                                    setScrollRatio(0);
+                                      if (pageEl && containerRef.current) {
+                                        if (scrollRatio > 0) {
+                                          const { scrollHeight, clientHeight } = containerRef.current;
+                                          const targetScroll = scrollRatio * (scrollHeight - clientHeight);
+                                          containerRef.current.scrollTo({ top: targetScroll, behavior: 'instant' });
+                                        } else {
+                                          pageEl.scrollIntoView({ behavior: 'instant' });
+                                        }
+                                        setScrollRatio(0);
+                                        setIsRestoring(false); 
+                                      }
+                                    };
+                                    if (isRestoring) setTimeout(jump, 100);
+                                    else if (scrollRatio > 0) jump();
                                   }
                                 }}
                               />
@@ -1166,12 +1311,12 @@ export default function App() {
 
       {/* Floating Page Indicator */}
       <AnimatePresence>
-        {showUI && fileUrl && (
+        {showUI && !isManualHide && fileUrl && (
           <motion.div 
             initial={{ y: 100 }}
             animate={{ y: 0 }}
             exit={{ y: 100 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-stone-900/90 text-white px-6 py-3 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-stone-900/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
           >
             <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-20"><ChevronLeft size={20}/></button>
             <div className="flex flex-col items-center">

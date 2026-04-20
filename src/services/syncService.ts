@@ -10,7 +10,7 @@ const BUCKET_ID = import.meta.env.VITE_KVDB_BUCKET || 'catreader1';
 
 export interface ReadingProgress {
   page: number;
-  zoom: number;
+  zoom: number | Record<string, number>;
   theme: string;
   scrollRatio: number;
   updatedAt: number;
