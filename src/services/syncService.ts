@@ -3,10 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Simple KVDB sync service
-// Using kvdb.io for cross-device progress sync
-
-const BUCKET_ID = import.meta.env.VITE_KVDB_BUCKET || 'catreader1';
+// Firestore sync service
+import { db, ensureAuth } from '../firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export interface ReadingProgress {
   page: number;
@@ -18,33 +17,69 @@ export interface ReadingProgress {
 
 export const syncService = {
   async saveProgress(bookId: string, progress: ReadingProgress) {
-    const key = `progress_${bookId.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    const url = `https://kvdb.io/${BUCKET_ID}/${key}`;
+    const user: any = await ensureAuth();
+    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+    const docRef = doc(db, 'users', user.uid, 'progress', bookKey);
     
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        body: JSON.stringify(progress),
+      await setDoc(docRef, {
+        ...progress,
+        updatedAt: serverTimestamp()
       });
-      if (!response.ok) throw new Error('Failed to save to KVDB');
       return true;
     } catch (err) {
-      console.error('KVDB Save Error:', err);
+      console.error('Firestore Save Error:', err);
       return false;
     }
   },
 
   async loadProgress(bookId: string): Promise<ReadingProgress | null> {
-    const key = `progress_${bookId.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    const url = `https://kvdb.io/${BUCKET_ID}/${key}`;
+    const user: any = await ensureAuth();
+    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+    const docRef = doc(db, 'users', user.uid, 'progress', bookKey);
     
     try {
-      const response = await fetch(url);
-      if (response.status === 404) return null;
-      if (!response.ok) throw new Error('Failed to load from KVDB');
-      return await response.json();
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          ...data,
+          updatedAt: data.updatedAt?.toMillis() || Date.now()
+        } as ReadingProgress;
+      }
+      return null;
     } catch (err) {
-      console.error('KVDB Load Error:', err);
+      console.error('Firestore Load Error:', err);
+      return null;
+    }
+  },
+
+  async saveMetadata(metadata: Record<string, { title: string; author: string }>) {
+    const user: any = await ensureAuth();
+    const docRef = doc(db, 'users', user.uid, 'library', 'metadata');
+    try {
+      await setDoc(docRef, {
+        books: metadata,
+        updatedAt: serverTimestamp()
+      });
+      return true;
+    } catch (err) {
+      console.error('Firestore Metadata Save Error:', err);
+      return false;
+    }
+  },
+
+  async loadMetadata(): Promise<Record<string, { title: string; author: string }> | null> {
+    const user: any = await ensureAuth();
+    const docRef = doc(db, 'users', user.uid, 'library', 'metadata');
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        return snap.data().books;
+      }
+      return null;
+    } catch (err) {
+      console.error('Firestore Metadata Load Error:', err);
       return null;
     }
   }

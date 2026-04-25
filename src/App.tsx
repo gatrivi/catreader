@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
-  Upload, 
+  Upload,
   ZoomIn, 
   ZoomOut, 
   Sun, 
@@ -16,10 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Library,
-  BookOpen,
   X,
-  RefreshCw,
-  AlertCircle,
   Cloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,7 +24,13 @@ import { syncService, ReadingProgress } from './services/syncService';
 import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
+
+// Component Imports
+import { LibraryView } from './components/LibraryView';
+import { ReaderView } from './components/ReaderView';
+import { EditModal } from './components/EditModal';
+import { BookCover } from './components/BookCover';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -71,8 +74,6 @@ export default function App() {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [zoom, setZoom] = useState<number>(1.0);
-  const [theme, setTheme] = useState<Theme>('sepia');
   const [scrollRatio, setScrollRatio] = useState<number>(0);
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
@@ -90,9 +91,14 @@ export default function App() {
   const [isManualHide, setIsManualHide] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem('catreader_theme') || 'dim');
+  const [zoom, setZoom] = useState<number | Record<string, number>>(1.0);
+  const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
+  const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'wood');
   const [pageRatios, setPageRatios] = useState<number[]>([]);
   const [extractingRatios, setExtractingRatios] = useState(false);
-  const APP_VERSION = 'v1.0.8';
+  const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
+  const APP_VERSION = 'v1.3.0';
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -313,12 +319,20 @@ export default function App() {
       const res = await fetch('/books.json');
       if (!res.ok) throw new Error('books.json not found');
       const data = await res.json();
+      // Load enriched metadata from Cloud (Firestore) or localStorage
+      let metadata: Record<string, { title: string; author: string }> = {};
+      const cloudMetadata = await syncService.loadMetadata();
+      const localStored = localStorage.getItem('catreader_enriched_metadata');
       
-      // Load enriched metadata from localStorage
-      const stored = localStorage.getItem('catreader_enriched_metadata');
-      if (stored) {
-        const metadata = JSON.parse(stored);
+      if (cloudMetadata) {
+        metadata = cloudMetadata;
+      } else if (localStored) {
+        metadata = JSON.parse(localStored);
+      }
+      
+      if (Object.keys(metadata).length > 0) {
         setEnrichedMetadata(metadata);
+        localStorage.setItem('catreader_enriched_metadata', JSON.stringify(metadata));
         
         const enriched = data.map((book: LibraryBook) => ({
           ...book,
@@ -355,11 +369,10 @@ export default function App() {
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
       if (!g_apiKey) return;
       
-      const ai = new GoogleGenAI(g_apiKey);
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const ai = new GoogleGenAI({ apiKey: g_apiKey });
       const filenames = library.map(b => b.filename).join('\n');
-      
-      const result = await model.generateContent({
+      const result = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
         contents: [{ role: 'user', parts: [{ text: `Parse these filenames and return a JSON array of objects with 'filename', 'title', and 'author'. 
         Clean up the titles (remove extensions, underscores, etc.) and identify the author if possible.
         Return ONLY valid JSON.
@@ -367,8 +380,7 @@ export default function App() {
         ${filenames}` }] }]
       });
 
-      const response = await result.response;
-      const responseText = response.text();
+      const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const cleanJson = responseText.replace(/```json|```/g, '').trim();
       const enriched = JSON.parse(cleanJson || '[]');
       const newMetadata = { ...enrichedMetadata };
@@ -425,13 +437,12 @@ export default function App() {
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
       if (g_apiKey) {
         try {
-          const ai = new GoogleGenAI(g_apiKey);
-          const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
-          const result = await model.generateContent({
+          const ai = new GoogleGenAI({ apiKey: g_apiKey });
+          const result = await ai.models.generateContent({
+            model: "gemini-1.5-flash",
             contents: [{ role: 'user', parts: [{ text: `Create a short, vivid visual prompt (15 words max) for an AI image generator to create a book cover for: "${book.title}" by ${book.author}. Focus on the atmosphere and subject. No text.` }] }]
           });
-          const response = await result.response;
-          visualPrompt = response.text().trim();
+          visualPrompt = result.candidates?.[0]?.content?.parts?.[0]?.text || visualPrompt;
         } catch (e) { /* ignore AI error, use fallback prompt */ }
       }
 
@@ -495,13 +506,26 @@ export default function App() {
     }
   };
 
-  const updateBookMetadata = (filename: string, title: string, author: string) => {
+  const handleCoverUpload = async (filename: string, file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target?.result as string;
+      await coverDB.saveCover(filename, base64);
+      setCovers(prev => ({ ...prev, [filename]: base64 }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateBookMetadata = async (filename: string, title: string, author: string) => {
     const newMetadata = { 
       ...enrichedMetadata, 
       [filename]: { title, author } 
     };
     setEnrichedMetadata(newMetadata);
     localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+    
+    // Sync to cloud
+    await syncService.saveMetadata(newMetadata);
     
     setLibrary(prev => prev.map(book => 
       book.filename === filename ? { ...book, title, author } : book
@@ -567,6 +591,24 @@ export default function App() {
 
 
   // Deep linking logic moved to another effect
+
+  /**
+   * Updates the zoom level for the current device category.
+   */
+  const changeZoom = (delta: number) => {
+    const category = getDeviceCategory();
+    const currentZoom = typeof zoom === 'number' ? zoom : ((zoom as Record<string, number>)[category] || 1.0);
+    const newZoomValue = Math.min(Math.max(currentZoom + delta, 0.5), 3.0);
+    
+    if (typeof zoom === 'number') {
+      setZoom(newZoomValue);
+    } else {
+      setZoom({
+        ...(zoom as Record<string, number>),
+        [category]: newZoomValue
+      });
+    }
+  };
 
   /**
    * Loads reading progress for a specific book from KVDB or localStorage.
@@ -640,7 +682,7 @@ export default function App() {
         }
       } catch (e) {}
     }
-    zoomMap[category] = zoom;
+    zoomMap[category] = typeof zoom === 'number' ? zoom : (zoom[category] || 1.0);
 
     const progress: ReadingProgress = { 
       page: pageNumber, 
@@ -661,7 +703,7 @@ export default function App() {
     
     setLastSyncTime(now);
     setIsSyncing(false);
-  }, [fileName, pageNumber, zoom, theme, isLoaded, isRestoring, getDeviceCategory]);
+  }, [fileName, isLoaded, isRestoring, zoom, theme, pageNumber, getDeviceCategory]);
 
   // Debounced save for Cloud Sync
   useEffect(() => {
@@ -1030,9 +1072,9 @@ export default function App() {
             <div className="w-px h-4 bg-white/20 mx-1" />
 
             <div className="flex items-center gap-1">
-              <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomOut size={14}/></button>
-              <span className="text-[10px] font-mono w-8 text-center">{Math.round((typeof zoom === 'number' ? zoom : 1.0) * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomIn size={14}/></button>
+              <button onClick={() => changeZoom(-0.1)} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomOut size={14}/></button>
+              <span className="text-[10px] font-mono w-8 text-center">{Math.round((typeof zoom === 'number' ? zoom : (zoom[getDeviceCategory()] || 1.0)) * 100)}%</span>
+              <button onClick={() => changeZoom(0.1)} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomIn size={14}/></button>
             </div>
 
             <div className="w-px h-4 bg-white/20 mx-1" />
@@ -1108,254 +1150,123 @@ export default function App() {
         onWheel={handleWheel}
       >
         {!fileUrl ? (
-          <div className="min-h-full bg-[#8b5a2b] p-8" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, #8b5a2b, #8b5a2b 200px, #5c3a21 200px, #5c3a21 220px)' }}>
-            <div className="max-w-6xl mx-auto pt-10">
-              <div className="flex items-center justify-between mb-12 bg-stone-900/80 backdrop-blur-sm p-4 rounded-2xl border border-white/10 shadow-xl">
-                <div className="flex items-center gap-3">
-                  <Library className="text-amber-500" size={24} />
-                  <h1 className="text-xl font-serif font-bold text-white tracking-tight">Mi Biblioteca</h1>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={handleGoogleDrive}
-                    className="flex items-center gap-2 bg-stone-800 text-white hover:bg-stone-700 transition-all px-4 py-2 rounded-xl text-sm font-bold"
-                  >
-                    <Cloud size={16} />
-                    Drive
-                  </button>
-                  <label className="flex items-center gap-2 bg-stone-800 text-white hover:bg-stone-700 transition-all px-4 py-2 rounded-xl text-sm font-bold cursor-pointer">
-                    <Upload size={16} />
-                    Subir
-                    <input type="file" accept=".pdf,.txt" className="hidden" onChange={onFileChange} />
-                  </label>
-                </div>
-              </div>
-
-              {library.length === 0 ? (
-                <div className="text-center py-20 text-stone-300/80 font-serif">
-                  <p className="text-xl mb-4">Tu biblioteca está vacía.</p>
-                  <p className="text-sm">Sube un libro o conecta tu Google Drive para empezar.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-x-8 gap-y-12 max-w-5xl mx-auto pb-20 mt-16">
-                  {library.map(book => (
-                    <div key={book.id} className="group relative flex flex-col items-center w-36">
-                      <div 
-                        onClick={() => openFromLibrary(book)}
-                        className="relative w-32 h-48 bg-[#f4ecd8] shadow-[5px_5px_15px_rgba(0,0,0,0.6)] rounded-r-md border-l-4 border-[#8b5a2b] cursor-pointer hover:-translate-y-4 transition-transform duration-300 flex flex-col"
-                      >
-                        {covers[book.filename] ? (
-                          <img src={covers[book.filename]} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
-                        ) : (
-                          <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
-                            <div className="text-[#5b4636] font-serif font-bold text-sm leading-tight line-clamp-4 mt-2">
-                              {book.title}
-                            </div>
-                            <div className="text-[#8b5a2b] font-serif text-[10px] uppercase tracking-widest line-clamp-2 mb-2">
-                              {book.author || 'Autor Desconocido'}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Book spine effect */}
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-black/10"></div>
-                        <div className="absolute left-1 top-0 bottom-0 w-px bg-white/30"></div>
-                      </div>
-                      
-                      {/* Edit & Cover Actions */}
-                      <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-stone-900/90 p-1.5 rounded-lg shadow-xl border border-white/10 z-10">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const newTitle = prompt('Nuevo título:', book.title);
-                            const newAuthor = prompt('Nuevo autor:', book.author || '');
-                            if (newTitle !== null) {
-                              updateBookMetadata(book.filename, newTitle, newAuthor || '');
-                            }
-                          }}
-                          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
-                          title="Editar metadatos"
-                        >
-                          <RefreshCw size={12} />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const url = new URL(window.location.href);
-                            url.searchParams.set('book', book.filename);
-                            navigator.clipboard.writeText(url.toString());
-                            alert('Enlace copiado al portapapeles');
-                          }}
-                          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
-                          title="Compartir"
-                        >
-                          <Upload size={12} className="rotate-180" />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const randomPage = Math.floor(Math.random() * 20) + 5; // Simplified random for now, will improve after PDF loads
-                            openFromLibrary(book, randomPage);
-                          }}
-                          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
-                          title="Página aleatoria"
-                        >
-                          <span className="text-[10px] font-bold">🎲</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <LibraryView 
+            library={library}
+            covers={covers}
+            onOpenBook={openFromLibrary}
+            onEditBook={setEditingBook}
+            onGoogleDrive={handleGoogleDrive}
+            onFileUpload={onFileChange}
+            isSimplified={isSimplified}
+            wallpaper={wallpaper}
+            onToggleSimplified={() => setIsSimplified(!isSimplified)}
+            onSetWallpaper={setWallpaper}
+          />
         ) : (
-          <div className="min-h-full flex flex-col items-center justify-start p-0 sm:p-8">
-                {fileType === 'pdf' ? (
-                  <div className="relative shadow-2xl flex flex-col gap-0 py-0" style={{ filter: pdfFilter[theme] }}>
-                    <Document
-                      file={fileUrl}
-                      onLoadSuccess={(pdf) => { 
-                        setNumPages(pdf.numPages); 
-                        setIsLoaded(true); 
-                        
-                        // Async extraction moved to a safer useEffect to avoid blocking
-                        const extractRatios = async () => {
-                          setExtractingRatios(true);
-                          const ratios: number[] = [];
-                          for (let i = 1; i <= pdf.numPages; i++) {
-                            try {
-                              const page = await pdf.getPage(i);
-                              const viewport = page.getViewport({ scale: 1 });
-                              ratios.push(viewport.width / viewport.height);
-                            } catch (e) {
-                              ratios.push(595/842);
-                            }
-                          }
-                          setPageRatios(ratios);
-                          setExtractingRatios(false);
-                        };
-                        extractRatios();
-                      }}
-                      loading={<div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>}
-                    >
-                      {Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
-                        const isVisible = Math.abs(p - pageNumber) <= 8;
-                        const ratio = pageRatios[p - 1] || 595/842;
-                        const calculatedHeight = (zoom * 800) / ratio;
-
-                        return (
-                          <div 
-                            key={`page-wrap-${p}`} 
-                            id={`page-${p}`}
-                            data-page={p}
-                            className="page-wrapper bg-white shadow-lg mb-8 mx-auto transition-all duration-300"
-                            style={{ 
-                              width: 'fit-content',
-                              minWidth: Math.min(window.innerWidth * 0.9, zoom * 800),
-                              minHeight: calculatedHeight,
-                              display: 'flex',
-                              justifyContent: 'center',
-                              alignItems: 'center'
-                            }}
-                          >
-                            {isVisible ? (
-                              <Page 
-                                pageNumber={p} 
-                                scale={zoom} 
-                                width={800} // Hardcode width to 800 * zoom for consistency
-                                renderTextLayer={true}
-                                renderAnnotationLayer={true}
-                                loading={<div style={{ height: calculatedHeight }} className="flex items-center justify-center text-stone-500/20 font-serif italic">Cargando página {p}...</div>}
-                                onRenderSuccess={() => {
-                                  if (p === pageNumber && containerRef.current) {
-                                    const jump = () => {
-                                      const pageEl = document.getElementById(`page-${p}`);
-                                      if (pageEl && containerRef.current) {
-                                        if (scrollRatio > 0) {
-                                          const { scrollHeight, clientHeight } = containerRef.current;
-                                          const targetScroll = scrollRatio * (scrollHeight - clientHeight);
-                                          containerRef.current.scrollTo({ top: targetScroll, behavior: 'instant' });
-                                        } else {
-                                          pageEl.scrollIntoView({ behavior: 'instant' });
-                                        }
-                                        setScrollRatio(0);
-                                        setIsRestoring(false); 
-                                      }
-                                    };
-                                    if (isRestoring) setTimeout(jump, 100);
-                                    else if (scrollRatio > 0) jump();
-                                  }
-                                }}
-                              />
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </Document>
-                  </div>
-                ) : fileType === 'txt' ? (
-                  <div className={cn("max-w-3xl w-full p-8 font-mono whitespace-pre-wrap leading-relaxed shadow-sm rounded-lg", themeStyles[theme])}>
-                    {textContent}
-                  </div>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                    <AlertCircle size={48} className="text-amber-500 mb-4" />
-                    <h2 className="text-xl font-bold mb-2">Formato no soportado</h2>
-                    <p className="text-stone-500">Actualmente solo soportamos PDF y TXT. Estamos trabajando en EPUB y DOCS.</p>
-                  </div>
-                )}
-          </div>
+          <ReaderView 
+            fileUrl={fileUrl}
+            fileType={fileType}
+            textContent={textContent}
+            numPages={numPages}
+            pageNumber={pageNumber}
+            zoom={typeof zoom === 'number' ? zoom : (zoom[getDeviceCategory()] || 1.0)}
+            theme={theme}
+            scrollRatio={scrollRatio}
+            isRestoring={isRestoring}
+            pageRatios={pageRatios}
+            onLoadSuccess={(pdf) => { 
+              setNumPages(pdf.numPages); 
+              setIsLoaded(true); 
+              
+              const extractRatios = async () => {
+                setExtractingRatios(true);
+                const ratios: number[] = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                  try {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1 });
+                    ratios.push(viewport.width / viewport.height);
+                  } catch (e) {
+                    ratios.push(595/842);
+                  }
+                }
+                setPageRatios(ratios);
+                setExtractingRatios(false);
+              };
+              extractRatios();
+            }}
+            onPageRenderSuccess={(p) => {
+              if (p === pageNumber && containerRef.current) {
+                const jump = () => {
+                  const pageEl = document.getElementById(`page-${p}`);
+                  if (pageEl && containerRef.current) {
+                    if (scrollRatio > 0) {
+                      const { scrollHeight, clientHeight } = containerRef.current;
+                      const targetScroll = scrollRatio * (scrollHeight - clientHeight);
+                      containerRef.current.scrollTo({ top: targetScroll, behavior: 'instant' });
+                    } else {
+                      pageEl.scrollIntoView({ behavior: 'instant' });
+                    }
+                    setScrollRatio(0);
+                    setIsRestoring(false); 
+                  }
+                };
+                if (isRestoring) setTimeout(jump, 100);
+                else if (scrollRatio > 0) jump();
+              }
+            }}
+            themeStyles={themeStyles}
+            pdfFilter={pdfFilter}
+            isSimplified={isSimplified}
+          />
         )}
       </main>
 
-      {/* Floating Page Indicator */}
-      <AnimatePresence>
-        {showUI && !isManualHide && fileUrl && (
-          <motion.div 
-            initial={{ y: 100 }}
-            animate={{ y: 0 }}
-            exit={{ y: 100 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-stone-900/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
-          >
-            <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-20"><ChevronLeft size={20}/></button>
-            <div className="flex flex-col items-center">
-              <span className="text-xs font-mono">{pageNumber} / {numPages}</span>
-              <input 
-                type="range" 
-                min={1} 
-                max={numPages || 1} 
-                value={pageNumber} 
-                onChange={(e) => {
-                  const newPage = Number(e.target.value);
-                  scrollToPage(newPage);
-                }}
-                className="w-32 h-1 bg-white/20 rounded-full mt-1 appearance-none cursor-pointer accent-indigo-500"
-              />
-              {/* Buffer Indicator */}
-              {fileType === 'pdf' && (
-                <div className="flex gap-1 mt-1">
-                  {[1, 2, 3].map(offset => {
-                    const p = pageNumber + offset;
-                    if (p > numPages) return null;
-                    const isBuffered = bufferedPages.has(p);
-                    return (
-                      <div 
-                        key={`dot-${p}`} 
-                        className={cn("w-1 h-1 rounded-full", isBuffered ? "bg-emerald-400" : "bg-white/20")}
-                        title={isBuffered ? `Página ${p} lista` : `Cargando página ${p}...`}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-20"><ChevronRight size={20}/></button>
-            
-            {isSyncing && <Loader2 size={12} className="animate-spin absolute -right-6 text-indigo-400" />}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Floating Page Indicator - No Motion */}
+      {showUI && !isManualHide && fileUrl && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-stone-900/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10">
+          <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-20"><ChevronLeft size={20}/></button>
+          <div className="flex flex-col items-center">
+            <span className="text-xs font-mono">{pageNumber} / {numPages}</span>
+            <input 
+              type="range" 
+              min={1} 
+              max={numPages || 1} 
+              value={pageNumber} 
+              onChange={(e) => {
+                const newPage = Number(e.target.value);
+                scrollToPage(newPage);
+              }}
+              className="w-32 h-1 bg-white/20 rounded-full mt-1 appearance-none cursor-pointer accent-indigo-500"
+            />
+          </div>
+          <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-20"><ChevronRight size={20}/></button>
+          {isSyncing && <Loader2 size={12} className="animate-spin absolute -right-6 text-indigo-400" />}
+        </div>
+      )}
+
+      {/* Edit Metadata Modal */}
+      <EditModal 
+        book={editingBook}
+        onClose={() => setEditingBook(null)}
+        onSave={async (title, author) => {
+          if (editingBook) {
+            await updateBookMetadata(editingBook.filename, title, author);
+            setEditingBook(null);
+          }
+        }}
+        onUploadCover={(file) => {
+          if (editingBook) handleCoverUpload(editingBook.filename, file);
+        }}
+        onRegenerateCover={async (title, author) => {
+          if (editingBook) {
+            setIsSyncing(true);
+            await fetchEnhancedCover({ ...editingBook, title, author });
+            setIsSyncing(false);
+          }
+        }}
+        isSyncing={isSyncing}
+      />
     </div>
   );
 }

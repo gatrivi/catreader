@@ -1,30 +1,17 @@
-// ===============================================================
-// Assumed Data Model
-// ===============================================================
-//
-// Collection: reading_progress
-// Document ID: {progressId} (usually userId + "_" + pdfId)
-// Fields:
-//   - userId: string (required) - Owner of the progress
-//   - pdfId: string (required) - Identifier for the PDF
-//   - currentPage: number (required) - Last read page
-//   - totalPages: number - Total pages in PDF
-//   - zoom: number - Zoom level
-//   - theme: string - "light", "dark", "sepia"
-//   - updatedAt: timestamp - Last update time
-//
-// ===============================================================
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Personal use: Allow all access for now as requested (no login)
-    match /reading_progress/{progressId} {
-      allow read, write: if true;
+    // Standard user-owned data structure
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      match /{allPaths=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
     
-    match /global_state/{stateId} {
+    // Legacy support (optional, can be removed if not used)
+    match /reading_progress/{progressId} {
       allow read, write: if true;
     }
   }
