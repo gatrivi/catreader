@@ -82,6 +82,7 @@ export default function App() {
   const [covers, setCovers] = useState<Record<string, string>>({});
   const [bufferedPages, setBufferedPages] = useState<Set<number>>(new Set());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(true);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const [quadrant, setQuadrant] = useState(1);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export default function App() {
   const [pageRatios, setPageRatios] = useState<number[]>([]);
   const [extractingRatios, setExtractingRatios] = useState(false);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
-  const APP_VERSION = 'v1.3.0';
+  const APP_VERSION = 'v1.3.3';
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -191,12 +192,25 @@ export default function App() {
             const fileName = file.name;
             const ext = fileName.split('.').pop()?.toLowerCase() || 'pdf';
             
-            setIsSyncing(true);
+              setIsSyncing(true);
             try {
-              const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              const blob = await response.blob();
+              // Check cache first
+              const cached = await coverDB.getBookContent(fileName);
+              let blob: Blob;
+              
+              if (cached) {
+                console.log('Loading from cache:', fileName);
+                blob = cached;
+              } else {
+                console.log('Fetching from Drive:', fileName);
+                const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                blob = await response.blob();
+                // Save to cache
+                await coverDB.saveBookContent(fileName, blob);
+              }
+
               const url = URL.createObjectURL(blob);
               setFileUrl(url);
               setFileName(fileName);
@@ -315,34 +329,44 @@ export default function App() {
    * This file is generated during the build process or via the predev script.
    */
   const fetchLibrary = useCallback(async () => {
+    setIsLoadingLibrary(true);
     try {
       const res = await fetch('/books.json');
       if (!res.ok) throw new Error('books.json not found');
       const data = await res.json();
-      // Load enriched metadata from Cloud (Firestore) or localStorage
-      let metadata: Record<string, { title: string; author: string }> = {};
-      const cloudMetadata = await syncService.loadMetadata();
-      const localStored = localStorage.getItem('catreader_enriched_metadata');
       
-      if (cloudMetadata) {
-        metadata = cloudMetadata;
-      } else if (localStored) {
-        metadata = JSON.parse(localStored);
-      }
-      
-      if (Object.keys(metadata).length > 0) {
-        setEnrichedMetadata(metadata);
-        localStorage.setItem('catreader_enriched_metadata', JSON.stringify(metadata));
-        
-        const enriched = data.map((book: LibraryBook) => ({
-          ...book,
-          title: metadata[book.filename]?.title || book.title,
-          author: metadata[book.filename]?.author || ''
-        }));
-        setLibrary(enriched);
-      } else {
-        setLibrary(data);
-      }
+      // SET LIBRARY IMMEDIATELY - Don't wait for cloud metadata
+      setLibrary(data);
+      setIsLoadingLibrary(false);
+
+      // Load enriched metadata in the background
+      (async () => {
+        try {
+          let metadata: Record<string, { title: string; author: string }> = {};
+          const cloudMetadata = await syncService.loadMetadata();
+          const localStored = localStorage.getItem('catreader_enriched_metadata');
+          
+          if (cloudMetadata) {
+            metadata = cloudMetadata;
+          } else if (localStored) {
+            metadata = JSON.parse(localStored);
+          }
+          
+          if (Object.keys(metadata).length > 0) {
+            setEnrichedMetadata(metadata);
+            localStorage.setItem('catreader_enriched_metadata', JSON.stringify(metadata));
+            
+            const enriched = data.map((book: LibraryBook) => ({
+              ...book,
+              title: metadata[book.filename]?.title || book.title,
+              author: metadata[book.filename]?.author || ''
+            }));
+            setLibrary(enriched);
+          }
+        } catch (mErr) {
+          console.warn('Metadata enrichment skipped:', mErr);
+        }
+      })();
 
       // Load covers from IndexedDB
       const loadedCovers: Record<string, string> = {};
@@ -354,6 +378,7 @@ export default function App() {
       
     } catch (err) {
       console.error('Failed to fetch library:', err);
+      setIsLoadingLibrary(false);
     }
   }, []);
 
@@ -730,11 +755,15 @@ export default function App() {
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
       const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
-      setFileUrl(url);
       setFileName(file.name);
       setFileType(ext);
+      
+      // Save to local cache immediately
+      await coverDB.saveBookContent(file.name, file);
+      
+      const url = URL.createObjectURL(file);
+      setFileUrl(url);
       
       if (ext === 'txt') {
         const text = await file.text();
@@ -774,32 +803,50 @@ export default function App() {
    * @param forcePage - Optional page number to jump to
    */
   const openFromLibrary = async (book: LibraryBook, forcePage?: number) => {
-    const url = `/books/${book.filename}`;
-    setFileUrl(url);
-    setFileName(book.filename);
+    const filename = book.filename;
+    setFileName(filename);
     setFileType(book.type);
     
     // Track last opened book
-    localStorage.setItem('catreader_last_book', book.filename);
-    
-    if (book.type === 'txt') {
-      try {
+    localStorage.setItem('catreader_last_book', filename);
+
+    try {
+      // Check cache first
+      const cached = await coverDB.getBookContent(filename);
+      let blob: Blob;
+      
+      if (cached) {
+        console.log('Loading from cache:', filename);
+        blob = cached;
+      } else {
+        console.log('Fetching from server:', filename);
+        const url = `/books/${filename}`;
         const res = await fetch(url);
-        const text = await res.text();
+        blob = await res.blob();
+        // Save to cache
+        await coverDB.saveBookContent(filename, blob);
+      }
+
+      const url = URL.createObjectURL(blob);
+      setFileUrl(url);
+      
+      if (book.type === 'txt') {
+        const text = await blob.text();
         setTextContent(text);
         setNumPages(1);
-      } catch (err) {
-        console.error('Error loading text file:', err);
+      } else {
+        setTextContent(null);
       }
-    } else {
-      setTextContent(null);
-    }
-    
-    if (forcePage) {
-      setPageNumber(forcePage);
-      setScrollRatio(0);
-    } else {
-      await loadProgress(book.filename);
+      
+      if (forcePage) {
+        setPageNumber(forcePage);
+        setScrollRatio(0);
+      } else {
+        await loadProgress(filename);
+      }
+    } catch (err) {
+      console.error('Error opening book:', err);
+      alert('Error al abrir el libro.');
     }
     
     if (book.type === 'txt') setIsLoaded(true);
@@ -1153,6 +1200,7 @@ export default function App() {
           <LibraryView 
             library={library}
             covers={covers}
+            isLoading={isLoadingLibrary}
             onOpenBook={openFromLibrary}
             onEditBook={setEditingBook}
             onGoogleDrive={handleGoogleDrive}

@@ -9,6 +9,11 @@ Maintain a sleek, distraction-free PDF/Text reader that synchronizes progress ac
 - **Sync Everything**: All progress (page, zoom, theme) must sync to the cloud (KVDB).
 - **No Hassle**: No logins, no complex setups. Just links and books.
 
+
+## curent
+[] ui should be as little intrusive as possible, think kindle ux
+[] for starters the library should consist of several shelves like the main one, user should be able to set up a wallpaper or get ia to make one, and title each, to easily sort books. 
+[] lets start with 8 shelves, if user wants more we can nest them. see if we can use a nifty animation that doesnt break for that.
 ### TASK ARCHIVE
 Completed tasks are moved to [completed_tasks.md](file:///c:/zengatrivi/REACTJS/catreader/completed_tasks.md).
 

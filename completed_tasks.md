@@ -15,6 +15,15 @@ The following features and fixes have been implemented and are ready for review:
     - Integrated **Google Books API** to automatically search for professional covers based on title and author.
     - Integrated **Pollinations.ai** as an AI fallback to generate thematic covers when professional ones aren't available.
 
+## Architecture & Backend (v1.2.0 - v1.3.0)
+- **[x] Component Refactoring**: Extracted core logic from `App.tsx` into modular components (`LibraryView`, `ReaderView`, `BookCover`, `EditModal`).
+- **[x] Firebase Migration**: Transitioned from KVDB to **Firebase Firestore** for more robust cross-device sync.
+- **[x] Anonymous Auth**: Implemented background sign-in to maintain the "No Login Hell" rule while ensuring private storage.
+- **[x] Simplified Mode**: Added a high-contrast, animation-free mode optimized for E-ink (Kindle) and low-power devices.
+- **[x] Wallpaper Engine**: Custom background support for the library view.
+- **[x] Auto-Metadata**: Gemini now automatically enriches the library with missing titles and authors.
+- **[x] Testing Suite**: Integrated Vitest and added automated tests for sync and rendering logic.
+
 ## Sharing & Connectivity
 - **[x] Deep Linking**: The app now supports `?book=filename.pdf&page=NR` parameters to open specific books and pages directly via URL.
 - **[x] Share Buttons**: Added sharing CTAs to library cards (book link) and the reader header (link to current page).
