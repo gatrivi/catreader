@@ -1,6 +1,11 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * AGENT NOTE: This file is ~1,300 lines. It's a monolith.
+ * Before adding major features, extract logic into hooks (see useShelves.ts as pattern).
+ * Key regions: Google Drive (L140), Library loading (L330), Progress sync (L640),
+ * Reader UI overlays (L1090), Render return (L1008).
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -17,7 +22,8 @@ import {
   ChevronRight,
   Library,
   X,
-  Cloud
+  Cloud,
+  MoreVertical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, ReadingProgress } from './services/syncService';
@@ -31,6 +37,7 @@ import { LibraryView } from './components/LibraryView';
 import { ReaderView } from './components/ReaderView';
 import { EditModal } from './components/EditModal';
 import { BookCover } from './components/BookCover';
+import { useShelves } from './hooks/useShelves';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -89,6 +96,7 @@ export default function App() {
   const [direction, setDirection] = useState(0);
   const [isIdle, setIsIdle] = useState(false);
   const [autoCoverIndex, setAutoCoverIndex] = useState(0);
+  const [coverScanKey, setCoverScanKey] = useState(0);
   const [isManualHide, setIsManualHide] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -99,7 +107,10 @@ export default function App() {
   const [pageRatios, setPageRatios] = useState<number[]>([]);
   const [extractingRatios, setExtractingRatios] = useState(false);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
-  const APP_VERSION = 'v1.3.3';
+  const [showMenu, setShowMenu] = useState(false);
+  const APP_VERSION = 'v1.3.5';
+
+  const { shelves, updateShelfTitle, moveBook, reorderBook } = useShelves(library);
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -433,13 +444,17 @@ export default function App() {
   };
 
   /**
-   * Internal version of fetchEnhancedCover for automatic use.
-   * Tries Google Books first, then falls back to AI generation.
+   * Tries multiple FREE APIs for book covers:
+   * 1. Google Books API (free, no key)
+   * 2. Open Library Covers API (free, no key)
+   * 3. Pollinations.ai (free AI image gen, no key)
+   * 4. Gradient fallback
    */
   const fetchEnhancedCover = async (book: LibraryBook) => {
     try {
-      // 1. Try Google Books API first
       const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+      
+      // 1. Try Google Books API first
       const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
       const gBooksRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
       const gBooksData = await gBooksRes.json();
@@ -448,17 +463,32 @@ export default function App() {
                         gBooksData.items?.[0]?.volumeInfo?.imageLinks?.smallThumbnail;
       
       if (thumbnail) {
-        // Use the professional cover if found (replace http with https for security)
         const secureThumbnail = thumbnail.replace('http://', 'https://');
         await coverDB.saveCover(book.filename, secureThumbnail);
         setCovers(prev => ({ ...prev, [book.filename]: secureThumbnail }));
         return;
       }
 
-      // 2. Fallback to AI generation (Pollinations.ai)
-      // We use Gemini to create a good visual prompt if possible, otherwise we use a generic one
+      // 2. Try Open Library Covers API (completely free, no key needed)
+      try {
+        const olQuery = encodeURIComponent(`${searchTitle} ${book.author || ''}`.trim());
+        const olRes = await fetch(`https://openlibrary.org/search.json?q=${olQuery}&limit=1`);
+        const olData = await olRes.json();
+        const olCoverId = olData.docs?.[0]?.cover_i;
+        if (olCoverId) {
+          const olCoverUrl = `https://covers.openlibrary.org/b/id/${olCoverId}-L.jpg`;
+          await coverDB.saveCover(book.filename, olCoverUrl);
+          setCovers(prev => ({ ...prev, [book.filename]: olCoverUrl }));
+          return;
+        }
+      } catch (olErr) {
+        console.warn('Open Library cover fetch failed:', olErr);
+      }
+
+      // 3. Fallback to AI generation (Pollinations.ai - free, no key needed)
       let visualPrompt = `book cover for "${book.title}" by ${book.author || 'unknown author'}, classical library style, high quality, vintage paper texture`;
       
+      // Optionally enhance prompt with Gemini if key is available, but generic prompt works fine
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
       if (g_apiKey) {
         try {
@@ -473,34 +503,90 @@ export default function App() {
 
       const aiCoverUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(visualPrompt)}?width=300&height=450&seed=${book.filename.length}&nologo=true`;
       
-      // We don't necessarily need to save the Pollinations URL to DB since it's dynamic, 
-      // but let's save the dataURL to avoid re-fetching
       const tempImg = new Image();
       tempImg.crossOrigin = "anonymous";
       tempImg.src = aiCoverUrl;
       await new Promise((resolve) => { tempImg.onload = resolve; tempImg.onerror = resolve; });
       
       if (tempImg.complete && tempImg.naturalWidth > 0) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 300;
-        canvas.height = 450;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(tempImg, 0, 0, 300, 450);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          await coverDB.saveCover(book.filename, dataUrl);
-          setCovers(prev => ({ ...prev, [book.filename]: dataUrl }));
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 300;
+          canvas.height = 450;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(tempImg, 0, 0, 300, 450);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            await coverDB.saveCover(book.filename, dataUrl);
+            setCovers(prev => ({ ...prev, [book.filename]: dataUrl }));
+            return;
+          }
+        } catch (canvasErr) {
+          // CORS tainted canvas - store the Pollinations URL directly
+          console.warn('Canvas caching failed for AI cover, storing URL directly:', canvasErr);
+          await coverDB.saveCover(book.filename, aiCoverUrl);
+          setCovers(prev => ({ ...prev, [book.filename]: aiCoverUrl }));
           return;
         }
       }
 
-      // 3. Last fallback: The original gradient cover
+      // 4. Last fallback: gradient cover
       await generateCoverFallback(book);
       
     } catch (err) {
       console.warn('Enhanced cover generation failed, using fallback.', err);
       await generateCoverFallback(book);
     }
+  };
+
+  /**
+   * Enrich library metadata using FREE Open Library API.
+   * No API key needed. Falls back to existing data if API fails.
+   */
+  const enrichWithOpenLibrary = async () => {
+    if (library.length === 0) return;
+    setIsSyncing(true);
+    
+    const newMetadata = { ...enrichedMetadata };
+    let changed = false;
+
+    for (const book of library) {
+      // Skip if already enriched
+      if (newMetadata[book.filename]?.title && newMetadata[book.filename]?.author) continue;
+      
+      try {
+        const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
+        const query = encodeURIComponent(`${searchTitle} ${book.author || ''}`.trim());
+        const res = await fetch(`https://openlibrary.org/search.json?q=${query}&limit=1`);
+        const data = await res.json();
+        
+        if (data.docs?.[0]) {
+          const doc = data.docs[0];
+          const title = doc.title || book.title;
+          const author = doc.author_name?.[0] || book.author || '';
+          newMetadata[book.filename] = { title, author };
+          changed = true;
+        }
+      } catch (err) {
+        console.warn(`Open Library enrichment failed for ${book.title}:`, err);
+      }
+    }
+
+    if (changed) {
+      setEnrichedMetadata(newMetadata);
+      localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+      setLibrary(prev => prev.map(book => ({
+        ...book,
+        title: newMetadata[book.filename]?.title || book.title,
+        author: newMetadata[book.filename]?.author || book.author
+      })));
+    }
+    
+    setIsSyncing(false);
+    
+    // Trigger a cover rescan in the background so missing covers are fetched
+    setAutoCoverIndex(0);
+    setCoverScanKey(prev => prev + 1);
   };
 
   const generateCoverFallback = async (book: LibraryBook) => {
@@ -561,6 +647,14 @@ export default function App() {
     fetchLibrary();
   }, [fetchLibrary]);
 
+  // Refs to avoid stale closures in interval-based auto-cover effect
+  const coversRef = useRef(covers);
+  coversRef.current = covers;
+  const autoCoverIndexRef = useRef(autoCoverIndex);
+  autoCoverIndexRef.current = autoCoverIndex;
+  const fetchEnhancedCoverRef = useRef(fetchEnhancedCover);
+  fetchEnhancedCoverRef.current = fetchEnhancedCover;
+
   /**
    * Detects idle state and triggers automatic cover generation.
    */
@@ -576,20 +670,27 @@ export default function App() {
 
   /**
    * Sequentially loads/generates covers when idle.
+   * Uses refs to avoid re-running when covers state changes.
    */
   useEffect(() => {
-    const loadNextCover = async () => {
-      if (!isIdle || autoCoverIndex >= library.length) return;
+    if (!isIdle) return;
+    
+    const timer = setInterval(async () => {
+      const idx = autoCoverIndexRef.current;
+      if (idx >= library.length) {
+        clearInterval(timer);
+        return;
+      }
       
-      const book = library[autoCoverIndex];
+      const book = library[idx];
       
       // If we already have the cover in state, skip to next
-      if (covers[book.filename]) {
+      if (coversRef.current[book.filename]) {
         setAutoCoverIndex(prev => prev + 1);
         return;
       }
 
-      // Check IndexedDB first (extra safety)
+      // Check IndexedDB first (source of truth)
       const existing = await coverDB.getCover(book.filename);
       if (existing) {
         setCovers(prev => ({ ...prev, [book.filename]: existing }));
@@ -597,22 +698,19 @@ export default function App() {
         return;
       }
 
-      // If no cover, try to generate it (only if we have an API key)
-      if (import.meta.env.VITE_GEMINI_API_KEY) {
-        try {
-          console.log(`Auto-generating cover for: ${book.title}`);
-          await fetchEnhancedCover(book);
-        } catch (err) {
-          console.error(`Failed to auto-generate cover for ${book.title}:`, err);
-        }
+      // If no cover, try to generate it using free APIs
+      try {
+        console.log(`Auto-generating cover for: ${book.title}`);
+        await fetchEnhancedCoverRef.current(book);
+      } catch (err) {
+        console.error(`Failed to auto-generate cover for ${book.title}:`, err);
       }
       
       setAutoCoverIndex(prev => prev + 1);
-    };
+    }, 10000); // Process next cover every 10 seconds to avoid 429s
 
-    const timer = setTimeout(loadNextCover, 10000); // Process next cover every 10 seconds to avoid 429s
-    return () => clearTimeout(timer);
-  }, [isIdle, autoCoverIndex, library, covers]);
+    return () => clearInterval(timer);
+  }, [isIdle, library.length, coverScanKey]);
 
 
   // Deep linking logic moved to another effect
@@ -1088,106 +1186,116 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Floating Header */}
+      {/* Kindle-Style Floating Header */}
       <AnimatePresence>
-        {showUI && !isManualHide && (
+        {showUI && !isManualHide && fileUrl && (
           <motion.header 
-            initial={{ y: -100 }}
-            animate={{ y: 0 }}
-            exit={{ y: -100 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-stone-900/90 text-white px-3 py-1.5 rounded-full shadow-2xl backdrop-blur-sm border border-white/10"
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/80 text-stone-200 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-md border border-white/5"
           >
-            <div className="flex items-center gap-2 pr-2 border-r border-white/20">
-              <button 
-                onClick={closeBook}
-                className="hover:text-indigo-400 transition-colors p-1"
-                title="Volver a la Biblioteca"
-              >
-                <Library size={18} />
-              </button>
-              <span className="text-[10px] font-bold tracking-tighter bg-indigo-500 px-1 py-0.5 rounded ml-1 uppercase">Cat</span>
-              <span className="text-xs font-medium truncate max-w-[120px] ml-1">{fileName || 'Reader'}</span>
-            </div>
+            <button 
+              onClick={closeBook}
+              className="hover:text-white transition-colors p-1"
+              title="Volver a la Biblioteca"
+            >
+              <Library size={16} />
+            </button>
+            <span className="text-[10px] font-medium truncate max-w-[100px] text-stone-300">{fileName || 'Reader'}</span>
             
-            <div className="flex items-center gap-1">
-              <button onClick={() => setTheme('light')} className={cn("p-1.5 rounded-full", theme === 'light' && "bg-white/20")}><Sun size={14}/></button>
-              <button onClick={() => setTheme('sepia')} className={cn("p-1.5 rounded-full", theme === 'sepia' && "bg-white/20")}><Coffee size={14}/></button>
-              <button onClick={() => setTheme('dim')} className={cn("p-1.5 rounded-full", theme === 'dim' && "bg-white/20")}><Moon size={14} className="opacity-70"/></button>
-              <button onClick={() => setTheme('dark')} className={cn("p-1.5 rounded-full", theme === 'dark' && "bg-white/20")}><Moon size={14}/></button>
+            <div className="w-px h-3 bg-white/10 mx-0.5" />
+
+            {/* Compact Theme Dots */}
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setTheme('light')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'light' ? "bg-[#f8f9fa] ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title="Light" />
+              <button onClick={() => setTheme('sepia')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'sepia' ? "bg-[#e8dcc7] ring-1 ring-amber-400/40" : "bg-stone-700 hover:bg-stone-600")} title="Sepia" />
+              <button onClick={() => setTheme('dim')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'dim' ? "bg-[#334155] ring-1 ring-indigo-400/40" : "bg-stone-700 hover:bg-stone-600")} title="Dim" />
+              <button onClick={() => setTheme('dark')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'dark' ? "bg-[#121212] ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title="Dark" />
             </div>
 
-            <div className="w-px h-4 bg-white/20 mx-1" />
+            <div className="w-px h-3 bg-white/10 mx-0.5" />
 
-            <div className="flex items-center gap-1">
-              <button onClick={() => changeZoom(-0.1)} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomOut size={14}/></button>
-              <span className="text-[10px] font-mono w-8 text-center">{Math.round((typeof zoom === 'number' ? zoom : (zoom[getDeviceCategory()] || 1.0)) * 100)}%</span>
-              <button onClick={() => changeZoom(0.1)} className="p-1.5 hover:bg-white/10 rounded-full"><ZoomIn size={14}/></button>
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => changeZoom(-0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors"><ZoomOut size={12}/></button>
+              <span className="text-[9px] font-mono w-7 text-center text-stone-400">{Math.round((typeof zoom === 'number' ? zoom : (zoom[getDeviceCategory()] || 1.0)) * 100)}%</span>
+              <button onClick={() => changeZoom(0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors"><ZoomIn size={12}/></button>
             </div>
 
-            <div className="w-px h-4 bg-white/20 mx-1" />
+            <div className="w-px h-3 bg-white/10 mx-0.5" />
 
-            <div className="flex items-center gap-1">
-              <button onClick={closeBook} className="p-1.5 hover:bg-white/10 rounded-full" title="Cerrar Libro"><X size={14}/></button>
-              <button onClick={handleGoogleDrive} className="p-1.5 hover:bg-white/10 rounded-full" title="Google Drive"><Cloud size={14}/></button>
+            {/* More Menu */}
+            <div className="relative">
               <button 
-                onClick={() => {
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('book', fileName);
-                  url.searchParams.set('page', pageNumber.toString());
-                  navigator.clipboard.writeText(url.toString());
-                  alert('Enlace de página copiado');
-                }} 
-                className="p-1.5 hover:bg-white/10 rounded-full" 
-                title="Copiar enlace de página"
+                onClick={() => setShowMenu(!showMenu)}
+                className={cn("p-1 hover:bg-white/10 rounded-full transition-colors", showMenu && "bg-white/10")}
+                title="Más opciones"
               >
-                <div className="flex flex-col items-center gap-0">
-                  <div className="w-2.5 h-2.5 border border-current flex items-center justify-center">
-                    <div className="w-1 h-1 bg-current" />
-                  </div>
-                </div>
+                <MoreVertical size={14} />
               </button>
-              <label className="p-1.5 hover:bg-white/10 rounded-full cursor-pointer" title="Subir PDF">
-                <Upload size={14}/>
-                <input type="file" accept=".pdf" className="hidden" onChange={onFileChange} />
-              </label>
-
-              <button 
-                onClick={() => setIsManualHide(true)} 
-                className="p-1.5 hover:bg-white/10 rounded-full ml-1 border-l border-white/10 pl-2" 
-                title="Ocultar UI (H)"
-              >
-                <div className="w-3.5 h-3.5 border border-white/40 rounded-sm flex items-center justify-center">
-                  <div className="w-2 h-0.5 bg-white/40" />
-                </div>
-              </button>
+              <AnimatePresence>
+                {showMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                    transition={{ duration: 0.1 }}
+                    className="absolute top-full right-0 mt-2 bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl py-1 min-w-[160px] z-50"
+                  >
+                    <button onClick={() => { handleGoogleDrive(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2">
+                      <Cloud size={12} /> Google Drive
+                    </button>
+                    <label className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2 cursor-pointer">
+                      <Upload size={12} /> Subir PDF
+                      <input type="file" accept=".pdf,.txt" className="hidden" onChange={(e) => { onFileChange(e); setShowMenu(false); }} />
+                    </label>
+                    <button 
+                      onClick={() => {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('book', fileName);
+                        url.searchParams.set('page', pageNumber.toString());
+                        navigator.clipboard.writeText(url.toString());
+                        setShowMenu(false);
+                        alert('Enlace copiado');
+                      }} 
+                      className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                    >
+                      <span className="text-[10px]">🔗</span> Copiar enlace
+                    </button>
+                    <div className="border-t border-white/10 my-1" />
+                    <button onClick={() => { setShowDiagnostics(true); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-500 hover:bg-white/10 hover:text-stone-300 transition-colors">
+                      Diagnostics
+                    </button>
+                    <button onClick={() => { setIsManualHide(true); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-500 hover:bg-white/10 hover:text-stone-300 transition-colors">
+                      Ocultar UI (H)
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </motion.header>
         )}
       </AnimatePresence>
 
-      {/* Breadcrumbs Overlay */}
-      <div className="fixed bottom-2 left-4 z-40 flex items-center gap-2 text-[10px] font-mono select-none uppercase tracking-widest">
+      {/* Subtle Status Dot */}
+      <div className="fixed bottom-2 left-4 z-40 flex items-center gap-2 text-[10px] font-mono select-none uppercase tracking-widest opacity-30 hover:opacity-60 transition-opacity">
         <div className={cn(
-          "w-2 h-2 rounded-full",
-          isSyncing ? "bg-amber-500 animate-pulse" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
+          "w-1.5 h-1.5 rounded-full",
+          isSyncing ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
         )} />
-        <span className="opacity-40">{isSyncing ? 'Syncing...' : 'Cloud Sync Active'}</span>
-        {fileName && (
-          <>
-            <span className="text-stone-500 opacity-40">/</span>
-            <span className="truncate max-w-[120px] opacity-40">{fileName}</span>
-            <span className="text-stone-500 opacity-40">/</span>
-            <span className="opacity-40">P.{pageNumber}</span>
-            <span className="text-stone-500 opacity-40">/</span>
-            <div className="grid grid-cols-2 gap-0.5 w-3 h-3 border border-current opacity-30">
-              <div className={cn("w-full h-full", quadrant === 1 ? "bg-current" : "bg-transparent")} />
-              <div className={cn("w-full h-full", quadrant === 2 ? "bg-current" : "bg-transparent")} />
-              <div className={cn("w-full h-full", quadrant === 3 ? "bg-current" : "bg-transparent")} />
-              <div className={cn("w-full h-full", quadrant === 4 ? "bg-current" : "bg-transparent")} />
-            </div>
-          </>
-        )}
+        <span>{isSyncing ? 'Syncing' : 'Synced'}</span>
       </div>
+
+      {/* Kindle-Style Progress Bar */}
+      {fileUrl && (
+        <div className="fixed bottom-0 left-0 right-0 h-[2px] bg-white/5 z-40">
+          <div 
+            className="h-full bg-indigo-500/40 transition-all duration-500 ease-out"
+            style={{ width: `${Math.max(0.5, (pageNumber / (numPages || 1)) * 100)}%` }}
+          />
+        </div>
+      )}
 
       {/* Main Viewer */}
       <main 
@@ -1209,6 +1317,12 @@ export default function App() {
             wallpaper={wallpaper}
             onToggleSimplified={() => setIsSimplified(!isSimplified)}
             onSetWallpaper={setWallpaper}
+            shelves={shelves}
+            onUpdateShelfTitle={updateShelfTitle}
+            onMoveBook={moveBook}
+            onReorderBook={reorderBook}
+            onMagicEnrich={enrichWithOpenLibrary}
+            isSyncing={isSyncing}
           />
         ) : (
           <ReaderView 
@@ -1270,26 +1384,13 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Page Indicator - No Motion */}
+      {/* Minimal Page Indicator */}
       {showUI && !isManualHide && fileUrl && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-stone-900/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10">
-          <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-20"><ChevronLeft size={20}/></button>
-          <div className="flex flex-col items-center">
-            <span className="text-xs font-mono">{pageNumber} / {numPages}</span>
-            <input 
-              type="range" 
-              min={1} 
-              max={numPages || 1} 
-              value={pageNumber} 
-              onChange={(e) => {
-                const newPage = Number(e.target.value);
-                scrollToPage(newPage);
-              }}
-              className="w-32 h-1 bg-white/20 rounded-full mt-1 appearance-none cursor-pointer accent-indigo-500"
-            />
-          </div>
-          <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-20"><ChevronRight size={20}/></button>
-          {isSyncing && <Loader2 size={12} className="animate-spin absolute -right-6 text-indigo-400" />}
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/70 text-stone-300 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border border-white/5">
+          <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronLeft size={16}/></button>
+          <span className="text-[10px] font-mono tabular-nums min-w-[48px] text-center">{pageNumber} / {numPages}</span>
+          <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronRight size={16}/></button>
+          {isSyncing && <Loader2 size={10} className="animate-spin absolute -right-5 text-indigo-400" />}
         </div>
       )}
 

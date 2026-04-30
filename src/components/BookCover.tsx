@@ -1,4 +1,5 @@
 import React from 'react';
+import { Pencil, Share2 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -49,7 +50,6 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
           </div>
         )}
         
-        {/* Book spine effect */}
         {!isSimplified && (
           <>
             <div className="absolute left-0 top-0 bottom-0 w-1 bg-black/10"></div>
@@ -58,10 +58,8 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
         )}
       </div>
       
-      {/* Edit Actions */}
       <div className={cn(
-        "absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-1 transition-opacity z-10",
-        isSimplified ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        "absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-1 z-10",
         "bg-stone-900/90 p-1.5 rounded-lg shadow-xl border border-white/10"
       )}>
         <button 
@@ -72,8 +70,7 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
           className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
           title="Editar metadatos"
         >
-          {/* Using a simple icon representation if Lucide is not passed, but we'll import it in parent */}
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          <Pencil size={12} />
         </button>
         <button 
           onClick={(e) => {
@@ -86,7 +83,7 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
           className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
           title="Compartir"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(180deg)' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <Share2 size={12} />
         </button>
       </div>
     </div>

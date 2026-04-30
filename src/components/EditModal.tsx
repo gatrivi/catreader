@@ -1,5 +1,4 @@
-import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect } from 'react';
 import { X, Upload, RefreshCw } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -31,6 +30,17 @@ export const EditModal: React.FC<EditModalProps> = ({
   onRegenerateCover,
   isSyncing 
 }) => {
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const previewUrlRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    setCoverPreview(null);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+  }, [book?.filename]);
+
   if (!book) return null;
 
   return (
@@ -69,16 +79,27 @@ export const EditModal: React.FC<EditModalProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <label className="flex flex-col items-center justify-center gap-2 p-4 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl cursor-pointer transition-all group">
-              <Upload size={20} className="text-stone-400 group-hover:text-indigo-400" />
-              <span className="text-[10px] font-bold uppercase tracking-tighter text-stone-500">Subir Portada</span>
+            <label className="flex flex-col items-center justify-center gap-2 p-4 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl cursor-pointer transition-all group relative overflow-hidden">
+              {coverPreview ? (
+                <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+              ) : (
+                <Upload size={20} className="text-stone-400 group-hover:text-indigo-400" />
+              )}
+              <span className={cn("text-[10px] font-bold uppercase tracking-tighter z-10", coverPreview ? "text-white drop-shadow-md" : "text-stone-500")}>Subir Portada</span>
               <input 
                 type="file" 
                 accept="image/*" 
                 className="hidden" 
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) onUploadCover(file);
+                  if (file) {
+                    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+                    const url = URL.createObjectURL(file);
+                    previewUrlRef.current = url;
+                    setCoverPreview(url);
+                    onUploadCover(file);
+                  }
+                  e.target.value = '';
                 }}
               />
             </label>
