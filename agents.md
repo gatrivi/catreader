@@ -21,7 +21,7 @@ Maintain a sleek, distraction-free PDF/Text reader that synchronizes progress ac
 [] when a new feat is pushed it should not destroy reading progress, that is, if i was on page 20, and there is a new push, if it sends me bacak to page one, something messed up
 [] there should be a set of tests for core app functionalities, there should not be pushes if they break the app. lol.
 [] zoom should also be preserved beteween session. there should be perhaps one zoom per device type.
-[] when scrolling the page number should change
+[x] when scrolling the page number should change
 
 ### TASK ARCHIVE
 Completed tasks are moved to [completed_tasks.md](file:///c:/zengatrivi/REACTJS/catreader/completed_tasks.md).
@@ -46,14 +46,16 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ---
 
-## SESSION CONTEXT (2026-04-28)
+## SESSION CONTEXT (2026-05-01)
 
 ### What Was Done
-- **Shelf system:** `src/hooks/useShelves.ts` manages 8 shelves with localStorage persistence (`catreader_shelves_v2`)
-- **Drag & drop:** HTML5 DnD between shelves in `LibraryView.tsx`
-- **Editable shelf titles:** click to rename, Enter/Blur to save
-- **Kindle-ified reader UI:** slimmer header, compact theme dots, MoreVertical dropdown menu, 2px bottom progress bar, minimal page indicator
-- **Version:** `v1.3.5`
+- **Reliable page tracking:** scroll-based center calculation + IntersectionObserver with intersection-ratio picking. Page number now trustworthy during continuous scroll.
+- **Render trust cues:** per-page loading spinner, 15s timeout → error state, subtle page-number watermark on every wrapper so blank pages are identifiable.
+- **Document error handling:** `onLoadError` shows clear "Failed to load PDF" message instead of silent failure.
+- **Cleanup:** removed dead `quadrant` state and scroll logic.
+- **Library furniture layout:** shelves grouped into horizontal bookcases (2 shelves per case). Swipe/scroll sideways between cases. No more infinite vertical wall.
+- **Edit discoverability:** book cover action buttons (edit/share) now live inside the cover top-right, always visible on touch, hover-reveal on desktop.
+- **Version:** `v1.3.7`
 
 ### Architecture Notes
 - App.tsx is **1,300+ lines** — the monolith is the biggest tech debt. Extract hooks/logic before adding major features.
@@ -63,7 +65,6 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ### Known Issues / Next UX Tasks
 - No click-outside handler for the More menu (minor)
-- `quadrant` state is now dead UI code (was in old breadcrumbs) — safe to remove when refactoring
 - Drag-and-drop has no visual "ghost" preview — books just go transparent (`opacity-40`)
 - No shelf nesting yet — user asked to "see if we can nest them" later
 - Tests exist (`BookCover.test.tsx`, `syncService.test.ts`) but are not comprehensive

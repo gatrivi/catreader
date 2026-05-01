@@ -91,7 +91,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(true);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
-  const [quadrant, setQuadrant] = useState(1);
+  const [renderErrors, setRenderErrors] = useState<Set<number>>(new Set());
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [direction, setDirection] = useState(0);
   const [isIdle, setIsIdle] = useState(false);
@@ -108,7 +108,7 @@ export default function App() {
   const [extractingRatios, setExtractingRatios] = useState(false);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const APP_VERSION = 'v1.3.5';
+  const APP_VERSION = 'v1.3.7';
 
   const { shelves, updateShelfTitle, moveBook, reorderBook } = useShelves(library);
   
@@ -1034,60 +1034,83 @@ export default function App() {
     resetUITimer();
   };
 
-  // Quadrant logic and scroll position tracking
+  // Page tracking: IntersectionObserver + scroll-based center calculation
   useEffect(() => {
-    const handleScroll = () => {
-      if (!containerRef.current) return;
-      const { scrollLeft, scrollTop, scrollWidth, scrollHeight, clientWidth, clientHeight } = containerRef.current;
-      const maxScrollX = scrollWidth - clientWidth;
-      const maxScrollY = scrollHeight - clientHeight;
-      if (maxScrollX <= 0 && maxScrollY <= 0) { setQuadrant(1); return; }
-      const midX = maxScrollX / 2;
-      const midY = maxScrollY / 2;
-      if (scrollLeft <= midX && scrollTop <= midY) setQuadrant(1);
-      else if (scrollLeft > midX && scrollTop <= midY) setQuadrant(2);
-      else if (scrollLeft <= midX && scrollTop > midY) setQuadrant(3);
-      else setQuadrant(4);
+    const container = containerRef.current;
+    if (!container || !fileUrl) return;
+
+    let scrollTimeout: ReturnType<typeof setTimeout>;
+
+    // Scroll-based fallback: find page whose center is closest to viewport center
+    const handleScrollForPage = () => {
+      if (isRestoring) return;
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        const wrappers = container.querySelectorAll('.page-wrapper');
+        if (wrappers.length === 0) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const centerY = containerRect.top + containerRect.height / 2;
+
+        let bestPage = pageNumber;
+        let bestDist = Infinity;
+
+        wrappers.forEach((w) => {
+          const rect = w.getBoundingClientRect();
+          const wCenter = rect.top + rect.height / 2;
+          const dist = Math.abs(wCenter - centerY);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestPage = parseInt(w.getAttribute('data-page') || '1');
+          }
+        });
+
+        setPageNumber(bestPage);
+      }, 120);
     };
 
-    const container = containerRef.current;
-    if (container) {
-      container.addEventListener('scroll', handleScroll);
-      
-      // Global Page Tracker Observer
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach(entry => {
-            if (entry.isIntersecting && !isRestoring) {
-              const p = parseInt(entry.target.getAttribute('data-page') || '1');
-              setPageNumber(p);
-            }
-          });
-        },
-        { 
-          threshold: [0, 0.1, 0.5], 
-          root: container,
-          rootMargin: '20% 0% 20% 0%' // Much more generous margin to detect upcoming pages
+    container.addEventListener('scroll', handleScrollForPage, { passive: true });
+
+    // IntersectionObserver for quick updates while scrolling
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isRestoring) return;
+        let bestPage = pageNumber;
+        let bestRatio = -1;
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            bestPage = parseInt(
+              entry.target.getAttribute('data-page') || '1'
+            );
+          }
+        });
+        if (bestRatio >= 0) {
+          setPageNumber(bestPage);
         }
-      );
+      },
+      {
+        threshold: Array.from({ length: 21 }, (_, i) => i * 0.05),
+        root: container,
+      }
+    );
 
-      const updateObserver = () => {
-        const pages = container.querySelectorAll('.page-wrapper');
-        pages.forEach(p => observer.observe(p));
-      };
+    const updateObserver = () => {
+      const pages = container.querySelectorAll('.page-wrapper');
+      pages.forEach((p) => observer.observe(p));
+    };
 
-      // Observe existing and new pages
-      const mutationObserver = new MutationObserver(updateObserver);
-      mutationObserver.observe(container, { childList: true, subtree: true });
-      updateObserver();
+    const mutationObserver = new MutationObserver(updateObserver);
+    mutationObserver.observe(container, { childList: true, subtree: true });
+    updateObserver();
 
-      return () => {
-        container.removeEventListener('scroll', handleScroll);
-        observer.disconnect();
-        mutationObserver.disconnect();
-      };
-    }
-  }, [isLoaded, fileName]);
+    return () => {
+      container.removeEventListener('scroll', handleScrollForPage);
+      clearTimeout(scrollTimeout);
+      observer.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [isLoaded, fileName, fileUrl, isRestoring]);
 
   const themeStyles = {
     light: 'bg-[#f8f9fa] text-stone-900',
@@ -1160,6 +1183,7 @@ export default function App() {
                     <div className="flex justify-between border-b border-white/5 py-1"><span>Scroll Ratio</span><span className="text-white">{((scrollRatio || 0) * 100).toFixed(2)}%</span></div>
                     <div className="flex justify-between border-b border-white/5 py-1"><span>Restoring Lock</span><span className={cn(isRestoring ? "text-amber-500" : "text-stone-500")}>{isRestoring ? "LOCKED" : "READY"}</span></div>
                     <div className="flex justify-between border-b border-white/5 py-1"><span>Layout Map</span><span className="text-white">{(pageRatios || []).length > 0 ? `${pageRatios.length} pages mapped` : (extractingRatios ? "Mapping..." : "Queued")}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Render Errors</span><span className={cn(renderErrors.size > 0 ? "text-red-400" : "text-stone-500")}>{renderErrors.size > 0 ? `${renderErrors.size} pages` : 'None'}</span></div>
                   </div>
                 </div>
 
@@ -1376,6 +1400,10 @@ export default function App() {
                 if (isRestoring) setTimeout(jump, 100);
                 else if (scrollRatio > 0) jump();
               }
+            }}
+            onPageRenderError={(_p, err) => {
+              console.error('Page render error:', err);
+              setRenderErrors((prev) => new Set(prev).add(_p));
             }}
             themeStyles={themeStyles}
             pdfFilter={pdfFilter}

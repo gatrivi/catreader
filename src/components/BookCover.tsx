@@ -27,8 +27,10 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
       <div 
         onClick={onClick}
         className={cn(
-          "relative w-44 h-64 bg-[#f4ecd8] rounded-r-md border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all",
-          isSimplified ? "shadow-none border-stone-700 bg-stone-800" : "shadow-[10px_10px_25px_rgba(0,0,0,0.7)] hover:-translate-y-6 duration-500 hover:shadow-[15px_15px_35px_rgba(0,0,0,0.8)]"
+          "relative w-36 h-52 sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-md border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all",
+          isSimplified 
+            ? "shadow-none border-stone-700 bg-stone-800" 
+            : "shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-2 duration-300 hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]"
         )}
       >
         {cover ? (
@@ -52,39 +54,42 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
         
         {!isSimplified && (
           <>
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-black/10"></div>
-            <div className="absolute left-1 top-0 bottom-0 w-px bg-white/30"></div>
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-black/10" />
+            <div className="absolute left-1 top-0 bottom-0 w-px bg-white/30" />
           </>
         )}
-      </div>
-      
-      <div className={cn(
-        "absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-1 z-10",
-        "bg-stone-900/90 p-1.5 rounded-lg shadow-xl border border-white/10"
-      )}>
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
-          title="Editar metadatos"
-        >
-          <Pencil size={12} />
-        </button>
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            const url = new URL(window.location.href);
-            url.searchParams.set('book', book.filename);
-            navigator.clipboard.writeText(url.toString());
-            alert('Enlace copiado al portapapeles');
-          }}
-          className="p-1.5 hover:bg-white/20 rounded text-stone-300 hover:text-white transition-colors"
-          title="Compartir"
-        >
-          <Share2 size={12} />
-        </button>
+
+        {/* Action buttons - always visible but subtle */}
+        <div className={cn(
+          "absolute top-1.5 right-1.5 flex items-center gap-1 z-20",
+          "transition-opacity",
+          // On touch devices always show; on desktop show on hover
+          "opacity-70 md:opacity-0 md:group-hover:opacity-100"
+        )}>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="p-1 rounded-full bg-black/40 text-white/80 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
+            title="Editar metadatos y portada"
+          >
+            <Pencil size={10} />
+          </button>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              const url = new URL(window.location.href);
+              url.searchParams.set('book', book.filename);
+              navigator.clipboard.writeText(url.toString());
+              alert('Enlace copiado al portapapeles');
+            }}
+            className="p-1 rounded-full bg-black/40 text-white/80 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
+            title="Compartir"
+          >
+            <Share2 size={10} />
+          </button>
+        </div>
       </div>
     </div>
   );
