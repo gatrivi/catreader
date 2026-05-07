@@ -46,25 +46,25 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ---
 
-## SESSION CONTEXT (2026-05-01)
+## SESSION CONTEXT (2026-05-07)
 
 ### What Was Done
-- **Reliable page tracking:** scroll-based center calculation + IntersectionObserver with intersection-ratio picking. Page number now trustworthy during continuous scroll.
-- **Render trust cues:** per-page loading spinner, 15s timeout → error state, subtle page-number watermark on every wrapper so blank pages are identifiable.
-- **Document error handling:** `onLoadError` shows clear "Failed to load PDF" message instead of silent failure.
-- **Cleanup:** removed dead `quadrant` state and scroll logic.
-- **Library furniture layout:** shelves grouped into horizontal bookcases (2 shelves per case). Swipe/scroll sideways between cases. No more infinite vertical wall.
-- **Edit discoverability:** book cover action buttons (edit/share) now live inside the cover top-right, always visible on touch, hover-reveal on desktop.
-- **Version:** `v1.3.7`
+- **More Menu UX:** click-outside + Escape to close. Raised z-index above version stamp.
+- **Replaced all `alert()` with inline toasts:** non-blocking feedback for copy-link, errors, diagnostics.
+- **Fixed progress save debounce:** now triggers on scroll inactivity + 60s max interval. Rapid scrolling no longer prevents saves.
+- **Modal Escape handling:** Diagnostics, EditModal, and More Menu all close with Escape key.
+- **Fixed `isRestoring` lock:** 10s safety unlock in `loadProgress` prevents stuck page tracking if PDF fails to render.
+- **Accessibility:** added `aria-label` to icon-only buttons (theme dots, close book, wallpaper selectors, Magic, Import, Añadir, cover actions).
+- **EditModal controlled inputs:** replaced `document.getElementById` with React state.
+- **Version:** `v1.3.8`
 
 ### Architecture Notes
-- App.tsx is **1,300+ lines** — the monolith is the biggest tech debt. Extract hooks/logic before adding major features.
+- App.tsx is **1,500+ lines** — still the biggest tech debt. Extract hooks/logic before adding major features.
 - Books are auto-assigned to shelves round-robin on first load. Unassigned books get distributed to the emptiest shelf.
 - Shelf data model: `{ id, title, bookIds: string[] }`. Book IDs are filenames from `books.json`.
 - `useShelves` depends on `library` being loaded first — it only runs distribution after `initialized === true`.
 
 ### Known Issues / Next UX Tasks
-- No click-outside handler for the More menu (minor)
 - Drag-and-drop has no visual "ghost" preview — books just go transparent (`opacity-40`)
 - No shelf nesting yet — user asked to "see if we can nest them" later
 - Tests exist (`BookCover.test.tsx`, `syncService.test.ts`) but are not comprehensive

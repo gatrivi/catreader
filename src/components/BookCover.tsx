@@ -18,10 +18,11 @@ interface BookCoverProps {
   cover?: string;
   onClick: () => void;
   onEdit: () => void;
+  onShare?: () => void;
   isSimplified?: boolean;
 }
 
-export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEdit, isSimplified }) => {
+export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEdit, onShare, isSimplified }) => {
   return (
     <div className="group relative flex flex-col items-center">
       <div 
@@ -73,19 +74,18 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
             }}
             className="p-1 rounded-full bg-black/40 text-white/80 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
             title="Editar metadatos y portada"
+            aria-label="Editar metadatos y portada"
           >
             <Pencil size={10} />
           </button>
           <button 
             onClick={(e) => {
               e.stopPropagation();
-              const url = new URL(window.location.href);
-              url.searchParams.set('book', book.filename);
-              navigator.clipboard.writeText(url.toString());
-              alert('Enlace copiado al portapapeles');
+              if (onShare) onShare();
             }}
             className="p-1 rounded-full bg-black/40 text-white/80 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
             title="Compartir"
+            aria-label="Compartir"
           >
             <Share2 size={10} />
           </button>

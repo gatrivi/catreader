@@ -35,6 +35,7 @@ interface LibraryViewProps {
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
   isSyncing?: boolean;
+  onShareBook?: (book: LibraryBook) => void;
 }
 
 const SHELVES_PER_CASE = 2;
@@ -63,7 +64,8 @@ export const LibraryView = ({
   onUpdateShelfTitle,
   onMoveBook,
   onMagicEnrich,
-  isSyncing
+  isSyncing,
+  onShareBook
 }: LibraryViewProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeCase, setActiveCase] = useState(0);
@@ -205,22 +207,26 @@ export const LibraryView = ({
                 onClick={() => onSetWallpaper('wood')}
                 className={cn("w-5 h-5 rounded-lg bg-[#5c3a21] border border-white/10 transition-transform active:scale-95", wallpaper === 'wood' && "ring-2 ring-amber-600 shadow-lg shadow-amber-900/40")}
                 title="Madera"
+                aria-label="Madera wallpaper"
               />
               <button 
                 onClick={() => onSetWallpaper('dim')}
                 className={cn("w-5 h-5 rounded-lg bg-stone-800 border border-white/10 transition-transform active:scale-95", wallpaper === 'dim' && "ring-2 ring-amber-600")}
                 title="Dim"
+                aria-label="Dim wallpaper"
               />
               <button 
                 onClick={() => onSetWallpaper('slate')}
                 className={cn("w-5 h-5 rounded-lg bg-slate-900 border border-white/10 transition-transform active:scale-95", wallpaper === 'slate' && "ring-2 ring-amber-600")}
                 title="Slate"
+                aria-label="Slate wallpaper"
               />
               <label 
                 className={cn("w-5 h-5 rounded-lg border border-white/10 transition-transform active:scale-95 flex items-center justify-center cursor-pointer overflow-hidden",
                   wallpaper === 'custom' && "ring-2 ring-amber-600"
                 )}
                 title="Custom"
+                aria-label="Custom wallpaper"
                 style={customWallpaper ? { backgroundImage: `url(${customWallpaper})`, backgroundSize: 'cover' } : { background: '#444' }}
               >
                 <ImagePlus size={10} className="text-white/70" />
@@ -229,6 +235,7 @@ export const LibraryView = ({
               <button 
                 onClick={onToggleSimplified}
                 className={cn("px-2 text-[10px] font-black uppercase text-stone-500 hover:text-white transition-colors", isSimplified && "text-amber-500")}
+                aria-label="Toggle simplified view"
               >
                 {isSimplified ? 'Simple: ON' : 'Simple: OFF'}
               </button>
@@ -240,6 +247,7 @@ export const LibraryView = ({
                 disabled={isSyncing}
                 className="flex items-center gap-1.5 bg-indigo-900/60 text-indigo-200 hover:text-white hover:bg-indigo-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
                 title="Free AI magic: enrich titles/authors/covers using Open Library"
+                aria-label="Magic enrich"
               >
                 <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />
                 {isSyncing ? 'Working...' : 'Magic'}
@@ -249,11 +257,12 @@ export const LibraryView = ({
             <button 
               onClick={onGoogleDrive}
               className="flex items-center gap-1.5 bg-stone-900 text-stone-400 hover:text-white hover:bg-stone-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5"
+              aria-label="Importar desde Google Drive"
             >
               <Cloud size={12} />
               Importar
             </button>
-            <label className="flex items-center gap-1.5 bg-amber-700 text-white hover:bg-amber-600 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer shadow-lg shadow-amber-950/50">
+            <label className="flex items-center gap-1.5 bg-amber-700 text-white hover:bg-amber-600 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer shadow-lg shadow-amber-950/50" aria-label="Añadir libro">
               <Upload size={12} />
               Añadir
               <input type="file" accept=".pdf,.txt" className="hidden" onChange={onFileUpload} />
@@ -346,6 +355,7 @@ export const LibraryView = ({
                                     cover={covers[book.filename]}
                                     onClick={() => onOpenBook(book)}
                                     onEdit={() => onEditBook(book)}
+                                    onShare={() => onShareBook?.(book)}
                                     isSimplified={isSimplified}
                                   />
                                 </div>

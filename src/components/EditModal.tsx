@@ -31,7 +31,16 @@ export const EditModal: React.FC<EditModalProps> = ({
   isSyncing 
 }) => {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const [author, setAuthor] = useState('');
   const previewUrlRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    if (book) {
+      setTitle(book.title);
+      setAuthor(book.author || '');
+    }
+  }, [book]);
 
   useEffect(() => {
     setCoverPreview(null);
@@ -62,8 +71,8 @@ export const EditModal: React.FC<EditModalProps> = ({
             <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Título</label>
             <input 
               type="text" 
-              defaultValue={book.title}
-              id="edit-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               className="w-full bg-stone-800 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors"
             />
           </div>
@@ -72,8 +81,8 @@ export const EditModal: React.FC<EditModalProps> = ({
             <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Autor</label>
             <input 
               type="text" 
-              defaultValue={book.author || ''}
-              id="edit-author"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
               className="w-full bg-stone-800 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors"
             />
           </div>
@@ -105,11 +114,7 @@ export const EditModal: React.FC<EditModalProps> = ({
             </label>
             
             <button 
-              onClick={() => {
-                const title = (document.getElementById('edit-title') as HTMLInputElement).value;
-                const author = (document.getElementById('edit-author') as HTMLInputElement).value;
-                onRegenerateCover(title, author);
-              }}
+              onClick={() => onRegenerateCover(title, author)}
               className="flex flex-col items-center justify-center gap-2 p-4 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl transition-all group"
             >
               <RefreshCw size={20} className={cn("text-stone-400 group-hover:text-amber-400", isSyncing && "animate-spin")} />
@@ -118,11 +123,7 @@ export const EditModal: React.FC<EditModalProps> = ({
           </div>
 
           <button 
-            onClick={() => {
-              const title = (document.getElementById('edit-title') as HTMLInputElement).value;
-              const author = (document.getElementById('edit-author') as HTMLInputElement).value;
-              onSave(title, author);
-            }}
+            onClick={() => onSave(title.trim(), author.trim())}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-500/20 transition-all mt-4"
           >
             Guardar Cambios

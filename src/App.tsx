@@ -108,17 +108,20 @@ export default function App() {
   const [extractingRatios, setExtractingRatios] = useState(false);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const APP_VERSION = 'v1.3.7';
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const APP_VERSION = 'v1.3.8';
 
   const { shelves, updateShelfTitle, moveBook, reorderBook } = useShelves(library);
   
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
-  const uiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const uiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gapiLoaded = useRef(false);
   const gisLoaded = useRef(false);
   const lastScrollTime = useRef(0);
   const wheelAccumulator = useRef(0);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // --- Effects ---
   
@@ -160,7 +163,7 @@ export default function App() {
     const clientId = GOOGLE_CLIENT_ID || (window as any)._GOOGLE_CLIENT_ID;
 
     if (typeof google === 'undefined' || !google.accounts) {
-      alert('Las librerías de Google aún se están cargando. Por favor, espera un momento.');
+      showToast('Las librerías de Google aún se están cargando. Por favor, espera un momento.');
       return;
     }
 
@@ -240,7 +243,7 @@ export default function App() {
               else setIsLoaded(false);
             } catch (err) {
               console.error('Error fetching Google Drive file:', err);
-              alert('Error al descargar el archivo de Google Drive.');
+              showToast('Error al descargar el archivo de Google Drive.');
             } finally {
               setIsSyncing(false);
             }
@@ -303,10 +306,30 @@ export default function App() {
     }, 4000);
   }, [fileUrl]);
 
+  const showToast = useCallback((message: string) => {
+    setToast({ message, visible: true });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToast(prev => ({ ...prev, visible: false }));
+    }, 2500);
+  }, []);
+
   useEffect(() => {
     resetUITimer();
     return () => { if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); };
   }, [resetUITimer]);
+
+  // Close More Menu on click outside
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
 
   /**
    * Identifies the device category based on screen width.
@@ -328,12 +351,15 @@ export default function App() {
         setIsManualHide(prev => !prev);
       }
       if (e.key === 'Escape') {
+        if (showDiagnostics) { setShowDiagnostics(false); return; }
+        if (editingBook) { setEditingBook(null); return; }
+        if (showMenu) { setShowMenu(false); return; }
         if (fileUrl) closeBook();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fileUrl]);
+  }, [fileUrl, showDiagnostics, editingBook, showMenu]);
 
   /**
    * Fetches the list of available books from the statically generated books.json.
@@ -440,6 +466,8 @@ export default function App() {
       console.error('Magic Fix Error:', err);
     } finally {
       setIsSyncing(false);
+      // Safety unlock: if restore hangs (e.g., PDF fails to render), unlock after 10s
+      setTimeout(() => setIsRestoring(false), 10000);
     }
   };
 
@@ -828,13 +856,37 @@ export default function App() {
     setIsSyncing(false);
   }, [fileName, isLoaded, isRestoring, zoom, theme, pageNumber, getDeviceCategory]);
 
-  // Debounced save for Cloud Sync
+  // Debounced save for Cloud Sync: uses scroll activity + max interval, not pageNumber changes
+  const saveProgressRef = useRef(saveProgress);
+  saveProgressRef.current = saveProgress;
+
   useEffect(() => {
-    if (isLoaded && fileName) {
-      const timer = setTimeout(saveProgress, 15000); // Save every 15 seconds of inactivity
-      return () => clearTimeout(timer);
-    }
-  }, [saveProgress, isLoaded, fileName, pageNumber]); // Adding pageNumber to trigger reset
+    if (!isLoaded || !fileName || !containerRef.current) return;
+    let inactivityTimer: ReturnType<typeof setTimeout>;
+    let maxIntervalTimer: ReturnType<typeof setTimeout>;
+
+    const scheduleSave = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        saveProgressRef.current();
+      }, 15000);
+    };
+
+    const handleScrollActivity = () => scheduleSave();
+    const container = containerRef.current;
+    container.addEventListener('scroll', handleScrollActivity, { passive: true });
+
+    scheduleSave();
+    maxIntervalTimer = setInterval(() => {
+      saveProgressRef.current();
+    }, 60000);
+
+    return () => {
+      container.removeEventListener('scroll', handleScrollActivity);
+      clearTimeout(inactivityTimer);
+      clearInterval(maxIntervalTimer);
+    };
+  }, [isLoaded, fileName]);
 
   /**
    * Immediate local storage save removed in favor of unified saveProgress logic.
@@ -944,7 +996,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error opening book:', err);
-      alert('Error al abrir el libro.');
+      showToast('Error al abrir el libro.');
     }
     
     if (book.type === 'txt') setIsLoaded(true);
@@ -1135,7 +1187,8 @@ export default function App() {
       {/* Version Stamp & Diagnostics Toggle */}
       <button 
         onClick={() => setShowDiagnostics(true)}
-        className="fixed top-2 right-4 z-[60] text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help"
+        className="fixed top-2 right-4 z-40 text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help"
+        aria-label="Open diagnostics"
       >
         {APP_VERSION}
       </button>
@@ -1192,7 +1245,7 @@ export default function App() {
                    <div className="flex flex-wrap gap-4">
                      <button 
                        onClick={() => {
-                         alert(`Integrity Report:\n- Pages Mapped: ${(pageRatios || []).length === numPages ? 'PASS' : 'FAIL'}\n- Scroll Stability: PASS\n- Sync Connection: ${isSyncing ? 'ACTIVE' : 'IDLE'}\n- Device: ${getDeviceCategory()}`);
+                         showToast(`Integrity: ${(pageRatios || []).length === numPages ? 'PASS' : 'FAIL'} | Sync: ${isSyncing ? 'ACTIVE' : 'IDLE'} | ${getDeviceCategory()}`);
                        }}
                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2 rounded-lg transition-all"
                      >
@@ -1224,6 +1277,7 @@ export default function App() {
               onClick={closeBook}
               className="hover:text-white transition-colors p-1"
               title="Volver a la Biblioteca"
+              aria-label="Volver a la Biblioteca"
             >
               <Library size={16} />
             </button>
@@ -1233,10 +1287,10 @@ export default function App() {
 
             {/* Compact Theme Dots */}
             <div className="flex items-center gap-0.5">
-              <button onClick={() => setTheme('light')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'light' ? "bg-[#f8f9fa] ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title="Light" />
-              <button onClick={() => setTheme('sepia')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'sepia' ? "bg-[#e8dcc7] ring-1 ring-amber-400/40" : "bg-stone-700 hover:bg-stone-600")} title="Sepia" />
-              <button onClick={() => setTheme('dim')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'dim' ? "bg-[#334155] ring-1 ring-indigo-400/40" : "bg-stone-700 hover:bg-stone-600")} title="Dim" />
-              <button onClick={() => setTheme('dark')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'dark' ? "bg-[#121212] ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title="Dark" />
+              <button onClick={() => setTheme('light')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'light' ? "bg-[#f8f9fa] ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title="Light" aria-label="Light theme" />
+              <button onClick={() => setTheme('sepia')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'sepia' ? "bg-[#e8dcc7] ring-1 ring-amber-400/40" : "bg-stone-700 hover:bg-stone-600")} title="Sepia" aria-label="Sepia theme" />
+              <button onClick={() => setTheme('dim')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'dim' ? "bg-[#334155] ring-1 ring-indigo-400/40" : "bg-stone-700 hover:bg-stone-600")} title="Dim" aria-label="Dim theme" />
+              <button onClick={() => setTheme('dark')} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === 'dark' ? "bg-[#121212] ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title="Dark" aria-label="Dark theme" />
             </div>
 
             <div className="w-px h-3 bg-white/10 mx-0.5" />
@@ -1250,11 +1304,13 @@ export default function App() {
             <div className="w-px h-3 bg-white/10 mx-0.5" />
 
             {/* More Menu */}
-            <div className="relative">
+            <div className="relative" ref={menuRef}>
               <button 
                 onClick={() => setShowMenu(!showMenu)}
                 className={cn("p-1 hover:bg-white/10 rounded-full transition-colors", showMenu && "bg-white/10")}
                 title="Más opciones"
+                aria-label="Más opciones"
+                aria-expanded={showMenu}
               >
                 <MoreVertical size={14} />
               </button>
@@ -1265,7 +1321,7 @@ export default function App() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -4, scale: 0.95 }}
                     transition={{ duration: 0.1 }}
-                    className="absolute top-full right-0 mt-2 bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl py-1 min-w-[160px] z-50"
+                    className="absolute top-full right-0 mt-2 bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl py-1 min-w-[160px] z-[70]"
                   >
                     <button onClick={() => { handleGoogleDrive(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2">
                       <Cloud size={12} /> Google Drive
@@ -1281,7 +1337,7 @@ export default function App() {
                         url.searchParams.set('page', pageNumber.toString());
                         navigator.clipboard.writeText(url.toString());
                         setShowMenu(false);
-                        alert('Enlace copiado');
+                        showToast('Enlace copiado');
                       }} 
                       className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
                     >
@@ -1347,6 +1403,12 @@ export default function App() {
             onReorderBook={reorderBook}
             onMagicEnrich={enrichWithOpenLibrary}
             isSyncing={isSyncing}
+            onShareBook={(book) => {
+              const url = new URL(window.location.href);
+              url.searchParams.set('book', book.filename);
+              navigator.clipboard.writeText(url.toString());
+              showToast('Enlace copiado al portapapeles');
+            }}
           />
         ) : (
           <ReaderView 
@@ -1421,6 +1483,20 @@ export default function App() {
           {isSyncing && <Loader2 size={10} className="animate-spin absolute -right-5 text-indigo-400" />}
         </div>
       )}
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast.visible && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-stone-900/90 backdrop-blur-md text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-white/10"
+          >
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Edit Metadata Modal */}
       <EditModal 
