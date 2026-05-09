@@ -41,6 +41,9 @@ interface LibraryViewProps {
 
 const SHELVES_PER_CASE = 2;
 
+const RACKS_PER_PAGE = 4; // 4 rows
+const BOOKS_PER_RACK = 4; // 4 columns
+
 export const LibraryView = ({ 
   library, 
   covers,
@@ -66,6 +69,8 @@ export const LibraryView = ({
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(
     localStorage.getItem('catreader_custom_wallpaper')
   );
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   const wallpapers: Record<string, string> = {
     wood: 'repeating-linear-gradient(to bottom, #2d1d13, #2d1d13 300px, #1a110b 300px, #1a110b 320px)',
@@ -73,6 +78,23 @@ export const LibraryView = ({
     slate: '#0f172a',
     glass: 'conic-gradient(from 0deg at 50% 50%, #4c1d95 0deg, #831843 60deg, #1e3a8a 120deg, #064e3b 180deg, #78350f 240deg, #4c1d95 300deg)'
   };
+
+  // Divide shelves into "Pages" (4 racks per page)
+  const pages: Shelf[][] = [];
+  for (let i = 0; i < shelves.length; i += RACKS_PER_PAGE) {
+    pages.push(shelves.slice(i, i + RACKS_PER_PAGE));
+  }
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const idx = Math.round(el.scrollLeft / window.innerWidth);
+      setCurrentPage(idx);
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleCustomWallpaper = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -284,11 +306,11 @@ export const LibraryView = ({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 relative overflow-y-auto scrollbar-none px-4 py-6">
+      <div className="flex-1 relative overflow-hidden">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-stone-400 gap-4">
             <Loader2 className="animate-spin text-amber-600" size={32} />
-            <p className="font-serif italic tracking-wide">Preparando tu estantería...</p>
+            <p className="font-serif italic tracking-wide">Preparando tus estantes...</p>
           </div>
         ) : library.length === 0 ? (
           <div className="flex items-center justify-center h-full">
@@ -296,92 +318,105 @@ export const LibraryView = ({
               <div className="w-20 h-20 bg-stone-900 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/10">
                 <Library size={32} className="text-stone-700" />
               </div>
-              <h2 className="text-2xl font-serif text-white mb-2">Tu biblioteca está vacía</h2>
-              <p className="text-stone-400 text-sm max-w-xs mx-auto leading-relaxed">
-                Sube tus libros en formato PDF o TXT para verlos aquí. La sincronización en la nube se activará automáticamente.
-              </p>
+              <h2 className="text-2xl font-serif text-white mb-2">Biblioteca vacía</h2>
+              <button className="text-amber-500 font-bold" onClick={onGoogleDrive}>Importar Libros</button>
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto space-y-6 sm:space-y-12">
-            {shelves.map((shelf) => {
-              const shelfBooks = shelf.bookIds
-                .map(id => getBook(id))
-                .filter((b): b is LibraryBook => !!b);
+          <div 
+            ref={scrollRef}
+            className="h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-stretch"
+          >
+            {pages.map((pageRacks, pageIdx) => (
+              <div 
+                key={pageIdx} 
+                className="w-full min-w-full h-full snap-center flex flex-col p-2 sm:p-4"
+              >
+                <div className="flex-1 grid grid-rows-4 gap-[2%] h-full">
+                  {pageRacks.map((rack) => {
+                    const rackBooks = rack.bookIds
+                      .map(id => getBook(id))
+                      .filter((b): b is LibraryBook => !!b);
 
-              const isEmpty = shelfBooks.length === 0;
-              const isDragOver = dragOverShelf === shelf.id;
+                    const isDragOver = dragOverShelf === rack.id;
 
-              if (isEmpty && !isDragOver) return null; // Hide empty shelves unless dragging over
-
-              return (
-                <div 
-                  key={shelf.id}
-                  className={cn(
-                    "relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 rounded-xl sm:rounded-2xl transition-all duration-300",
-                    !isSimplified && "bg-black/30 backdrop-blur-md border border-white/5 shadow-2xl",
-                    isDragOver && "ring-2 ring-indigo-500 bg-indigo-500/10"
-                  )}
-                  onDragOver={(e) => handleShelfDragOver(e, shelf.id)}
-                  onDragEnter={(e) => handleShelfDragEnter(e, shelf.id)}
-                  onDragLeave={handleShelfDragLeave}
-                  onDrop={(e) => handleShelfDrop(e, shelf.id)}
-                >
-                  {/* Shelf Title */}
-                  <div className="flex items-center justify-between mb-1">
-                    <ShelfTitle 
-                      title={shelf.title} 
-                      onChange={(title) => onUpdateShelfTitle(shelf.id, title)}
-                    />
-                    <span className="text-[8px] sm:text-[10px] font-mono text-white/30 uppercase tracking-tighter">
-                      {shelfBooks.length} libros
-                    </span>
-                  </div>
-
-                  {/* Books Grid/Row */}
-                  <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 sm:gap-6 items-end justify-start">
-                    {shelfBooks.map((book, bookIdx) => (
-                      <div
-                        key={book.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, book.id, shelf.id, bookIdx)}
-                        onDragEnd={handleDragEnd}
+                    return (
+                      <div 
+                        key={rack.id}
                         className={cn(
-                          "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
-                          dragState?.bookId === book.id && "opacity-40",
-                          dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
+                          "relative flex flex-col justify-end pb-1 px-2 rounded-lg transition-all duration-300",
+                          !isSimplified && "bg-black/10 backdrop-blur-[2px] border-b border-white/5",
+                          isDragOver && "bg-indigo-500/10 ring-1 ring-indigo-500/50"
                         )}
-                        onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
-                        onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
+                        onDragOver={(e) => handleShelfDragOver(e, rack.id)}
+                        onDragEnter={(e) => handleShelfDragEnter(e, rack.id)}
+                        onDragLeave={handleShelfDragLeave}
+                        onDrop={(e) => handleShelfDrop(e, rack.id)}
                       >
-                        <BookCover 
-                          book={book}
-                          cover={covers[book.filename]}
-                          onClick={() => onOpenBook(book)}
-                          onEdit={() => onEditBook(book)}
-                          onShare={() => onShareBook?.(book)}
-                          isSimplified={isSimplified}
-                        />
-                      </div>
-                    ))}
-                    
-                    {isEmpty && (
-                      <div className="h-20 sm:h-32 flex items-center justify-center opacity-10 font-serif italic text-white pointer-events-none w-full grid-cols-subgrid col-span-4">
-                        Vacío
-                      </div>
-                    )}
-                  </div>
+                        {/* Rack Info (Hidden or minimal) */}
+                        <div className="absolute top-1 left-2 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity z-10">
+                          <ShelfTitle 
+                            title={rack.title} 
+                            onChange={(title) => onUpdateShelfTitle(rack.id, title)}
+                          />
+                        </div>
 
-                  {/* Wood Plank or Glass divider */}
-                  {!isSimplified && (
-                    <div className={cn(
-                      "h-1 rounded-full mt-1 shrink-0 shadow-lg",
-                      wallpaper === 'glass' ? "bg-white/10" : "bg-gradient-to-r from-amber-900/50 via-amber-700/50 to-amber-900/50"
-                    )} />
-                  )}
+                        {/* Books Grid - 4 columns */}
+                        <div className="grid grid-cols-4 gap-2 items-end">
+                          {rackBooks.slice(0, 4).map((book, bookIdx) => (
+                            <div
+                              key={book.id}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, book.id, rack.id, bookIdx)}
+                              onDragEnd={handleDragEnd}
+                              className={cn(
+                                "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
+                                dragState?.bookId === book.id && "opacity-40",
+                                dragOverBook?.shelfId === rack.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
+                              )}
+                              onDragOver={(e) => handleBookDragOver(e, rack.id, bookIdx)}
+                              onDrop={(e) => handleBookDrop(e, rack.id, bookIdx)}
+                            >
+                              <BookCover 
+                                book={book}
+                                cover={covers[book.filename]}
+                                onClick={() => onOpenBook(book)}
+                                onEdit={() => onEditBook(book)}
+                                onShare={() => onShareBook?.(book)}
+                                isSimplified={isSimplified}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Grounded Rack Line */}
+                        {!isSimplified && (
+                          <div className={cn(
+                            "h-[3px] w-full rounded-full mt-1 shrink-0 shadow-lg",
+                            wallpaper === 'glass' ? "bg-white/20" : "bg-gradient-to-r from-amber-900/40 via-amber-700/40 to-amber-900/40"
+                          )} />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Page Indicators (Home Screen Style) */}
+        {pages.length > 1 && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-30">
+            {pages.map((_, idx) => (
+              <div 
+                key={idx}
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                  currentPage === idx ? "bg-white w-4" : "bg-white/20"
+                )}
+              />
+            ))}
           </div>
         )}
       </div>
