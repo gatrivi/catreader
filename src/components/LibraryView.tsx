@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { authService } from '../services/authService';
+import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Shelf } from '../hooks/useShelves';
@@ -36,15 +37,13 @@ interface LibraryViewProps {
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
   onProfileClick?: () => void;
+  identifyingBookId?: string | null;
   isSyncing?: boolean;
   enrichmentProgress?: { current: number; total: number; filename?: string };
   onShareBook?: (book: LibraryBook) => void;
 }
 
-const SHELVES_PER_CASE = 2;
-
 const RACKS_PER_PAGE = 4; // 4 rows
-const BOOKS_PER_RACK = 4; // 4 columns
 
 export const LibraryView = ({ 
   library, 
@@ -64,6 +63,7 @@ export const LibraryView = ({
   onReorderBook,
   onMagicEnrich,
   onProfileClick,
+  identifyingBookId,
   isSyncing,
   enrichmentProgress,
   onShareBook
@@ -90,6 +90,23 @@ export const LibraryView = ({
     pages.push(shelves.slice(i, i + RACKS_PER_PAGE));
   }
 
+  // Find which page the identifying book is on
+  const identifyingPageIdx = identifyingBookId ? pages.findIndex(page => 
+    page.some(shelf => shelf.bookIds.includes(identifyingBookId))
+  ) : -1;
+  
+  const showNudge = identifyingPageIdx !== -1 && identifyingPageIdx !== currentPage;
+  const nudgeDirection = identifyingPageIdx < currentPage ? 'left' : 'right';
+
+  const scrollToPage = useCallback((index: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({
+      left: index * window.innerWidth,
+      behavior: 'smooth'
+    });
+  }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -113,16 +130,7 @@ export const LibraryView = ({
       el.removeEventListener('scroll', handleScroll);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentPage, pages.length]);
-
-  const scrollToPage = useCallback((index: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({
-      left: index * window.innerWidth,
-      behavior: 'smooth'
-    });
-  }, []);
+  }, [currentPage, pages.length, scrollToPage]);
 
   const handleCustomWallpaper = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -183,8 +191,6 @@ export const LibraryView = ({
       onReorderBook(toShelfId, dragState.fromIndex, toIndex);
     } else {
       onMoveBook(dragState.bookId, dragState.fromShelfId, toShelfId);
-      // Optional: reorder in the target shelf after move
-      // But moveBook currently appends, so we'd need a more complex moveBook
     }
     setDragState(null);
   };
@@ -361,125 +367,156 @@ export const LibraryView = ({
             </div>
           </div>
         ) : (
-          <div 
-            ref={scrollRef}
-            className="h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-stretch"
-          >
-            {pages.map((pageRacks, pageIdx) => (
-              <div 
-                key={pageIdx} 
-                className="w-full min-w-full h-full snap-center flex flex-col p-2 sm:p-4"
-              >
-                <div className="flex-1 grid grid-rows-4 gap-[2%] h-full">
-                  {pageRacks.map((rack) => {
-                    const rackBooks = rack.bookIds
-                      .map(id => getBook(id))
-                      .filter((b): b is LibraryBook => !!b);
-
-                    const isDragOver = dragOverShelf === rack.id;
-
-                    return (
-                      <div 
-                        key={rack.id}
-                        className={cn(
-                          "relative flex flex-col justify-end pb-1 px-2 rounded-lg transition-all duration-300",
-                          !isSimplified && "bg-black/10 backdrop-blur-[2px] border-b border-white/5",
-                          isDragOver && "bg-indigo-500/10 ring-1 ring-indigo-500/50"
-                        )}
-                        onDragOver={(e) => handleShelfDragOver(e, rack.id)}
-                        onDragEnter={(e) => handleShelfDragEnter(e, rack.id)}
-                        onDragLeave={handleShelfDragLeave}
-                        onDrop={(e) => handleShelfDrop(e, rack.id)}
-                      >
-                        {/* Rack Info (Hidden or minimal) */}
-                        <div className="absolute top-1 left-2 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity z-10">
-                          <ShelfTitle 
-                            title={rack.title} 
-                            onChange={(title) => onUpdateShelfTitle(rack.id, title)}
-                          />
-                        </div>
-
-                        {/* Books Grid - 4 columns */}
-                        <div className="grid grid-cols-4 gap-2 items-end">
-                          {rackBooks.slice(0, 4).map((book, bookIdx) => (
-                            <div
-                              key={book.id}
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, book.id, rack.id, bookIdx)}
-                              onDragEnd={handleDragEnd}
-                              className={cn(
-                                "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
-                                dragState?.bookId === book.id && "opacity-40",
-                                dragOverBook?.shelfId === rack.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
-                              )}
-                              onDragOver={(e) => handleBookDragOver(e, rack.id, bookIdx)}
-                              onDrop={(e) => handleBookDrop(e, rack.id, bookIdx)}
-                            >
-                              <BookCover 
-                                book={book}
-                                cover={covers[book.filename]}
-                                onClick={() => onOpenBook(book)}
-                                onEdit={() => onEditBook(book)}
-                                onShare={() => onShareBook?.(book)}
-                                isSimplified={isSimplified}
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Grounded Rack Line */}
-                        {!isSimplified && (
-                          <div className={cn(
-                            "h-[3px] w-full rounded-full mt-1 shrink-0 shadow-lg",
-                            wallpaper === 'glass' ? "bg-white/20" : "bg-gradient-to-r from-amber-900/40 via-amber-700/40 to-amber-900/40"
-                          )} />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Navigation Arrows for Desktop */}
-        {pages.length > 1 && (
           <>
-            <button
-              onClick={() => scrollToPage(Math.max(0, currentPage - 1))}
-              disabled={currentPage === 0}
-              className="absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-md border border-white/5 shadow-2xl hidden md:block"
-              aria-label="Previous Page"
+            <div 
+              ref={scrollRef}
+              className="h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-stretch"
             >
-              <ChevronLeft size={24} />
-            </button>
-            <button
-              onClick={() => scrollToPage(Math.min(pages.length - 1, currentPage + 1))}
-              disabled={currentPage === pages.length - 1}
-              className="absolute right-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-md border border-white/5 shadow-2xl hidden md:block"
-              aria-label="Next Page"
-            >
-              <ChevronRight size={24} />
-            </button>
-          </>
-        )}
+              {pages.map((pageRacks, pageIdx) => (
+                <div 
+                  key={pageIdx} 
+                  className="w-full min-w-full h-full snap-center flex flex-col p-2 sm:p-4"
+                >
+                  <div className="flex-1 grid grid-rows-4 gap-[2%] h-full">
+                    {pageRacks.map((rack) => {
+                      const rackBooks = rack.bookIds
+                        .map(id => getBook(id))
+                        .filter((b): b is LibraryBook => !!b);
 
-        {/* Page Indicators (Home Screen Style) */}
-        {pages.length > 1 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-30">
-            {pages.map((_, idx) => (
-              <button 
-                key={idx}
-                onClick={() => scrollToPage(idx)}
-                className={cn(
-                  "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                  currentPage === idx ? "bg-white w-4" : "bg-white/20 hover:bg-white/40"
-                )}
-                aria-label={`Go to page ${idx + 1}`}
-              />
-            ))}
-          </div>
+                      const isDragOver = dragOverShelf === rack.id;
+
+                      return (
+                        <div 
+                          key={rack.id}
+                          className={cn(
+                            "relative flex flex-col justify-end pb-1 px-2 rounded-lg transition-all duration-300",
+                            !isSimplified && "bg-black/10 backdrop-blur-[2px] border-b border-white/5",
+                            isDragOver && "bg-indigo-500/10 ring-1 ring-indigo-500/50"
+                          )}
+                          onDragOver={(e) => handleShelfDragOver(e, rack.id)}
+                          onDragEnter={(e) => handleShelfDragEnter(e, rack.id)}
+                          onDragLeave={handleShelfDragLeave}
+                          onDrop={(e) => handleShelfDrop(e, rack.id)}
+                        >
+                          {/* Rack Info (Hidden or minimal) */}
+                          <div className="absolute top-1 left-2 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity z-10">
+                            <ShelfTitle 
+                              title={rack.title} 
+                              onChange={(title) => onUpdateShelfTitle(rack.id, title)}
+                            />
+                          </div>
+
+                          {/* Books Grid - 4 columns */}
+                          <div className="grid grid-cols-4 gap-2 items-end">
+                            {rackBooks.slice(0, 4).map((book, bookIdx) => (
+                              <div
+                                key={book.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, book.id, rack.id, bookIdx)}
+                                onDragEnd={handleDragEnd}
+                                className={cn(
+                                  "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
+                                  dragState?.bookId === book.id && "opacity-40",
+                                  dragOverBook?.shelfId === rack.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
+                                )}
+                                onDragOver={(e) => handleBookDragOver(e, rack.id, bookIdx)}
+                                onDrop={(e) => handleBookDrop(e, rack.id, bookIdx)}
+                              >
+                                <BookCover 
+                                  book={book}
+                                  cover={covers[book.filename]}
+                                  onClick={() => onOpenBook(book)}
+                                  onEdit={() => onEditBook(book)}
+                                  onShare={() => onShareBook?.(book)}
+                                  isSimplified={isSimplified}
+                                  isIdentifying={identifyingBookId === book.id}
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Grounded Rack Line */}
+                          {!isSimplified && (
+                            <div className={cn(
+                              "h-[3px] w-full rounded-full mt-1 shrink-0 shadow-lg",
+                              wallpaper === 'glass' ? "bg-white/20" : "bg-gradient-to-r from-amber-900/40 via-amber-700/40 to-amber-900/40"
+                            )} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Navigation Nudge for identifying book on another page */}
+            <AnimatePresence>
+              {showNudge && (
+                <motion.div
+                  initial={{ opacity: 0, x: nudgeDirection === 'left' ? -50 : 50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: nudgeDirection === 'left' ? -50 : 50 }}
+                  onClick={() => scrollToPage(identifyingPageIdx)}
+                  className={cn(
+                    "absolute top-[65%] z-[60] cursor-pointer group flex flex-col items-center gap-3",
+                    nudgeDirection === 'left' ? "left-6" : "right-6"
+                  )}
+                >
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-amber-500 rounded-full blur-xl opacity-40 animate-pulse" />
+                    <div className="relative bg-amber-600 text-white rounded-full p-4 shadow-2xl shadow-amber-900/40 animate-bounce">
+                      {nudgeDirection === 'left' ? <ChevronLeft size={32} /> : <ChevronRight size={32} />}
+                    </div>
+                  </div>
+                  <div className="bg-stone-900/90 backdrop-blur-md border border-amber-500/40 px-4 py-2 rounded-2xl shadow-2xl ring-1 ring-white/10">
+                    <p className="text-xs font-black uppercase tracking-[0.1em] text-amber-400 flex items-center gap-2 whitespace-nowrap">
+                      <Sparkles size={14} className="animate-spin-slow" /> Magia en otro Rack
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Navigation Arrows for Desktop */}
+            {pages.length > 1 && (
+              <>
+                <button
+                  onClick={() => scrollToPage(Math.max(0, currentPage - 1))}
+                  disabled={currentPage === 0}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-sm border border-white/5 shadow-2xl hidden md:block"
+                  aria-label="Previous Page"
+                >
+                  <ChevronLeft size={24} />
+                </button>
+                <button
+                  onClick={() => scrollToPage(Math.min(pages.length - 1, currentPage + 1))}
+                  disabled={currentPage === pages.length - 1}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-sm border border-white/5 shadow-2xl hidden md:block"
+                  aria-label="Next Page"
+                >
+                  <ChevronRight size={24} />
+                </button>
+              </>
+            )}
+
+            {/* Page Indicators (Home Screen Style) */}
+            {pages.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-30">
+                {pages.map((_, idx) => (
+                  <button 
+                    key={idx}
+                    onClick={() => scrollToPage(idx)}
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                      currentPage === idx ? "bg-white w-4" : "bg-white/20 hover:bg-white/40"
+                    )}
+                    aria-label={`Go to page ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

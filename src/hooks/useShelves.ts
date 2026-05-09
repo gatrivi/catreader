@@ -48,16 +48,15 @@ export function useShelves(library: Array<{ id: string }>) {
     if (unassigned.length > 0) {
       setShelves(prev => {
         const next = prev.map(s => ({ ...s, bookIds: [...s.bookIds] }));
-        // Fill shelves round-robin, starting with emptier ones
-        const sortedShelves = next.map((s, i) => ({ shelf: s, idx: i, count: s.bookIds.length }))
-          .sort((a, b) => a.count - b.count);
-
-        unassigned.forEach((book) => {
-          const target = sortedShelves[0];
-          next[target.idx].bookIds.push(book.id);
-          target.count++;
-          sortedShelves.sort((a, b) => a.count - b.count);
+        
+        // Prepend new books to the first shelf (Main Rack)
+        const mainRack = next[0];
+        unassigned.reverse().forEach(book => {
+          if (!mainRack.bookIds.includes(book.id)) {
+            mainRack.bookIds.unshift(book.id);
+          }
         });
+        
         return next;
       });
     }

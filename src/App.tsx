@@ -121,6 +121,7 @@ export default function App() {
   const [selectedTextMenu, setSelectedTextMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [identifyingBookId, setIdentifyingBookId] = useState<string | null>(null);
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; filename?: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -536,6 +537,7 @@ export default function App() {
     const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
     if (!g_apiKey) return null;
 
+    setIdentifyingBookId(book.id);
     try {
       const ai = new GoogleGenAI({ apiKey: g_apiKey });
       
@@ -588,6 +590,8 @@ export default function App() {
       }
     } catch (err) {
       console.error(`Gemini Enrichment Error (${book.filename}):`, err);
+    } finally {
+      setIdentifyingBookId(null);
     }
     return null;
   };
@@ -612,8 +616,10 @@ export default function App() {
       let updatedCount = 0;
 
       for (const book of library) {
+        setIdentifyingBookId(book.id);
         const enriched = await enrichBookWithGemini(book);
         if (enriched) {
+
           newMetadata[book.filename] = enriched;
           updatedCount++;
           
@@ -645,6 +651,7 @@ export default function App() {
       showToast('Error al enriquecer la biblioteca');
     } finally {
       setIsSyncing(false);
+      setIdentifyingBookId(null);
     }
   };
 
@@ -656,6 +663,7 @@ export default function App() {
    * 4. Gradient fallback
    */
   const fetchEnhancedCover = async (book: LibraryBook) => {
+    setIdentifyingBookId(book.id);
     try {
       const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
       
@@ -765,6 +773,9 @@ export default function App() {
     } catch (err) {
       console.warn('Enhanced cover generation failed, using fallback.', err);
       await generateCoverFallback(book);
+    } finally {
+      // Small delay so the user can see the "Identification" complete
+      setTimeout(() => setIdentifyingBookId(null), 1000);
     }
   };
 
@@ -1180,6 +1191,34 @@ export default function App() {
       await loadProgress(file.name);
       if (ext === 'txt') setIsLoaded(true);
       else setIsLoaded(false);
+
+      // Add to local library state immediately if not already present
+      const isNew = !library.some(b => b.filename === file.name);
+      if (isNew) {
+        const newBook: LibraryBook = {
+          id: file.name,
+          filename: file.name,
+          type: ext,
+          title: file.name.replace(/\.[^/.]+$/, "")
+        };
+        setLibrary(prev => [newBook, ...prev]);
+        
+        // Auto-enrich new book
+        const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+        if (g_apiKey) {
+          setTimeout(async () => {
+            const enriched = await enrichBookWithGemini(newBook);
+            if (enriched) {
+              setLibrary(prev => prev.map(b => b.filename === file.name ? { ...b, ...enriched } : b));
+              // Update persistent metadata
+              const newMeta = { ...enrichedMetadataRef.current, [file.name]: enriched };
+              setEnrichedMetadata(newMeta);
+              localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMeta));
+              await syncService.saveMetadata(newMeta);
+            }
+          }, 1000);
+        }
+      }
 
       // If user is signed in to Google, upload to Drive too
       if (googleToken) {
@@ -1710,6 +1749,7 @@ export default function App() {
             onReorderBook={reorderBook}
             onMagicEnrich={magicFixLibrary}
             onProfileClick={() => setShowProfile(true)}
+            identifyingBookId={identifyingBookId}
             isSyncing={isSyncing}
             enrichmentProgress={enrichmentProgress}
             onShareBook={(book) => {
