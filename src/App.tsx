@@ -615,23 +615,36 @@ export default function App() {
       const newMetadata = { ...enrichedMetadata };
       let updatedCount = 0;
 
-      for (const book of library) {
-        setIdentifyingBookId(book.id);
-        const enriched = await enrichBookWithGemini(book);
-        if (enriched) {
+      setEnrichmentProgress({ current: 0, total: library.length, filename: 'Iniciando...' });
 
-          newMetadata[book.filename] = enriched;
-          updatedCount++;
-          
-          // Partial state update for immediate feedback
-          if (enriched.svg) {
-            await coverDB.saveCover(book.filename, enriched.svg);
-            setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+      for (let i = 0; i < library.length; i++) {
+        const book = library[i];
+        setEnrichmentProgress({ current: i + 1, total: library.length, filename: book.title });
+        
+        // Add a safety timeout for the Gemini call
+        const enrichPromise = enrichBookWithGemini(book);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 30000));
+        
+        try {
+          const enriched = await Promise.race([enrichPromise, timeoutPromise]) as any;
+          if (enriched) {
+            newMetadata[book.filename] = enriched;
+            updatedCount++;
+            
+            if (enriched.svg) {
+              await coverDB.saveCover(book.filename, enriched.svg);
+              setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+            }
           }
+        } catch (e) {
+          console.warn(`Skipping ${book.filename} due to error or timeout:`, e);
         }
-        // Small delay to avoid rate limits during manual burst
+
+        // Small delay to avoid rate limits
         await new Promise(r => setTimeout(r, 500));
       }
+
+      setEnrichmentProgress(null);
 
       setEnrichedMetadata(newMetadata);
       localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
@@ -1749,6 +1762,7 @@ export default function App() {
             onReorderBook={reorderBook}
             onMagicEnrich={magicFixLibrary}
             onProfileClick={() => setShowProfile(true)}
+            clearProgress={() => setEnrichmentProgress(null)}
             identifyingBookId={identifyingBookId}
             isSyncing={isSyncing}
             enrichmentProgress={enrichmentProgress}

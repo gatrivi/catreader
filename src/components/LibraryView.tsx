@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { authService } from '../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,6 +37,7 @@ interface LibraryViewProps {
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
   onProfileClick?: () => void;
+  clearProgress?: () => void;
   identifyingBookId?: string | null;
   isSyncing?: boolean;
   enrichmentProgress?: { current: number; total: number; filename?: string };
@@ -63,6 +64,7 @@ export const LibraryView = ({
   onReorderBook,
   onMagicEnrich,
   onProfileClick,
+  clearProgress,
   identifyingBookId,
   isSyncing,
   enrichmentProgress,
@@ -368,6 +370,49 @@ export const LibraryView = ({
           </div>
         ) : (
           <>
+            {/* Enrichment Progress Bar */}
+            <AnimatePresence>
+              {enrichmentProgress && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="absolute top-0 left-0 right-0 z-50 px-6 py-4 pointer-events-none"
+                >
+                  <div className="max-w-xl mx-auto bg-stone-900/90 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl p-4 pointer-events-auto">
+                    <div className="flex justify-between items-center mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                          <Wand2 size={16} className="text-indigo-400 animate-pulse" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Magic Identification</p>
+                          <p className="text-xs text-white font-serif truncate max-w-[200px]">{enrichmentProgress.filename}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-xs font-mono font-bold text-indigo-400">
+                          {Math.round((enrichmentProgress.current / enrichmentProgress.total) * 100)}%
+                        </span>
+                        {clearProgress && (
+                          <button onClick={clearProgress} className="text-stone-500 hover:text-white transition-colors">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full bg-stone-800 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(enrichmentProgress.current / enrichmentProgress.total) * 100}%` }}
+                        className="h-full bg-gradient-to-r from-indigo-600 via-purple-500 to-indigo-600 shadow-[0_0_15px_rgba(79,70,229,0.5)]"
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div 
               ref={scrollRef}
               className="h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-stretch"
