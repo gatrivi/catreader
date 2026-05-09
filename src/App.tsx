@@ -1234,16 +1234,16 @@ export default function App() {
   };
 
   /**
-   * Handles deep linking from URL parameters (?book=...&page=...)
+   * Handles deep linking from URL parameters (?read=...&page=...)
    */
   useEffect(() => {
     if (library.length > 0 && !fileUrl) {
       const params = new URLSearchParams(window.location.search);
-      const bookQuery = params.get('book');
+      const readQuery = params.get('read');
       const pageQuery = params.get('page');
       
-      if (bookQuery) {
-        const book = library.find(b => b.filename === bookQuery || b.id === bookQuery);
+      if (readQuery) {
+        const book = library.find(b => b.filename === readQuery || b.id === readQuery);
         if (book) {
           const page = pageQuery ? parseInt(pageQuery) : undefined;
           openFromLibrary(book, page);
@@ -1575,11 +1575,11 @@ export default function App() {
                     <button 
                       onClick={() => {
                         const url = new URL(window.location.href);
-                        url.searchParams.set('book', fileName);
+                        url.searchParams.set('read', fileName);
                         url.searchParams.set('page', pageNumber.toString());
                         navigator.clipboard.writeText(url.toString());
                         setShowMenu(false);
-                        showToast('Enlace copiado');
+                        showToast('Enlace directo copiado');
                       }} 
                       className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
                     >
@@ -1648,9 +1648,9 @@ export default function App() {
             enrichmentProgress={enrichmentProgress}
             onShareBook={(book) => {
               const url = new URL(window.location.href);
-              url.searchParams.set('book', book.filename);
+              url.searchParams.set('read', book.filename);
               navigator.clipboard.writeText(url.toString());
-              showToast('Enlace copiado al portapapeles');
+              showToast('Enlace directo copiado');
             }}
           />
         ) : (
