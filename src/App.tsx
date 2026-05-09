@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page, pdfjs as pdfjsLib } from 'react-pdf';
 import { 
   Upload,
   ZoomIn, 
@@ -31,10 +31,11 @@ import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GoogleGenAI } from "@google/genai";
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 // Setup pdfjs worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`;
+(pdfjsBackground as any).GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${(pdfjsBackground as any).version}/legacy/build/pdf.worker.min.mjs`;
 
 // Component Imports
 import { LibraryView } from './components/LibraryView';
@@ -48,7 +49,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // PDF.js worker setup
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// (Removed redundant setup to avoid collision)
 
 declare var google: any;
 declare var gapi: any;
@@ -450,7 +451,7 @@ export default function App() {
   const extractPagesAsImages = async (blob: Blob, maxPages = 5): Promise<string[]> => {
     try {
       const data = new Uint8Array(await blob.arrayBuffer());
-      const loadingTask = pdfjs.getDocument({ data, useSystemFonts: true });
+      const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
       const images: string[] = [];
       
@@ -465,7 +466,7 @@ export default function App() {
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         
-        await page.render({ canvasContext: context, viewport }).promise;
+        await page.render({ canvasContext: context, viewport, canvas }).promise;
         images.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]); // Only base64 part
       }
       return images;
@@ -485,7 +486,6 @@ export default function App() {
 
     try {
       const ai = new GoogleGenAI({ apiKey: g_apiKey });
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       let prompt = `Analyze this book file named "${book.filename}".
       1. Identify the actual Book Title and Author Name.
@@ -517,8 +517,11 @@ export default function App() {
         }
       }
 
-      const result = await model.generateContent(parts);
-      const responseText = result.response.text();
+      const result = await (ai as any).models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [{ role: 'user', parts }]
+      });
+      const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const cleanJson = responseText.replace(/```json|```/g, '').trim();
       const enriched = JSON.parse(cleanJson);
       

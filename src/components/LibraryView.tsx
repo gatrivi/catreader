@@ -63,6 +63,7 @@ export const LibraryView = ({
   onSetWallpaper,
   shelves,
   onUpdateShelfTitle,
+  onMoveBook,
   onReorderBook,
   onMagicEnrich,
   isSyncing,
