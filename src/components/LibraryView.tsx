@@ -98,7 +98,30 @@ export const LibraryView = ({
       setCurrentPage(idx);
     };
     el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
+
+    // Keyboard navigation
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        scrollToPage(Math.max(0, currentPage - 1));
+      } else if (e.key === 'ArrowRight') {
+        scrollToPage(Math.min(pages.length - 1, currentPage + 1));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentPage, pages.length]);
+
+  const scrollToPage = useCallback((index: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({
+      left: index * window.innerWidth,
+      behavior: 'smooth'
+    });
   }, []);
 
   const handleCustomWallpaper = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -420,16 +443,40 @@ export const LibraryView = ({
           </div>
         )}
 
+        {/* Navigation Arrows for Desktop */}
+        {pages.length > 1 && (
+          <>
+            <button
+              onClick={() => scrollToPage(Math.max(0, currentPage - 1))}
+              disabled={currentPage === 0}
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-md border border-white/5 shadow-2xl hidden md:block"
+              aria-label="Previous Page"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button
+              onClick={() => scrollToPage(Math.min(pages.length - 1, currentPage + 1))}
+              disabled={currentPage === pages.length - 1}
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-md border border-white/5 shadow-2xl hidden md:block"
+              aria-label="Next Page"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </>
+        )}
+
         {/* Page Indicators (Home Screen Style) */}
         {pages.length > 1 && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-30">
             {pages.map((_, idx) => (
-              <div 
+              <button 
                 key={idx}
+                onClick={() => scrollToPage(idx)}
                 className={cn(
                   "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                  currentPage === idx ? "bg-white w-4" : "bg-white/20"
+                  currentPage === idx ? "bg-white w-4" : "bg-white/20 hover:bg-white/40"
                 )}
+                aria-label={`Go to page ${idx + 1}`}
               />
             ))}
           </div>
