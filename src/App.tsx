@@ -45,6 +45,9 @@ import { EditModal } from './components/EditModal';
 import { BookCover } from './components/BookCover';
 import { useShelves } from './hooks/useShelves';
 
+import { ProfileModal } from './components/ProfileModal';
+import { authService } from './services/authService';
+
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -117,10 +120,54 @@ export default function App() {
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
   const [selectedTextMenu, setSelectedTextMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; filename?: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const APP_VERSION = 'v1.3.8';
+
+  const handleLogin = async (username: string, pin: string) => {
+    setIsSyncing(true);
+    await authService.login(username, pin);
+    await fetchLibrary(); // Refresh for new user context
+    showToast(`Bienvenido, ${username}`);
+    setIsSyncing(false);
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    fetchLibrary();
+    showToast('Sesión cerrada');
+  };
+
+  const handleGeneratePFP = async () => {
+    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!g_apiKey || library.length === 0) return;
+
+    setIsSyncing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: g_apiKey });
+      const titles = library.slice(0, 5).map(b => b.title).join(', ');
+      
+      const result = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [{ role: 'user', parts: [{ text: `Create a unique, artistic, and minimalist SVG profile picture (circular design) that represents a reader of: ${titles}. 
+        Focus on abstract shapes, books, and wisdom. Use a warm color palette. 
+        Ensure it fits within a circular viewBox="0 0 100 100".
+        Return ONLY the SVG code.` }] }]
+      });
+
+      const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const cleanSvg = responseText.substring(responseText.indexOf('<svg'), responseText.lastIndexOf('</svg>') + 6);
+      
+      authService.setPFP(cleanSvg);
+      showToast('¡Avatar generado!');
+    } catch (e) {
+      console.error(e);
+      showToast('Error al generar avatar');
+    }
+    setIsSyncing(false);
+  };
 
   const { shelves, updateShelfTitle, moveBook, reorderBook } = useShelves(library);
   
@@ -497,8 +544,10 @@ export default function App() {
       2. If you see introductory pages (e.g., Google Books "digitized by Google" pages, library stamps, or legal notices), IGNORE THEM and find the real title page further in.
       3. Create a beautiful, minimalist book cover in SVG format.
          - Use a color palette that matches the book's theme.
-         - Include the title and author in the SVG.
-         - Vertical 2:3 ratio.
+         - Include a thin, subtle border (1px) around the entire cover.
+         - Include the TITLE (large, bold, centered) and AUTHOR (smaller, centered) in the SVG.
+         - Ensure text is high contrast and readable against the background.
+         - Vertical 2:3 ratio (viewBox="0 0 400 600").
       
       Return ONLY a JSON object:
       {
@@ -1644,6 +1693,7 @@ export default function App() {
             onMoveBook={moveBook}
             onReorderBook={reorderBook}
             onMagicEnrich={magicFixLibrary}
+            onProfileClick={() => setShowProfile(true)}
             isSyncing={isSyncing}
             enrichmentProgress={enrichmentProgress}
             onShareBook={(book) => {
@@ -1774,9 +1824,11 @@ export default function App() {
                       const genAI = new GoogleGenAI({ apiKey: g_apiKey });
                       const result = await genAI.models.generateContent({
                         model: "gemini-1.5-flash",
-                        contents: [{ role: 'user', parts: [{ text: `Generate a beautiful, minimalist SVG book cover (vertical 2:3 ratio) for a book titled "${book.title}" by "${book.author}". 
+                        contents: [{ role: 'user', parts: [{ text: `Generate a beautiful, minimalist SVG book cover (vertical 2:3 ratio, viewBox="0 0 400 600") for a book titled "${book.title}" by "${book.author}". 
                         Use this visual theme description: "${selectedTextMenu.text}". 
-                        Ensure the SVG includes the title and author.
+                        Include a thin, subtle border (1px) around the cover.
+                        Ensure the SVG includes the TITLE (large, bold, centered) and AUTHOR (smaller, centered).
+                        Ensure text is highly readable with good contrast.
                         Return ONLY the SVG code.` }] }]
                       });
                       const svg = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -1860,6 +1912,15 @@ export default function App() {
             setIsSyncing(false);
           }
         }}
+        isSyncing={isSyncing}
+      />
+
+      <ProfileModal 
+        isOpen={showProfile}
+        onClose={() => setShowProfile(false)}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
+        onGeneratePFP={handleGeneratePFP}
         isSyncing={isSyncing}
       />
     </div>

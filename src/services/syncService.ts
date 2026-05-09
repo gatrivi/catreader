@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Firestore sync service
 import { db, ensureAuth } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { authService } from './authService';
 
 export interface ReadingProgress {
   page: number;
@@ -15,11 +15,18 @@ export interface ReadingProgress {
   updatedAt: number;
 }
 
+const getUserId = async () => {
+  const portableId = authService.getPortableId();
+  if (portableId) return portableId;
+  const user: any = await ensureAuth();
+  return user.uid;
+};
+
 export const syncService = {
   async saveProgress(bookId: string, progress: ReadingProgress) {
-    const user: any = await ensureAuth();
+    const uid = await getUserId();
     const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', user.uid, 'progress', bookKey);
+    const docRef = doc(db, 'users', uid, 'progress', bookKey);
     
     try {
       await setDoc(docRef, {
@@ -34,9 +41,9 @@ export const syncService = {
   },
 
   async loadProgress(bookId: string): Promise<ReadingProgress | null> {
-    const user: any = await ensureAuth();
+    const uid = await getUserId();
     const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', user.uid, 'progress', bookKey);
+    const docRef = doc(db, 'users', uid, 'progress', bookKey);
     
     try {
       const snap = await getDoc(docRef);
@@ -55,8 +62,8 @@ export const syncService = {
   },
 
   async saveMetadata(metadata: Record<string, { title: string; author: string; svg?: string }>) {
-    const user: any = await ensureAuth();
-    const docRef = doc(db, 'users', user.uid, 'library', 'metadata');
+    const uid = await getUserId();
+    const docRef = doc(db, 'users', uid, 'library', 'metadata');
     try {
       await setDoc(docRef, {
         books: metadata,
@@ -70,8 +77,8 @@ export const syncService = {
   },
 
   async loadMetadata(): Promise<Record<string, { title: string; author: string; svg?: string }> | null> {
-    const user: any = await ensureAuth();
-    const docRef = doc(db, 'users', user.uid, 'library', 'metadata');
+    const uid = await getUserId();
+    const docRef = doc(db, 'users', uid, 'library', 'metadata');
     try {
       const snap = await getDoc(docRef);
       if (snap.exists()) {
@@ -85,9 +92,9 @@ export const syncService = {
   },
 
   async saveGhostText(bookId: string, text: string) {
-    const user: any = await ensureAuth();
+    const uid = await getUserId();
     const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', user.uid, 'ghostText', bookKey);
+    const docRef = doc(db, 'users', uid, 'ghostText', bookKey);
     try {
       await setDoc(docRef, {
         content: text,
@@ -101,9 +108,9 @@ export const syncService = {
   },
 
   async loadGhostText(bookId: string): Promise<string | null> {
-    const user: any = await ensureAuth();
+    const uid = await getUserId();
     const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', user.uid, 'ghostText', bookKey);
+    const docRef = doc(db, 'users', uid, 'ghostText', bookKey);
     try {
       const snap = await getDoc(docRef);
       if (snap.exists()) {
@@ -115,5 +122,4 @@ export const syncService = {
       return null;
     }
   }
-
 };

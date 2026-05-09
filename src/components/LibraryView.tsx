@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User } from 'lucide-react';
 import { BookCover } from './BookCover';
+import { authService } from '../services/authService';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Shelf } from '../hooks/useShelves';
@@ -34,6 +35,7 @@ interface LibraryViewProps {
   onMoveBook: (bookId: string, fromShelfId: string, toShelfId: string) => void;
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
+  onProfileClick?: () => void;
   isSyncing?: boolean;
   enrichmentProgress?: { current: number; total: number; filename?: string };
   onShareBook?: (book: LibraryBook) => void;
@@ -61,6 +63,7 @@ export const LibraryView = ({
   onMoveBook,
   onReorderBook,
   onMagicEnrich,
+  onProfileClick,
   isSyncing,
   enrichmentProgress,
   onShareBook
@@ -71,6 +74,8 @@ export const LibraryView = ({
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const [currentPage, setCurrentPage] = useState(0);
+  const pfp = authService.getPFP();
+  const svgDataUrl = pfp ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(pfp)))}` : null;
 
   const wallpapers: Record<string, string> = {
     wood: 'repeating-linear-gradient(to bottom, #2d1d13, #2d1d13 300px, #1a110b 300px, #1a110b 320px)',
@@ -209,7 +214,17 @@ export const LibraryView = ({
       <div className="shrink-0 px-4 pt-4 pb-2">
         <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-950/80 backdrop-blur-md p-3 rounded-2xl border border-white/5 shadow-2xl max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
-            <Library className="text-amber-600" size={20} />
+            <button 
+              onClick={onProfileClick}
+              className="group relative w-10 h-10 rounded-full bg-stone-900 border border-white/10 flex items-center justify-center overflow-hidden transition-all hover:border-amber-500/50 shadow-lg"
+              aria-label="Ver Perfil"
+            >
+              {svgDataUrl ? (
+                <img src={svgDataUrl} alt="PFP" className="w-full h-full object-cover" />
+              ) : (
+                <User size={18} className="text-stone-500 group-hover:text-amber-500 transition-colors" />
+              )}
+            </button>
             <div>
               <h1 className="text-lg font-serif font-bold text-white tracking-tight leading-none">Mi Biblioteca</h1>
               <p className="text-[10px] text-stone-500 uppercase tracking-widest mt-0.5">CatReader Library</p>
