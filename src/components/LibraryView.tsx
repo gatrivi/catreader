@@ -303,7 +303,7 @@ export const LibraryView = ({
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto space-y-12">
+          <div className="max-w-7xl mx-auto space-y-6 sm:space-y-12">
             {shelves.map((shelf) => {
               const shelfBooks = shelf.bookIds
                 .map(id => getBook(id))
@@ -318,7 +318,7 @@ export const LibraryView = ({
                 <div 
                   key={shelf.id}
                   className={cn(
-                    "relative flex flex-col gap-4 p-4 rounded-2xl transition-all duration-300",
+                    "relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 rounded-xl sm:rounded-2xl transition-all duration-300",
                     !isSimplified && "bg-black/30 backdrop-blur-md border border-white/5 shadow-2xl",
                     isDragOver && "ring-2 ring-indigo-500 bg-indigo-500/10"
                   )}
@@ -328,18 +328,18 @@ export const LibraryView = ({
                   onDrop={(e) => handleShelfDrop(e, shelf.id)}
                 >
                   {/* Shelf Title */}
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1">
                     <ShelfTitle 
                       title={shelf.title} 
                       onChange={(title) => onUpdateShelfTitle(shelf.id, title)}
                     />
-                    <span className="text-[10px] font-mono text-white/30 uppercase tracking-tighter">
+                    <span className="text-[8px] sm:text-[10px] font-mono text-white/30 uppercase tracking-tighter">
                       {shelfBooks.length} libros
                     </span>
                   </div>
 
                   {/* Books Grid/Row */}
-                  <div className="flex flex-wrap gap-3 sm:gap-6 items-end justify-start">
+                  <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 sm:gap-6 items-end justify-start">
                     {shelfBooks.map((book, bookIdx) => (
                       <div
                         key={book.id}
@@ -366,8 +366,8 @@ export const LibraryView = ({
                     ))}
                     
                     {isEmpty && (
-                      <div className="h-32 flex items-center justify-center opacity-10 font-serif italic text-white pointer-events-none w-full">
-                        Arrastra libros aquí
+                      <div className="h-20 sm:h-32 flex items-center justify-center opacity-10 font-serif italic text-white pointer-events-none w-full grid-cols-subgrid col-span-4">
+                        Vacío
                       </div>
                     )}
                   </div>
@@ -375,7 +375,7 @@ export const LibraryView = ({
                   {/* Wood Plank or Glass divider */}
                   {!isSimplified && (
                     <div className={cn(
-                      "h-1.5 rounded-full mt-2 shrink-0 shadow-lg",
+                      "h-1 rounded-full mt-1 shrink-0 shadow-lg",
                       wallpaper === 'glass' ? "bg-white/10" : "bg-gradient-to-r from-amber-900/50 via-amber-700/50 to-amber-900/50"
                     )} />
                   )}
