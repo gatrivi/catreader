@@ -844,70 +844,73 @@ export default function App() {
       const book = library[idx];
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-      // Update progress UI
-      setEnrichmentProgress({ 
-        current: idx + 1, 
-        total: library.length, 
-        filename: book.filename 
-      });
-
       // 1. Check if metadata needs enrichment (Gemini)
       const currentMeta = enrichedMetadataRef.current[book.filename];
       const needsEnrichment = !currentMeta || 
                              book.title === book.filename || 
                              (book.author === 'Unknown' || !book.author);
 
-      if (needsEnrichment && g_apiKey) {
-         console.log(`Auto-enriching metadata for: ${book.filename}`);
-         const enriched = await enrichBookWithGemini(book);
-         if (enriched) {
-            const newMetadata = { 
-              ...enrichedMetadataRef.current, 
-              [book.filename]: enriched 
-            };
-            setEnrichedMetadata(newMetadata);
-            localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
-            await syncService.saveMetadata(newMetadata);
-            
-            // Update library state for this book
-            setLibrary(prev => prev.map(b => b.filename === book.filename ? {
-              ...b,
-              title: enriched.title,
-              author: enriched.author,
-              svg: enriched.svg
-            } : b));
+      if (needsEnrichment) {
+        // Update progress UI only if we are actually doing work
+        setEnrichmentProgress({ 
+          current: idx + 1, 
+          total: library.length, 
+          filename: book.filename 
+        });
 
-            // If we got an SVG, save it as a cover too
-            if (enriched.svg) {
-               await coverDB.saveCover(book.filename, enriched.svg);
-               setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
-            }
-         }
+        if (g_apiKey) {
+           console.log(`Auto-enriching metadata for: ${book.filename}`);
+           const enriched = await enrichBookWithGemini(book);
+           if (enriched) {
+              const newMetadata = { 
+                ...enrichedMetadataRef.current, 
+                [book.filename]: enriched 
+              };
+              setEnrichedMetadata(newMetadata);
+              localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+              await syncService.saveMetadata(newMetadata);
+              
+              // Update library state for this book
+              setLibrary(prev => prev.map(b => b.filename === book.filename ? {
+                ...b,
+                title: enriched.title,
+                author: enriched.author,
+                svg: enriched.svg
+              } : b));
+
+              // If we got an SVG, save it as a cover too
+              if (enriched.svg) {
+                 await coverDB.saveCover(book.filename, enriched.svg);
+                 setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+              }
+           }
+        }
       }
       
-      // 2. If we already have the cover in state, skip to next
-      if (coversRef.current[book.filename]) {
-        setAutoCoverIndex(prev => prev + 1);
-        return;
+      // 2. Check for cover (independent of metadata)
+      const hasCover = coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
+      if (!hasCover) {
+        setEnrichmentProgress({ 
+          current: idx + 1, 
+          total: library.length, 
+          filename: `Cover: ${book.title}` 
+        });
+        
+        try {
+          console.log(`Auto-generating cover for: ${book.title}`);
+          await fetchEnhancedCoverRef.current(book);
+        } catch (err) {
+          console.error(`Failed to auto-generate cover for ${book.title}:`, err);
+        }
       }
 
-      // Check IndexedDB first (source of truth)
-      const existing = await coverDB.getCover(book.filename);
-      if (existing) {
-        setCovers(prev => ({ ...prev, [book.filename]: existing }));
-        setAutoCoverIndex(prev => prev + 1);
-        return;
-      }
-
-      // 3. If no cover, try to generate it using free APIs or Gemini SVG
-      try {
-        console.log(`Auto-generating cover for: ${book.title}`);
-        await fetchEnhancedCoverRef.current(book);
-      } catch (err) {
-        console.error(`Failed to auto-generate cover for ${book.title}:`, err);
-      }
-      
+      // 3. Increment index AFTER task attempt
       setAutoCoverIndex(prev => prev + 1);
+
+      // If we're done after this increment, clear progress immediately
+      if (idx + 1 >= library.length) {
+        setEnrichmentProgress(null);
+      }
     }, 10000); // Process next book every 10 seconds (faster swoop)
 
     return () => clearInterval(timer);

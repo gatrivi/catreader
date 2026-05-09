@@ -146,7 +146,33 @@ export const LibraryView = ({
   const handleDragEnd = () => {
     setDragState(null);
     setDragOverShelf(null);
+    setDragOverBook(null);
     dragCounter.current = 0;
+  };
+
+  const [dragOverBook, setDragOverBook] = useState<{ shelfId: string; index: number } | null>(null);
+
+  const handleBookDragOver = (e: React.DragEvent, shelfId: string, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverBook({ shelfId, index });
+  };
+
+  const handleBookDrop = (e: React.DragEvent, toShelfId: string, toIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverBook(null);
+    setDragOverShelf(null);
+    if (!dragState) return;
+
+    if (dragState.fromShelfId === toShelfId) {
+      onReorderBook(toShelfId, dragState.fromIndex, toIndex);
+    } else {
+      onMoveBook(dragState.bookId, dragState.fromShelfId, toShelfId);
+      // Optional: reorder in the target shelf after move
+      // But moveBook currently appends, so we'd need a more complex moveBook
+    }
+    setDragState(null);
   };
 
   const handleShelfDragOver = (e: React.DragEvent, shelfId: string) => {
@@ -361,9 +387,12 @@ export const LibraryView = ({
                                   onDragStart={(e) => handleDragStart(e, book.id, shelf.id, bookIdx)}
                                   onDragEnd={handleDragEnd}
                                   className={cn(
-                                    "cursor-grab active:cursor-grabbing transition-opacity shrink-0",
-                                    dragState?.bookId === book.id && "opacity-40"
+                                    "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
+                                    dragState?.bookId === book.id && "opacity-40",
+                                    dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
                                   )}
+                                  onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
+                                  onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
                                 >
                                   <BookCover 
                                     book={book}
