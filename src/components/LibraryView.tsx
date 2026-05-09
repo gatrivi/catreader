@@ -41,14 +41,6 @@ interface LibraryViewProps {
 
 const SHELVES_PER_CASE = 2;
 
-function groupIntoCases(shelves: Shelf[]): Shelf[][] {
-  const cases: Shelf[][] = [];
-  for (let i = 0; i < shelves.length; i += SHELVES_PER_CASE) {
-    cases.push(shelves.slice(i, i + SHELVES_PER_CASE));
-  }
-  return cases;
-}
-
 export const LibraryView = ({ 
   library, 
   covers,
@@ -71,8 +63,6 @@ export const LibraryView = ({
   onShareBook
   }: LibraryViewProps) => {
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [activeCase, setActiveCase] = useState(0);
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(
     localStorage.getItem('catreader_custom_wallpaper')
   );
@@ -80,7 +70,8 @@ export const LibraryView = ({
   const wallpapers: Record<string, string> = {
     wood: 'repeating-linear-gradient(to bottom, #2d1d13, #2d1d13 300px, #1a110b 300px, #1a110b 320px)',
     dim: '#1c1917',
-    slate: '#0f172a'
+    slate: '#0f172a',
+    glass: 'conic-gradient(from 0deg at 50% 50%, #4c1d95 0deg, #831843 60deg, #1e3a8a 120deg, #064e3b 180deg, #78350f 240deg, #4c1d95 300deg)'
   };
 
   const handleCustomWallpaper = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,34 +87,6 @@ export const LibraryView = ({
     reader.readAsDataURL(file);
     e.target.value = '';
   };
-
-  const cases = groupIntoCases(shelves);
-
-  // Track active case from scroll position
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const handleScroll = () => {
-      const scrollLeft = el.scrollLeft;
-      const caseWidth = el.scrollWidth / cases.length;
-      const idx = Math.round(scrollLeft / caseWidth);
-      setActiveCase(Math.min(Math.max(0, idx), cases.length - 1));
-    };
-
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, [cases.length]);
-
-  const scrollToCase = useCallback((index: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const caseEls = el.querySelectorAll<HTMLElement>('[data-bookcase]');
-    const target = caseEls[index];
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    }
-  }, []);
 
   const [dragState, setDragState] = useState<{
     bookId: string;
@@ -251,6 +214,13 @@ export const LibraryView = ({
                 title="Slate"
                 aria-label="Slate wallpaper"
               />
+              <button 
+                onClick={() => onSetWallpaper('glass')}
+                className={cn("w-5 h-5 rounded-lg border border-white/10 transition-transform active:scale-95", wallpaper === 'glass' && "ring-2 ring-amber-600")}
+                style={{ background: wallpapers.glass }}
+                title="Stained Glass"
+                aria-label="Glass wallpaper"
+              />
               <label 
                 className={cn("w-5 h-5 rounded-lg border border-white/10 transition-transform active:scale-95 flex items-center justify-center cursor-pointer overflow-hidden",
                   wallpaper === 'custom' && "ring-2 ring-amber-600"
@@ -314,7 +284,7 @@ export const LibraryView = ({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-y-auto scrollbar-none px-4 py-6">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-stone-400 gap-4">
             <Loader2 className="animate-spin text-amber-600" size={32} />
@@ -333,138 +303,86 @@ export const LibraryView = ({
             </div>
           </div>
         ) : (
-          <>
-            {/* Horizontal Bookcase Scroll */}
-            <div 
-              ref={scrollRef}
-              className="h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-stretch"
-            >
-              {cases.map((caseShelves, caseIdx) => (
+          <div className="max-w-7xl mx-auto space-y-12">
+            {shelves.map((shelf) => {
+              const shelfBooks = shelf.bookIds
+                .map(id => getBook(id))
+                .filter((b): b is LibraryBook => !!b);
+
+              const isEmpty = shelfBooks.length === 0;
+              const isDragOver = dragOverShelf === shelf.id;
+
+              if (isEmpty && !isDragOver) return null; // Hide empty shelves unless dragging over
+
+              return (
                 <div 
-                  key={caseIdx}
-                  data-bookcase={caseIdx}
-                  className="w-[90vw] min-w-[90vw] h-full snap-center flex flex-col px-4 py-2"
+                  key={shelf.id}
+                  className={cn(
+                    "relative flex flex-col gap-4 p-4 rounded-2xl transition-all duration-300",
+                    !isSimplified && "bg-black/30 backdrop-blur-md border border-white/5 shadow-2xl",
+                    isDragOver && "ring-2 ring-indigo-500 bg-indigo-500/10"
+                  )}
+                  onDragOver={(e) => handleShelfDragOver(e, shelf.id)}
+                  onDragEnter={(e) => handleShelfDragEnter(e, shelf.id)}
+                  onDragLeave={handleShelfDragLeave}
+                  onDrop={(e) => handleShelfDrop(e, shelf.id)}
                 >
-                  {/* Bookcase frame */}
-                  <div className={cn(
-                    "flex-1 flex flex-col gap-4 rounded-2xl p-4 sm:p-6",
-                    !isSimplified && "bg-black/20 backdrop-blur-sm border border-white/5 shadow-2xl"
-                  )}>
-                    {caseShelves.map((shelf) => {
-                      const shelfBooks = shelf.bookIds
-                        .map(id => getBook(id))
-                        .filter((b): b is LibraryBook => !!b);
-
-                      const isEmpty = shelfBooks.length === 0;
-                      const isDragOver = dragOverShelf === shelf.id;
-
-                      return (
-                        <div 
-                          key={shelf.id}
-                          className={cn(
-                            "flex-1 flex flex-col min-h-0 relative rounded-lg transition-colors",
-                            isDragOver && !isSimplified && "bg-amber-900/20 ring-1 ring-amber-600/40"
-                          )}
-                          onDragOver={(e) => handleShelfDragOver(e, shelf.id)}
-                          onDragEnter={(e) => handleShelfDragEnter(e, shelf.id)}
-                          onDragLeave={handleShelfDragLeave}
-                          onDrop={(e) => handleShelfDrop(e, shelf.id)}
-                        >
-                          {/* Shelf Title */}
-                          <div className="shrink-0 mb-1">
-                            <ShelfTitle 
-                              title={shelf.title} 
-                              onChange={(title) => onUpdateShelfTitle(shelf.id, title)}
-                            />
-                          </div>
-
-                          {/* Books Row */}
-                          <div className="flex-1 flex items-end overflow-x-auto scrollbar-none px-1 pb-0 min-h-0">
-                            <div className="flex items-end gap-3">
-                              {shelfBooks.map((book, bookIdx) => (
-                                <div
-                                  key={book.id}
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, book.id, shelf.id, bookIdx)}
-                                  onDragEnd={handleDragEnd}
-                                  className={cn(
-                                    "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
-                                    dragState?.bookId === book.id && "opacity-40",
-                                    dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
-                                  )}
-                                  onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
-                                  onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
-                                >
-                                  <BookCover 
-                                    book={book}
-                                    cover={covers[book.filename]}
-                                    onClick={() => onOpenBook(book)}
-                                    onEdit={() => onEditBook(book)}
-                                    onShare={() => onShareBook?.(book)}
-                                    isSimplified={isSimplified}
-                                  />
-                                </div>
-                              ))}
-                              
-                              {/* Empty shelf placeholder */}
-                              {isEmpty && !isSimplified && (
-                                <div className="h-32 flex items-center justify-center opacity-10 font-serif italic text-white pointer-events-none shrink-0 w-full">
-                                  Arrastra libros aquí
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Wood Plank */}
-                          {!isSimplified && (
-                            <div className="h-3 bg-gradient-to-b from-[#4a311d] to-[#2d1d13] rounded-sm shadow-[0_6px_12px_rgba(0,0,0,0.5)] border-t border-white/10 mt-1 shrink-0" />
-                          )}
-                        </div>
-                      );
-                    })}
+                  {/* Shelf Title */}
+                  <div className="flex items-center justify-between mb-2">
+                    <ShelfTitle 
+                      title={shelf.title} 
+                      onChange={(title) => onUpdateShelfTitle(shelf.id, title)}
+                    />
+                    <span className="text-[10px] font-mono text-white/30 uppercase tracking-tighter">
+                      {shelfBooks.length} libros
+                    </span>
                   </div>
-                </div>
-              ))}
-            </div>
 
-            {/* Navigation Arrows */}
-            {cases.length > 1 && (
-              <>
-                <button
-                  onClick={() => scrollToCase(Math.max(0, activeCase - 1))}
-                  disabled={activeCase === 0}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-sm border border-white/5"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <button
-                  onClick={() => scrollToCase(Math.min(cases.length - 1, activeCase + 1))}
-                  disabled={activeCase === cases.length - 1}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-sm border border-white/5"
-                >
-                  <ChevronRight size={20} />
-                </button>
-              </>
-            )}
-
-            {/* Case Indicators */}
-            {cases.length > 1 && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
-                {cases.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => scrollToCase(idx)}
-                    className={cn(
-                      "w-2 h-2 rounded-full transition-all",
-                      idx === activeCase 
-                        ? "bg-amber-500 w-6" 
-                        : "bg-white/20 hover:bg-white/40"
+                  {/* Books Grid/Row */}
+                  <div className="flex flex-wrap gap-3 sm:gap-6 items-end justify-start">
+                    {shelfBooks.map((book, bookIdx) => (
+                      <div
+                        key={book.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, book.id, shelf.id, bookIdx)}
+                        onDragEnd={handleDragEnd}
+                        className={cn(
+                          "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
+                          dragState?.bookId === book.id && "opacity-40",
+                          dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
+                        )}
+                        onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
+                        onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
+                      >
+                        <BookCover 
+                          book={book}
+                          cover={covers[book.filename]}
+                          onClick={() => onOpenBook(book)}
+                          onEdit={() => onEditBook(book)}
+                          onShare={() => onShareBook?.(book)}
+                          isSimplified={isSimplified}
+                        />
+                      </div>
+                    ))}
+                    
+                    {isEmpty && (
+                      <div className="h-32 flex items-center justify-center opacity-10 font-serif italic text-white pointer-events-none w-full">
+                        Arrastra libros aquí
+                      </div>
                     )}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+                  </div>
+
+                  {/* Wood Plank or Glass divider */}
+                  {!isSimplified && (
+                    <div className={cn(
+                      "h-1.5 rounded-full mt-2 shrink-0 shadow-lg",
+                      wallpaper === 'glass' ? "bg-white/10" : "bg-gradient-to-r from-amber-900/50 via-amber-700/50 to-amber-900/50"
+                    )} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
