@@ -24,15 +24,31 @@ interface BookCoverProps {
 }
 
 export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEdit, onShare, isSimplified }) => {
+  const displayCover = React.useMemo(() => {
+    if (!cover) return null;
+    // If it's already a URL or Data URL, return it
+    if (cover.startsWith('http') || cover.startsWith('data:')) return cover;
+    // If it's raw SVG code, convert to Data URL
+    if (cover.includes('<svg')) {
+      try {
+        return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(cover)))}`;
+      } catch (e) {
+        console.error('Failed to encode SVG cover:', e);
+        return null;
+      }
+    }
+    return cover;
+  }, [cover]);
+
   const svgDataUrl = React.useMemo(() => {
-    if (!book.svg || cover) return null;
+    if (!book.svg || displayCover) return null;
     try {
       return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
     } catch (e) {
-      console.error('Failed to encode SVG:', e);
+      console.error('Failed to encode book.svg:', e);
       return null;
     }
-  }, [book.svg, cover]);
+  }, [book.svg, displayCover]);
 
   return (
     <div className="group relative flex flex-col items-center w-full">
@@ -45,8 +61,8 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]"
         )}
       >
-        {cover ? (
-          <img src={cover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+        {displayCover ? (
+          <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
         ) : svgDataUrl ? (
           <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
         ) : (

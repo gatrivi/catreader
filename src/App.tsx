@@ -124,7 +124,7 @@ export default function App() {
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; filename?: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v1.3.8';
+  const APP_VERSION = 'v2.2.0';
 
   const handleLogin = async (username: string, pin: string) => {
     setIsSyncing(true);
@@ -698,15 +698,31 @@ export default function App() {
         console.warn('Open Library cover fetch failed:', olErr);
       }
 
-      // 3. Fallback to AI generation (Pollinations.ai - free, no key needed)
+      // 3. NEW: If we have Gemini key, generate a high-quality SVG cover now
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      if (g_apiKey) {
+        console.log(`[Gemini] Generating custom SVG cover for: ${book.title}`);
+        const enriched = await enrichBookWithGemini(book);
+        if (enriched && enriched.svg) {
+           await coverDB.saveCover(book.filename, enriched.svg);
+           setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+
+           // Also update metadata so it persists
+           const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enriched };
+           setEnrichedMetadata(newMetadata);
+           localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+           return;
+        }
+      }
+
+      // 4. Fallback to AI generation (Pollinations.ai - free, no key needed)
       let visualPrompt = `book cover for "${book.title}" by ${book.author || 'unknown author'}, classical library style, high quality, vintage paper texture`;
       
-      // Optionally enhance prompt with Gemini if key is available, but generic prompt works fine
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      // We already checked g_apiKey above
       if (g_apiKey) {
         try {
           const ai = new GoogleGenAI({ apiKey: g_apiKey });
-          const result = await ai.models.generateContent({
+          const result = await (ai as any).models.generateContent({
             model: "gemini-1.5-flash",
             contents: [{ role: 'user', parts: [{ text: `Create a short, vivid visual prompt (15 words max) for an AI image generator to create a book cover for: "${book.title}" by ${book.author}. Focus on the atmosphere and subject. No text.` }] }]
           });
