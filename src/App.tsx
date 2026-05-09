@@ -114,6 +114,7 @@ export default function App() {
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
   const [selectedTextMenu, setSelectedTextMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; filename?: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const APP_VERSION = 'v1.3.8';
@@ -836,11 +837,19 @@ export default function App() {
       const idx = autoCoverIndexRef.current;
       if (idx >= library.length) {
         clearInterval(timer);
+        setEnrichmentProgress(null);
         return;
       }
       
       const book = library[idx];
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+
+      // Update progress UI
+      setEnrichmentProgress({ 
+        current: idx + 1, 
+        total: library.length, 
+        filename: book.filename 
+      });
 
       // 1. Check if metadata needs enrichment (Gemini)
       const currentMeta = enrichedMetadataRef.current[book.filename];
@@ -899,7 +908,7 @@ export default function App() {
       }
       
       setAutoCoverIndex(prev => prev + 1);
-    }, 15000); // Process next book every 15 seconds to be safe with rate limits
+    }, 10000); // Process next book every 10 seconds (faster swoop)
 
     return () => clearInterval(timer);
   }, [isIdle, library.length, coverScanKey]);
@@ -1569,6 +1578,7 @@ export default function App() {
             onReorderBook={reorderBook}
             onMagicEnrich={magicFixLibrary}
             isSyncing={isSyncing}
+            enrichmentProgress={enrichmentProgress}
             onShareBook={(book) => {
               const url = new URL(window.location.href);
               url.searchParams.set('book', book.filename);

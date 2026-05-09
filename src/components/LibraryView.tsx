@@ -35,6 +35,7 @@ interface LibraryViewProps {
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
   isSyncing?: boolean;
+  enrichmentProgress?: { current: number; total: number; filename?: string };
   onShareBook?: (book: LibraryBook) => void;
 }
 
@@ -62,11 +63,13 @@ export const LibraryView = ({
   onSetWallpaper,
   shelves,
   onUpdateShelfTitle,
-  onMoveBook,
+  onReorderBook,
   onMagicEnrich,
   isSyncing,
+  enrichmentProgress,
   onShareBook
-}: LibraryViewProps) => {
+  }: LibraryViewProps) => {
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeCase, setActiveCase] = useState(0);
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(
@@ -242,16 +245,28 @@ export const LibraryView = ({
             </div>
 
             {onMagicEnrich && (
-              <button 
-                onClick={onMagicEnrich}
-                disabled={isSyncing}
-                className="flex items-center gap-1.5 bg-indigo-900/60 text-indigo-200 hover:text-white hover:bg-indigo-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
-                title="Enriquecer biblioteca con Gemini AI (títulos, autores y portadas)"
-                aria-label="Magic enrich"
-              >
-                <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />
-                {isSyncing ? 'Working...' : 'Magic'}
-              </button>
+              <div className="flex items-center gap-2">
+                {enrichmentProgress && enrichmentProgress.total > 0 && (
+                  <div className="flex flex-col items-end mr-1">
+                    <span className="text-[9px] font-mono text-indigo-400 font-bold leading-none">
+                      {enrichmentProgress.current}/{enrichmentProgress.total}
+                    </span>
+                    <span className="text-[8px] text-stone-500 truncate max-w-[80px] leading-tight">
+                      {enrichmentProgress.filename}
+                    </span>
+                  </div>
+                )}
+                <button 
+                  onClick={onMagicEnrich}
+                  disabled={isSyncing}
+                  className="flex items-center gap-1.5 bg-indigo-900/60 text-indigo-200 hover:text-white hover:bg-indigo-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
+                  title="Enriquecer biblioteca con Gemini AI (títulos, autores y portadas)"
+                  aria-label="Magic enrich"
+                >
+                  <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />
+                  {isSyncing ? 'Procesando...' : 'Magic'}
+                </button>
+              </div>
             )}
 
             <button 
