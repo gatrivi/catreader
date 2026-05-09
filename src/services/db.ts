@@ -7,10 +7,11 @@ export const coverDB = {
   dbName: 'CatReaderDB',
   storeName: 'covers',
   contentStore: 'content',
+  ghostStore: 'ghostText',
   
   async init(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 2); // Bumped version for new store
+      const request = indexedDB.open(this.dbName, 3); // Bumped version for ghostText store
       request.onupgradeneeded = (e: any) => {
         const db = request.result;
         if (!db.objectStoreNames.contains(this.storeName)) {
@@ -18,6 +19,9 @@ export const coverDB = {
         }
         if (!db.objectStoreNames.contains(this.contentStore)) {
           db.createObjectStore(this.contentStore);
+        }
+        if (!db.objectStoreNames.contains(this.ghostStore)) {
+          db.createObjectStore(this.ghostStore);
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -79,6 +83,26 @@ export const coverDB = {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(this.contentStore, 'readonly');
       const request = tx.objectStore(this.contentStore).get(filename);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async saveGhostText(filename: string, text: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.ghostStore, 'readwrite');
+      tx.objectStore(this.ghostStore).put(text, filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async getGhostText(filename: string): Promise<string | null> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.ghostStore, 'readonly');
+      const request = tx.objectStore(this.ghostStore).get(filename);
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });

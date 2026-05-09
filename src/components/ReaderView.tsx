@@ -19,6 +19,7 @@ interface ReaderViewProps {
   scrollRatio: number;
   isRestoring: boolean;
   pageRatios: number[];
+  isFocusMode?: boolean;
   onLoadSuccess: (pdf: any) => void;
   onPageRenderSuccess: (p: number) => void;
   onPageRenderError?: (p: number, error: Error) => void;
@@ -34,6 +35,7 @@ interface PageItemProps {
   isVisible: boolean;
   calculatedHeight: number;
   minWidth: number;
+  isFocusMode?: boolean;
   onRenderSuccess: (p: number) => void;
   onRenderError?: (p: number, error: Error) => void;
 }
@@ -46,6 +48,7 @@ const PageItem: React.FC<PageItemProps> = ({
   isVisible,
   calculatedHeight,
   minWidth,
+  isFocusMode,
   onRenderSuccess,
   onRenderError,
 }) => {
@@ -97,7 +100,10 @@ const PageItem: React.FC<PageItemProps> = ({
     <div
       id={`page-${pageNum}`}
       data-page={pageNum}
-      className="page-wrapper relative bg-white shadow-lg mb-8 mx-auto transition-all duration-300"
+      className={cn(
+        "page-wrapper relative bg-white shadow-lg mb-8 mx-auto transition-all duration-500 overflow-hidden",
+        isFocusMode && "ring-2 ring-indigo-500/20"
+      )}
       style={{
         width: 'fit-content',
         minWidth,
@@ -108,7 +114,13 @@ const PageItem: React.FC<PageItemProps> = ({
       }}
     >
       {isVisible && (
-        <>
+        <div 
+          className="transition-transform duration-500 ease-in-out"
+          style={{ 
+            transform: isFocusMode ? 'scale(1.15)' : 'scale(1)',
+            transformOrigin: 'center center'
+          }}
+        >
           {status !== 'rendered' && status !== 'error' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-50 z-10">
               <Loader2 className="animate-spin text-stone-400 mb-2" size={24} />
@@ -138,7 +150,7 @@ const PageItem: React.FC<PageItemProps> = ({
             onRenderSuccess={handleSuccess}
             onRenderError={handleError}
           />
-        </>
+        </div>
       )}
 
       {!isVisible && (
@@ -164,6 +176,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   zoom,
   theme,
   pageRatios,
+  isFocusMode,
   onLoadSuccess,
   onPageRenderSuccess,
   onPageRenderError,
@@ -238,6 +251,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                     isVisible={isVisible}
                     calculatedHeight={calculatedHeight}
                     minWidth={minWidth}
+                    isFocusMode={isFocusMode}
                     onRenderSuccess={onPageRenderSuccess}
                     onRenderError={onPageRenderError}
                   />

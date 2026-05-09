@@ -82,6 +82,38 @@ export const syncService = {
       console.error('Firestore Metadata Load Error:', err);
       return null;
     }
+  },
+
+  async saveGhostText(bookId: string, text: string) {
+    const user: any = await ensureAuth();
+    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+    const docRef = doc(db, 'users', user.uid, 'ghostText', bookKey);
+    try {
+      await setDoc(docRef, {
+        content: text,
+        updatedAt: serverTimestamp()
+      });
+      return true;
+    } catch (err) {
+      console.error('Firestore GhostText Save Error:', err);
+      return false;
+    }
+  },
+
+  async loadGhostText(bookId: string): Promise<string | null> {
+    const user: any = await ensureAuth();
+    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+    const docRef = doc(db, 'users', user.uid, 'ghostText', bookKey);
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        return snap.data().content;
+      }
+      return null;
+    } catch (err) {
+      console.error('Firestore GhostText Load Error:', err);
+      return null;
+    }
   }
 
 };

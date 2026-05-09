@@ -23,7 +23,8 @@ import {
   Library,
   X,
   Cloud,
-  MoreVertical
+  MoreVertical,
+  Maximize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, ReadingProgress } from './services/syncService';
@@ -105,6 +106,7 @@ export default function App() {
   const [coverScanKey, setCoverScanKey] = useState(0);
   const [isManualHide, setIsManualHide] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('catreader_theme') || 'dim');
   const [zoom, setZoom] = useState<number | Record<string, number>>(1.0);
@@ -357,6 +359,9 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'h') {
         setIsManualHide(prev => !prev);
+      }
+      if (e.key.toLowerCase() === 'f') {
+        setIsFocusMode(prev => !prev);
       }
       if (e.key === 'Escape') {
         if (showDiagnostics) { setShowDiagnostics(false); return; }
@@ -1098,8 +1103,13 @@ export default function App() {
         const text = await file.text();
         setTextContent(text);
         setNumPages(1);
+        // Save ghost text for TXT files too
+        await coverDB.saveGhostText(file.name, text);
+        await syncService.saveGhostText(file.name, text);
       } else {
         setTextContent(null);
+        // Start background ghost text extraction for PDF
+        extractGhostText(file, file.name);
       }
       
       await loadProgress(file.name);
@@ -1110,6 +1120,42 @@ export default function App() {
       if (googleToken) {
         await uploadToDrive(file, googleToken);
       }
+    }
+  };
+
+  /**
+   * Extracts all text from a PDF in the background and saves it as "Ghost Text".
+   */
+  const extractGhostText = async (fileOrBlob: File | Blob, filename: string) => {
+    try {
+      // Check if we already have it to avoid redundant work
+      const existing = await coverDB.getGhostText(filename);
+      if (existing) return;
+
+      const remote = await syncService.loadGhostText(filename);
+      if (remote) {
+        await coverDB.saveGhostText(filename, remote);
+        return;
+      }
+
+      console.log(`[Ghost] Extracting text for: ${filename}`);
+      const data = new Uint8Array(await fileOrBlob.arrayBuffer());
+      const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
+      const pdf = await loadingTask.promise;
+      
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        fullText += `[Page ${i}]\n${pageText}\n\n`;
+      }
+
+      await coverDB.saveGhostText(filename, fullText);
+      await syncService.saveGhostText(filename, fullText);
+      console.log(`[Ghost] Extraction complete for: ${filename}`);
+    } catch (err) {
+      console.error('Ghost Text Extraction Error:', err);
     }
   };
 
@@ -1165,8 +1211,11 @@ export default function App() {
         const text = await blob.text();
         setTextContent(text);
         setNumPages(1);
+        await coverDB.saveGhostText(filename, text);
+        await syncService.saveGhostText(filename, text);
       } else {
         setTextContent(null);
+        extractGhostText(blob, filename);
       }
       
       if (forcePage) {
@@ -1484,7 +1533,19 @@ export default function App() {
 
             <div className="w-px h-3 bg-white/10 mx-0.5" />
 
-            {/* More Menu */}
+            <button 
+              onClick={() => setIsFocusMode(!isFocusMode)}
+              className={cn(
+                "p-1 rounded-full transition-all",
+                isFocusMode ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/50" : "text-stone-400 hover:text-white hover:bg-white/10"
+              )}
+              title="Focus Mode: Zoom to content (F)"
+              aria-label="Toggle Focus Mode"
+            >
+              <Maximize2 size={14} />
+            </button>
+
+            <div className="w-px h-3 bg-white/10 mx-0.5" />
             <div className="relative" ref={menuRef}>
               <button 
                 onClick={() => setShowMenu(!showMenu)}
@@ -1655,6 +1716,7 @@ export default function App() {
             themeStyles={themeStyles}
             pdfFilter={pdfFilter}
             isSimplified={isSimplified}
+            isFocusMode={isFocusMode}
           />
         )}
       </main>
