@@ -125,7 +125,7 @@ export default function App() {
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; filename?: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.2.0';
+  const APP_VERSION = 'v2.3.0';
 
   const handleLogin = async (username: string, pin: string) => {
     setIsSyncing(true);
