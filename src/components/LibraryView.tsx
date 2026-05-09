@@ -246,7 +246,7 @@ export const LibraryView = ({
                 onClick={onMagicEnrich}
                 disabled={isSyncing}
                 className="flex items-center gap-1.5 bg-indigo-900/60 text-indigo-200 hover:text-white hover:bg-indigo-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
-                title="Free AI magic: enrich titles/authors/covers using Open Library"
+                title="Enriquecer biblioteca con Gemini AI (títulos, autores y portadas)"
                 aria-label="Magic enrich"
               >
                 <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />

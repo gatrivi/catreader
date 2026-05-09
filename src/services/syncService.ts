@@ -54,7 +54,7 @@ export const syncService = {
     }
   },
 
-  async saveMetadata(metadata: Record<string, { title: string; author: string }>) {
+  async saveMetadata(metadata: Record<string, { title: string; author: string; svg?: string }>) {
     const user: any = await ensureAuth();
     const docRef = doc(db, 'users', user.uid, 'library', 'metadata');
     try {
@@ -69,7 +69,7 @@ export const syncService = {
     }
   },
 
-  async loadMetadata(): Promise<Record<string, { title: string; author: string }> | null> {
+  async loadMetadata(): Promise<Record<string, { title: string; author: string; svg?: string }> | null> {
     const user: any = await ensureAuth();
     const docRef = doc(db, 'users', user.uid, 'library', 'metadata');
     try {
@@ -83,4 +83,5 @@ export const syncService = {
       return null;
     }
   }
+
 };

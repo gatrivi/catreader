@@ -14,6 +14,7 @@ interface BookCoverProps {
     author?: string;
     filename: string;
     type: string;
+    svg?: string;
   };
   cover?: string;
   onClick: () => void;
@@ -23,12 +24,22 @@ interface BookCoverProps {
 }
 
 export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEdit, onShare, isSimplified }) => {
+  const svgDataUrl = React.useMemo(() => {
+    if (!book.svg || cover) return null;
+    try {
+      return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
+    } catch (e) {
+      console.error('Failed to encode SVG:', e);
+      return null;
+    }
+  }, [book.svg, cover]);
+
   return (
     <div className="group relative flex flex-col items-center">
       <div 
         onClick={onClick}
         className={cn(
-          "relative w-36 h-52 sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-md border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all",
+          "relative w-36 h-52 sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-md border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden",
           isSimplified 
             ? "shadow-none border-stone-700 bg-stone-800" 
             : "shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-2 duration-300 hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]"
@@ -36,6 +47,8 @@ export const BookCover: React.FC<BookCoverProps> = ({ book, cover, onClick, onEd
       >
         {cover ? (
           <img src={cover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+        ) : svgDataUrl ? (
+          <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
         ) : (
           <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
             <div className={cn(

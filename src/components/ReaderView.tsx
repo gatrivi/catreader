@@ -22,6 +22,7 @@ interface ReaderViewProps {
   onLoadSuccess: (pdf: any) => void;
   onPageRenderSuccess: (p: number) => void;
   onPageRenderError?: (p: number, error: Error) => void;
+  onTextSelection?: (text: string, x: number, y: number) => void;
   themeStyles: Record<string, string>;
   pdfFilter: Record<string, string>;
   isSimplified: boolean;
@@ -166,6 +167,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   onLoadSuccess,
   onPageRenderSuccess,
   onPageRenderError,
+  onTextSelection,
   themeStyles,
   pdfFilter,
   isSimplified,
@@ -180,12 +182,22 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     [onLoadSuccess]
   );
 
+  const handleMouseUp = useCallback(() => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0 && onTextSelection) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      onTextSelection(selection.toString().trim(), rect.left + rect.width / 2, rect.top);
+    }
+  }, [onTextSelection]);
+
   return (
     <div
       className={cn(
         'min-h-full flex flex-col items-center justify-start p-0 sm:p-8',
         isSimplified && 'bg-stone-900 transition-none'
       )}
+      onMouseUp={handleMouseUp}
     >
       {fileType === 'pdf' ? (
         <div

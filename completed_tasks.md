@@ -21,7 +21,10 @@ The following features and fixes have been implemented and are ready for review:
 - **[x] Anonymous Auth**: Implemented background sign-in to maintain the "No Login Hell" rule while ensuring private storage.
 - **[x] Simplified Mode**: Added a high-contrast, animation-free mode optimized for E-ink (Kindle) and low-power devices.
 - **[x] Wallpaper Engine**: Custom background support for the library view.
-- **[x] Auto-Metadata**: Gemini now automatically enriches the library with missing titles and authors.
+- **[x] Auto-Metadata (v1.3.8)**: Gemini now automatically enriches the library with missing titles and authors.
+- **[x] Smart OCR Integration**: Upgraded Gemini enrichment to use **multimodal OCR**. It now scans the first 5 pages of PDFs to identify actual book info, intelligently ignoring "Google Scan" introductory noise and library stamps.
+- **[x] SVG Cover Generation**: Gemini automatically designs minimalist, thematic SVG covers for books without professional artwork.
+- **[x] Background Idle Sync**: Library enrichment now happens silently in the background when the app is idle, sequentially processing the library without user intervention.
 - **[x] Testing Suite**: Integrated Vitest and added automated tests for sync and rendering logic.
 
 ## Sharing & Connectivity

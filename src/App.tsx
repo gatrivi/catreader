@@ -31,6 +31,10 @@ import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GoogleGenAI } from "@google/genai";
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+// Setup pdfjs worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 
 // Component Imports
 import { LibraryView } from './components/LibraryView';
@@ -61,6 +65,7 @@ interface LibraryBook {
   author?: string;
   filename: string;
   type: string;
+  svg?: string;
 }
 
 /**
@@ -85,7 +90,7 @@ export default function App() {
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [library, setLibrary] = useState<LibraryBook[]>([]);
-  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string }>>({});
+  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string }>>({});
   const [covers, setCovers] = useState<Record<string, string>>({});
   const [bufferedPages, setBufferedPages] = useState<Set<number>>(new Set());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -107,6 +112,7 @@ export default function App() {
   const [pageRatios, setPageRatios] = useState<number[]>([]);
   const [extractingRatios, setExtractingRatios] = useState(false);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
+  const [selectedTextMenu, setSelectedTextMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -368,8 +374,26 @@ export default function App() {
   const fetchLibrary = useCallback(async () => {
     setIsLoadingLibrary(true);
     try {
-      const res = await fetch('/books.json');
-      if (!res.ok) throw new Error('books.json not found');
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const booksJsonPath = baseUrl.endsWith('/') ? `${baseUrl}books.json` : `${baseUrl}/books.json`;
+      
+      console.log(`[Library] Fetching from: ${booksJsonPath} (Base: ${baseUrl})`);
+      const res = await fetch(booksJsonPath);
+      
+      if (!res.ok) {
+        console.error(`[Library] Fetch failed with status ${res.status}: ${res.statusText}`);
+        throw new Error(`books.json not found (${res.status})`);
+      }
+      
+      const contentType = res.headers.get('content-type');
+      console.log(`[Library] Response Content-Type: ${contentType}`);
+      
+      if (contentType && !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error(`[Library] Received non-JSON response (first 100 chars): ${text.substring(0, 100)}`);
+        throw new Error(`Expected JSON but got ${contentType}. The file might be missing, and the server returned index.html instead.`);
+      }
+
       const data = await res.json();
       
       // SET LIBRARY IMMEDIATELY - Don't wait for cloud metadata
@@ -420,54 +444,149 @@ export default function App() {
   }, []);
 
   /**
+   * Extracts the first few pages of a PDF as base64 images for OCR.
+   */
+  const extractPagesAsImages = async (blob: Blob, maxPages = 5): Promise<string[]> => {
+    try {
+      const data = new Uint8Array(await blob.arrayBuffer());
+      const loadingTask = pdfjs.getDocument({ data, useSystemFonts: true });
+      const pdf = await loadingTask.promise;
+      const images: string[] = [];
+      
+      const pagesToScan = Math.min(pdf.numPages, maxPages);
+      for (let i = 1; i <= pagesToScan; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 }); // Good balance for OCR
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) continue;
+        
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({ canvasContext: context, viewport }).promise;
+        images.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]); // Only base64 part
+      }
+      return images;
+    } catch (err) {
+      console.error('Error extracting pages for OCR:', err);
+      return [];
+    }
+  };
+
+  /**
+   * Enriches a single book using Gemini LLM magic.
+   * Uses OCR for PDFs to handle "Google scan" noise and cryptic filenames.
+   */
+  const enrichBookWithGemini = async (book: LibraryBook) => {
+    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!g_apiKey) return null;
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: g_apiKey });
+      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      let prompt = `Analyze this book file named "${book.filename}".
+      1. Identify the actual Book Title and Author Name.
+      2. If you see introductory pages (e.g., Google Books "digitized by Google" pages, library stamps, or legal notices), IGNORE THEM and find the real title page further in.
+      3. Create a beautiful, minimalist book cover in SVG format.
+         - Use a color palette that matches the book's theme.
+         - Include the title and author in the SVG.
+         - Vertical 2:3 ratio.
+      
+      Return ONLY a JSON object:
+      {
+        "title": "Clean Title",
+        "author": "Author Name",
+        "svg": "<svg ...>...</svg>"
+      }`;
+
+      const parts: any[] = [{ text: prompt }];
+      
+      // For PDFs, try to get visual context
+      if (book.type === 'pdf') {
+        const blob = await coverDB.getBookContent(book.filename);
+        if (blob) {
+          const images = await extractPagesAsImages(blob, 5);
+          images.forEach(b64 => {
+            parts.push({
+              inlineData: { data: b64, mimeType: "image/jpeg" }
+            });
+          });
+        }
+      }
+
+      const result = await model.generateContent(parts);
+      const responseText = result.response.text();
+      const cleanJson = responseText.replace(/```json|```/g, '').trim();
+      const enriched = JSON.parse(cleanJson);
+      
+      if (enriched && enriched.title) {
+        return {
+          title: enriched.title,
+          author: enriched.author || 'Unknown',
+          svg: enriched.svg
+        };
+      }
+    } catch (err) {
+      console.error(`Gemini Enrichment Error (${book.filename}):`, err);
+    }
+    return null;
+  };
+
+  /**
    * Enriches the library using Gemini LLM magic.
-   * Parses filenames to extract clean titles and authors.
+   * Forces a re-scan of all books even if already enriched.
    */
   const magicFixLibrary = async () => {
     if (library.length === 0) return;
     setIsSyncing(true);
+    showToast('Enriqueciendo biblioteca...');
     
     try {
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-      if (!g_apiKey) return;
+      if (!g_apiKey) {
+        showToast('Gemini API Key not found. Please set VITE_GEMINI_API_KEY in .env');
+        return;
+      }
       
-      const ai = new GoogleGenAI({ apiKey: g_apiKey });
-      const filenames = library.map(b => b.filename).join('\n');
-      const result = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [{ role: 'user', parts: [{ text: `Parse these filenames and return a JSON array of objects with 'filename', 'title', and 'author'. 
-        Clean up the titles (remove extensions, underscores, etc.) and identify the author if possible.
-        Return ONLY valid JSON.
-        Filenames:
-        ${filenames}` }] }]
-      });
-
-      const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanJson = responseText.replace(/```json|```/g, '').trim();
-      const enriched = JSON.parse(cleanJson || '[]');
       const newMetadata = { ...enrichedMetadata };
-      
-      enriched.forEach((item: any) => {
-        newMetadata[item.filename] = { title: item.title, author: item.author };
-      });
+      let updatedCount = 0;
+
+      for (const book of library) {
+        const enriched = await enrichBookWithGemini(book);
+        if (enriched) {
+          newMetadata[book.filename] = enriched;
+          updatedCount++;
+          
+          // Partial state update for immediate feedback
+          if (enriched.svg) {
+            await coverDB.saveCover(book.filename, enriched.svg);
+            setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+          }
+        }
+        // Small delay to avoid rate limits during manual burst
+        await new Promise(r => setTimeout(r, 500));
+      }
 
       setEnrichedMetadata(newMetadata);
       localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+      await syncService.saveMetadata(newMetadata);
       
       // Update current library state
-      const updatedLibrary = library.map(book => ({
+      setLibrary(prev => prev.map(book => ({
         ...book,
         title: newMetadata[book.filename]?.title || book.title,
-        author: newMetadata[book.filename]?.author || ''
-      }));
-      setLibrary(updatedLibrary);
+        author: newMetadata[book.filename]?.author || book.author,
+        svg: newMetadata[book.filename]?.svg
+      })));
       
+      showToast(`Biblioteca enriquecida: ${updatedCount} libros procesados`);
     } catch (err) {
       console.error('Magic Fix Error:', err);
+      showToast('Error al enriquecer la biblioteca');
     } finally {
       setIsSyncing(false);
-      // Safety unlock: if restore hangs (e.g., PDF fails to render), unlock after 10s
-      setTimeout(() => setIsRestoring(false), 10000);
     }
   };
 
@@ -482,6 +601,14 @@ export default function App() {
     try {
       const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
       
+      // 0. Try Gemini SVG first if we have metadata
+      if (enrichedMetadataRef.current[book.filename]?.svg) {
+        const svg = enrichedMetadataRef.current[book.filename].svg as string;
+        await coverDB.saveCover(book.filename, svg);
+        setCovers(prev => ({ ...prev, [book.filename]: svg }));
+        return;
+      }
+
       // 1. Try Google Books API first
       const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
       const gBooksRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
@@ -682,6 +809,8 @@ export default function App() {
   autoCoverIndexRef.current = autoCoverIndex;
   const fetchEnhancedCoverRef = useRef(fetchEnhancedCover);
   fetchEnhancedCoverRef.current = fetchEnhancedCover;
+  const enrichedMetadataRef = useRef(enrichedMetadata);
+  enrichedMetadataRef.current = enrichedMetadata;
 
   /**
    * Detects idle state and triggers automatic cover generation.
@@ -697,7 +826,7 @@ export default function App() {
   }, [library.length, isSyncing]);
 
   /**
-   * Sequentially loads/generates covers when idle.
+   * Sequentially loads/generates covers and enriches metadata when idle.
    * Uses refs to avoid re-running when covers state changes.
    */
   useEffect(() => {
@@ -711,8 +840,43 @@ export default function App() {
       }
       
       const book = library[idx];
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+
+      // 1. Check if metadata needs enrichment (Gemini)
+      const currentMeta = enrichedMetadataRef.current[book.filename];
+      const needsEnrichment = !currentMeta || 
+                             book.title === book.filename || 
+                             (book.author === 'Unknown' || !book.author);
+
+      if (needsEnrichment && g_apiKey) {
+         console.log(`Auto-enriching metadata for: ${book.filename}`);
+         const enriched = await enrichBookWithGemini(book);
+         if (enriched) {
+            const newMetadata = { 
+              ...enrichedMetadataRef.current, 
+              [book.filename]: enriched 
+            };
+            setEnrichedMetadata(newMetadata);
+            localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+            await syncService.saveMetadata(newMetadata);
+            
+            // Update library state for this book
+            setLibrary(prev => prev.map(b => b.filename === book.filename ? {
+              ...b,
+              title: enriched.title,
+              author: enriched.author,
+              svg: enriched.svg
+            } : b));
+
+            // If we got an SVG, save it as a cover too
+            if (enriched.svg) {
+               await coverDB.saveCover(book.filename, enriched.svg);
+               setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+            }
+         }
+      }
       
-      // If we already have the cover in state, skip to next
+      // 2. If we already have the cover in state, skip to next
       if (coversRef.current[book.filename]) {
         setAutoCoverIndex(prev => prev + 1);
         return;
@@ -726,7 +890,7 @@ export default function App() {
         return;
       }
 
-      // If no cover, try to generate it using free APIs
+      // 3. If no cover, try to generate it using free APIs or Gemini SVG
       try {
         console.log(`Auto-generating cover for: ${book.title}`);
         await fetchEnhancedCoverRef.current(book);
@@ -735,7 +899,7 @@ export default function App() {
       }
       
       setAutoCoverIndex(prev => prev + 1);
-    }, 10000); // Process next cover every 10 seconds to avoid 429s
+    }, 15000); // Process next book every 15 seconds to be safe with rate limits
 
     return () => clearInterval(timer);
   }, [isIdle, library.length, coverScanKey]);
@@ -970,7 +1134,9 @@ export default function App() {
         blob = cached;
       } else {
         console.log('Fetching from server:', filename);
-        const url = `/books/${filename}`;
+        const baseUrl = import.meta.env.BASE_URL || '/';
+        const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
+        const url = `${booksDirPath}${filename}`;
         const res = await fetch(url);
         blob = await res.blob();
         // Save to cache
@@ -1401,7 +1567,7 @@ export default function App() {
             onUpdateShelfTitle={updateShelfTitle}
             onMoveBook={moveBook}
             onReorderBook={reorderBook}
-            onMagicEnrich={enrichWithOpenLibrary}
+            onMagicEnrich={magicFixLibrary}
             isSyncing={isSyncing}
             onShareBook={(book) => {
               const url = new URL(window.location.href);
@@ -1467,12 +1633,110 @@ export default function App() {
               console.error('Page render error:', err);
               setRenderErrors((prev) => new Set(prev).add(_p));
             }}
+            onTextSelection={(text, x, y) => {
+              setSelectedTextMenu({ text, x, y });
+            }}
             themeStyles={themeStyles}
             pdfFilter={pdfFilter}
             isSimplified={isSimplified}
           />
         )}
       </main>
+
+      {/* Text Selection Floating Menu */}
+      <AnimatePresence>
+        {selectedTextMenu && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+            className="fixed z-[100] bg-stone-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 items-center"
+            style={{ 
+              left: `${selectedTextMenu.x}px`, 
+              top: `${selectedTextMenu.y - 50}px`,
+              transform: 'translateX(-50%)' 
+            }}
+          >
+            <button 
+              onClick={async () => {
+                const book = library.find(b => b.filename === fileName);
+                if (book) {
+                  await updateBookMetadata(fileName, selectedTextMenu.text, book.author || '');
+                  showToast('Título actualizado');
+                }
+                setSelectedTextMenu(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+              className="px-2 py-1 text-[10px] font-bold uppercase tracking-tighter text-white hover:bg-white/10 rounded-lg transition-colors"
+            >
+              Set Title
+            </button>
+            <button 
+              onClick={async () => {
+                const book = library.find(b => b.filename === fileName);
+                if (book) {
+                  await updateBookMetadata(fileName, book.title, selectedTextMenu.text);
+                  showToast('Autor actualizado');
+                }
+                setSelectedTextMenu(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+              className="px-2 py-1 text-[10px] font-bold uppercase tracking-tighter text-white hover:bg-white/10 rounded-lg transition-colors"
+            >
+              Set Author
+            </button>
+            <button 
+              onClick={async () => {
+                const book = library.find(b => b.filename === fileName);
+                if (book) {
+                  setIsSyncing(true);
+                  const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+                  if (g_apiKey) {
+                    try {
+                      const genAI = new GoogleGenAI({ apiKey: g_apiKey });
+                      const result = await genAI.models.generateContent({
+                        model: "gemini-1.5-flash",
+                        contents: [{ role: 'user', parts: [{ text: `Generate a beautiful, minimalist SVG book cover (vertical 2:3 ratio) for a book titled "${book.title}" by "${book.author}". 
+                        Use this visual theme description: "${selectedTextMenu.text}". 
+                        Ensure the SVG includes the title and author.
+                        Return ONLY the SVG code.` }] }]
+                      });
+                      const svg = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                      const cleanSvg = svg.substring(svg.indexOf('<svg'), svg.lastIndexOf('</svg>') + 6);
+                      
+                      const newMetadata = { 
+                        ...enrichedMetadata, 
+                        [fileName]: { ...enrichedMetadata[fileName], svg: cleanSvg } 
+                      };
+                      setEnrichedMetadata(newMetadata);
+                      localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+                      await syncService.saveMetadata(newMetadata);
+                      setLibrary(prev => prev.map(b => b.filename === fileName ? { ...b, svg: cleanSvg } : b));
+                      
+                      showToast('Portada generada');
+                    } catch (e) {
+                      console.error(e);
+                      showToast('Error al generar portada');
+                    }
+                  }
+                  setIsSyncing(false);
+                }
+                setSelectedTextMenu(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+              className="px-2 py-1 text-[10px] font-bold uppercase tracking-tighter text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors"
+            >
+              Magic Cover
+            </button>
+            <button 
+              onClick={() => setSelectedTextMenu(null)}
+              className="p-1 text-stone-500 hover:text-white transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Minimal Page Indicator */}
       {showUI && !isManualHide && fileUrl && (
