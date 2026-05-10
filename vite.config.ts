@@ -42,15 +42,16 @@ export default defineConfig(({mode}) => {
         workbox: {
           // Exclude books from precache to avoid build errors and huge initial downloads
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+          globIgnores: ['**/books/*.pdf', '**/books/*.epub'],
           // Use runtime caching for books instead
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/.*\/books\/.*\.pdf$/,
+              urlPattern: /\/books\/.*\.pdf$/,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'books-cache',
                 expiration: {
-                  maxEntries: 10,
+                  maxEntries: 50,
                   maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Days
                 },
                 cacheableResponse: {
