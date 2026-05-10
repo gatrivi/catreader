@@ -1283,13 +1283,20 @@ export default function App() {
    * Closes the current book and returns to the library view.
    * Clears the active book state and removes the last book tracker.
    */
-  const closeBook = () => {
+  const closeBook = (skipHistory = false) => {
     setFileUrl(null);
     setFileName('');
     setNumPages(0);
     setIsLoaded(false);
     setTextContent(null);
     localStorage.removeItem('catreader_last_book');
+
+    if (!skipHistory) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('read');
+      url.searchParams.delete('page');
+      window.history.pushState({}, '', url.toString());
+    }
   };
 
   /**
@@ -1297,11 +1304,19 @@ export default function App() {
    * @param book - The library book object to open
    * @param forcePage - Optional page number to jump to
    */
-  const openFromLibrary = async (book: LibraryBook, forcePage?: number) => {
+  const openFromLibrary = async (book: LibraryBook, forcePage?: number, skipHistory = false) => {
     const filename = book.filename;
     setFileName(filename);
     setFileType(book.type);
     
+    // Update URL without full reload
+    if (!skipHistory) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('read', filename);
+      if (forcePage) url.searchParams.set('page', forcePage.toString());
+      window.history.pushState({ filename }, '', url.toString());
+    }
+
     // Track last opened book
     localStorage.setItem('catreader_last_book', filename);
 
@@ -1354,6 +1369,30 @@ export default function App() {
   };
 
   /**
+   * Handles browser back/forward buttons using the PopState API.
+   */
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const readQuery = params.get('read');
+      
+      if (readQuery) {
+        const book = library.find(b => b.filename === readQuery || b.id === readQuery);
+        if (book) {
+          const pageQuery = params.get('page');
+          const page = pageQuery ? parseInt(pageQuery) : undefined;
+          openFromLibrary(book, page, true);
+        }
+      } else {
+        closeBook(true);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [library]);
+
+  /**
    * Handles deep linking from URL parameters (?read=...&page=...)
    */
   useEffect(() => {
@@ -1366,18 +1405,29 @@ export default function App() {
         const book = library.find(b => b.filename === readQuery || b.id === readQuery);
         if (book) {
           const page = pageQuery ? parseInt(pageQuery) : undefined;
-          openFromLibrary(book, page);
+          openFromLibrary(book, page, true);
         }
       } else {
         // Auto-open last book if no deep link
         const lastBookId = localStorage.getItem('catreader_last_book');
         if (lastBookId) {
           const book = library.find(b => b.filename === lastBookId);
-          if (book) openFromLibrary(book);
+          if (book) openFromLibrary(book, undefined, true);
         }
       }
     }
   }, [library]);
+
+  /**
+   * Syncs page number to URL for deep linking.
+   */
+  useEffect(() => {
+    if (fileName && pageNumber > 1) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('page', pageNumber.toString());
+      window.history.replaceState(window.history.state, '', url.toString());
+    }
+  }, [pageNumber, fileName]);
 
   /**
    * Restores scroll position for text files after content is loaded.
@@ -1623,12 +1673,13 @@ export default function App() {
             transition={{ duration: 0.2 }}
             className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/80 text-stone-200 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-md border border-white/5"
           >
-            <button 
-              onClick={closeBook}
+            <button
+              onClick={() => closeBook()}
               className="hover:text-white transition-colors p-1"
               title="Volver a la Biblioteca"
               aria-label="Volver a la Biblioteca"
             >
+
               <Library size={16} />
             </button>
             <span className="text-[10px] font-medium truncate max-w-[100px] text-stone-300">{fileName || 'Reader'}</span>
