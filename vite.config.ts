@@ -40,11 +40,44 @@ export default defineConfig(({mode}) => {
           ]
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,pdf,json}'],
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB limit for single files
+          // Exclude books from precache to avoid build errors and huge initial downloads
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+          // Use runtime caching for books instead
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/.*\/books\/.*\.pdf$/,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'books-cache',
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
         }
       })
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
+              if (id.includes('motion') || id.includes('framer-motion')) return 'vendor-motion';
+              if (id.includes('lucide-react')) return 'vendor-lucide';
+              if (id.includes('react')) return 'vendor-react';
+              return 'vendor';
+            }
+          },
+        },
+      },
+      chunkSizeWarningLimit: 1000,
+    },
     test: {
       globals: true,
       environment: 'jsdom',
