@@ -91,6 +91,7 @@ export default function App() {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
+  const [epubCfi, setEpubCfi] = useState<string | undefined>(undefined);
   const [scrollRatio, setScrollRatio] = useState<number>(0);
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
@@ -1063,6 +1064,7 @@ export default function App() {
         }
 
         setPageNumber(data.page || 1);
+        if (data.epubCfi) setEpubCfi(data.epubCfi);
         setZoom(targetZoom);
         setTheme(data.theme as Theme || 'sepia');
         setScrollRatio(data.scrollRatio || 0);
@@ -1110,6 +1112,7 @@ export default function App() {
 
     const progress: ReadingProgress = { 
       page: pageNumber, 
+      epubCfi,
       zoom: zoomMap, 
       theme,
       scrollRatio: currentScrollRatio,
@@ -1833,6 +1836,11 @@ export default function App() {
             onTextSelection={(text, x, y) => {
               setSelectedTextMenu({ text, x, y });
             }}
+            onEpubLocationChange={(cfi) => {
+              setEpubCfi(cfi);
+              // Save progress is debounced anyway
+            }}
+            epubCfi={epubCfi}
             themeStyles={themeStyles}
             pdfFilter={pdfFilter}
             isSimplified={isSimplified}

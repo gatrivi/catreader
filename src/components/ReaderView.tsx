@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Document, Page } from 'react-pdf';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { EpubView } from './EpubView';
+import { SadMonkIcon } from './SadMonkIcon';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -24,6 +26,8 @@ interface ReaderViewProps {
   onPageRenderSuccess: (p: number) => void;
   onPageRenderError?: (p: number, error: Error) => void;
   onTextSelection?: (text: string, x: number, y: number) => void;
+  onEpubLocationChange?: (cfi: string) => void;
+  epubCfi?: string;
   themeStyles: Record<string, string>;
   pdfFilter: Record<string, string>;
   isSimplified: boolean;
@@ -181,6 +185,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   onPageRenderSuccess,
   onPageRenderError,
   onTextSelection,
+  onEpubLocationChange,
+  epubCfi,
   themeStyles,
   pdfFilter,
   isSimplified,
@@ -196,13 +202,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   );
 
   const handleMouseUp = useCallback(() => {
+    if (fileType !== 'pdf' && fileType !== 'txt') return;
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0 && onTextSelection) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       onTextSelection(selection.toString().trim(), rect.left + rect.width / 2, rect.top);
     }
-  }, [onTextSelection]);
+  }, [onTextSelection, fileType]);
 
   return (
     <div
@@ -269,13 +276,24 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         >
           {textContent}
         </div>
+      ) : fileType === 'epub' ? (
+        <div className="w-full h-[calc(100vh-120px)] flex flex-col">
+          <EpubView 
+            fileUrl={fileUrl} 
+            theme={theme} 
+            initialLocation={epubCfi} 
+            onLocationChange={onEpubLocationChange} 
+          />
+        </div>
       ) : (
-        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-          <AlertCircle size={48} className="text-amber-500 mb-4" />
-          <h2 className="text-xl font-bold mb-2">Formato no soportado</h2>
-          <p className="text-stone-500">
-            Actualmente solo soportamos PDF y TXT. Estamos trabajando en EPUB y
-            DOCS.
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-stone-900/40 backdrop-blur-md rounded-3xl border border-white/5 shadow-2xl py-20">
+          <SadMonkIcon size={120} className="text-amber-500 mb-8" />
+          <h2 className="text-2xl font-serif font-bold text-white mb-2 tracking-tight">Formato no soportado</h2>
+          <p className="text-stone-400 max-w-sm">
+            Este monje está triste porque todavía no sabemos cómo leer archivos <span className="text-amber-500 font-mono font-bold uppercase">{fileType}</span>.
+          </p>
+          <p className="text-stone-500 text-xs mt-4 italic">
+            Estamos meditando para añadir soporte pronto.
           </p>
         </div>
       )}

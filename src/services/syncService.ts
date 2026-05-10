@@ -9,6 +9,7 @@ import { authService } from './authService';
 
 export interface ReadingProgress {
   page: number;
+  epubCfi?: string;
   zoom: number | Record<string, number>;
   theme: string;
   scrollRatio: number;

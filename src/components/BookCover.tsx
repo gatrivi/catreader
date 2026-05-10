@@ -1,12 +1,15 @@
 import React from 'react';
-import { Pencil, Share2, Sparkles } from 'lucide-react';
+import { Pencil, Share2, Sparkles, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { SadMonkIcon } from './SadMonkIcon';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+const SUPPORTED_TYPES = ['pdf', 'txt', 'epub'];
 
 interface BookCoverProps {
   book: {
@@ -60,17 +63,20 @@ export const BookCover: React.FC<BookCoverProps> = ({
     }
   }, [book.svg, displayCover]);
 
+  const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
+
   return (
     <div className="group relative flex flex-col items-center w-full">
       <motion.div 
-        onClick={onClick}
+        onClick={isSupported ? onClick : undefined}
         layoutId={`book-container-${book.id}`}
         className={cn(
           "relative w-full aspect-[2/3] sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden",
           isSimplified 
             ? "shadow-none border-stone-700 bg-stone-800" 
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]",
-          isIdentifying && "ring-4 ring-amber-500 ring-offset-2 ring-offset-stone-900 animate-pulse"
+          isIdentifying && "ring-4 ring-amber-500 ring-offset-2 ring-offset-stone-900 animate-pulse",
+          !isSupported && "cursor-not-allowed filter grayscale contrast-75 brightness-75"
         )}
       >
         <AnimatePresence mode="wait">
@@ -107,7 +113,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
               key="content"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="w-full h-full flex flex-col"
+              className="w-full h-full flex flex-col relative"
             >
               {displayCover ? (
                 <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
@@ -126,6 +132,16 @@ export const BookCover: React.FC<BookCoverProps> = ({
                     isSimplified ? "text-stone-500" : "text-[#8b5a2b]"
                   )}>
                     {book.author || 'Autor Desconocido'}
+                  </div>
+                </div>
+              )}
+
+              {/* Sad Monk Overlay for Unsupported Books */}
+              {!isSupported && (
+                <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-stone-900/40 backdrop-blur-[2px]">
+                  <SadMonkIcon size={48} className="text-amber-500" />
+                  <div className="mt-2 px-2 py-0.5 bg-amber-600 text-white text-[8px] font-black uppercase tracking-tighter rounded-full shadow-lg">
+                    Formato no soportado
                   </div>
                 </div>
               )}
