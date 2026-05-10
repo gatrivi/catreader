@@ -345,7 +345,7 @@ export const LibraryView = ({
             <label className="flex items-center gap-1.5 bg-amber-700 text-white hover:bg-amber-600 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer shadow-lg shadow-amber-950/50" aria-label="Añadir libro">
               <Upload size={12} />
               Añadir
-              <input type="file" accept=".pdf,.txt" className="hidden" onChange={onFileUpload} />
+              <input type="file" accept=".pdf,.txt,.epub" className="hidden" onChange={onFileUpload} />
             </label>
           </div>
         </div>

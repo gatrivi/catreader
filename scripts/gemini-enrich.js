@@ -66,7 +66,7 @@ async function getMetadataAndCover(filename, sampleText) {
 
   try {
     const result = await genAI.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
     const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -84,7 +84,7 @@ async function main() {
     return;
   }
 
-  const supportedExtensions = ['.pdf'];
+  const supportedExtensions = ['.pdf', '.txt', '.epub'];
   const files = fs.readdirSync(booksDir).filter(file => 
     supportedExtensions.some(ext => file.toLowerCase().endsWith(ext))
   );
@@ -100,6 +100,7 @@ async function main() {
   for (const file of files) {
     console.log(`- Processing: ${file}`);
     const filePath = path.join(booksDir, file);
+    const ext = path.extname(file).toLowerCase();
     
     // Check if we already have detailed metadata (optional: skip if exists)
     const existing = currentBooks.find(b => b.filename === file);
@@ -109,7 +110,15 @@ async function main() {
         continue;
     }
 
-    const text = await extractTextFromPdf(filePath);
+    let text = '';
+    if (ext === '.pdf') {
+      text = await extractTextFromPdf(filePath);
+    } else if (ext === '.txt') {
+      text = fs.readFileSync(filePath, 'utf8').substring(0, 5000);
+    } else {
+      text = `Filename: ${file}`;
+    }
+
     const metadata = await getMetadataAndCover(file, text);
 
     if (metadata) {
@@ -117,7 +126,7 @@ async function main() {
       results.push({
         id: file,
         filename: file,
-        type: 'pdf',
+        type: ext.substring(1),
         title: metadata.title,
         author: metadata.author,
         svg: metadata.svg
@@ -126,8 +135,8 @@ async function main() {
       results.push({
         id: file,
         filename: file,
-        type: 'pdf',
-        title: file.replace('.pdf', ''),
+        type: ext.substring(1),
+        title: file.replace(ext, ''),
         author: 'Unknown'
       });
     }

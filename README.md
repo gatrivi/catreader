@@ -23,7 +23,13 @@ This app is built with Vite and React. It is designed to be deployed as a purely
 3. The build command is `npm run build` and the output directory is `dist`.
 4. **That's it!** 
 
-During the build process, a script (`scripts/generate-library.js`) automatically runs to index all the books in your `/public/books/` folder and generates a static `books.json` file. This means your 125MB of PDFs will be served globally via the CDN with minimal hassle.
+During the build process, a script (`scripts/generate-library.js`) automatically runs to index all the books in your `/public/books/` folder and generates a static `books.json` file. 
+
+You can also use the **Gemini Enrichment CLI** to automatically identify books and generate covers:
+```bash
+npm run enrich
+```
+This script uses multimodal OCR to scan PDFs, identifies titles/authors, and generates unique SVG covers for PDF, TXT, and EPUB files.
 
 ## 🏗️ Architecture & Industry Standards
 

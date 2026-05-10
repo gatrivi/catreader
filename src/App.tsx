@@ -102,6 +102,8 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(true);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [globalStatus, setGlobalStatus] = useState<string | null>(null);
+  const [globalError, setGlobalError] = useState<{ message: string; details?: string } | null>(null);
   const [renderErrors, setRenderErrors] = useState<Set<number>>(new Set());
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [direction, setDirection] = useState(0);
@@ -152,7 +154,7 @@ export default function App() {
       const titles = library.slice(0, 5).map(b => b.title).join(', ');
       
       const result = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ role: 'user', parts: [{ text: `Create a unique, artistic, and minimalist SVG profile picture (circular design) that represents a reader of: ${titles}. 
         Focus on abstract shapes, books, and wisdom. Use a warm color palette. 
         Ensure it fits within a circular viewBox="0 0 100 100".
@@ -428,33 +430,28 @@ export default function App() {
    * This file is generated during the build process or via the predev script.
    */
   const fetchLibrary = useCallback(async () => {
+    console.log('[Library] Starting fetch...');
+    setGlobalStatus('Cargando biblioteca...');
     setIsLoadingLibrary(true);
     try {
       const baseUrl = import.meta.env.BASE_URL || '/';
       const booksJsonPath = baseUrl.endsWith('/') ? `${baseUrl}books.json` : `${baseUrl}/books.json`;
       
-      console.log(`[Library] Fetching from: ${booksJsonPath} (Base: ${baseUrl})`);
+      console.log(`[Library] Fetching from: ${booksJsonPath}`);
       const res = await fetch(booksJsonPath);
       
       if (!res.ok) {
-        console.error(`[Library] Fetch failed with status ${res.status}: ${res.statusText}`);
+        console.error(`[Library] Fetch failed: ${res.status}`);
         throw new Error(`books.json not found (${res.status})`);
       }
       
-      const contentType = res.headers.get('content-type');
-      console.log(`[Library] Response Content-Type: ${contentType}`);
-      
-      if (contentType && !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error(`[Library] Received non-JSON response (first 100 chars): ${text.substring(0, 100)}`);
-        throw new Error(`Expected JSON but got ${contentType}. The file might be missing, and the server returned index.html instead.`);
-      }
-
       const data = await res.json();
+      console.log(`[Library] Loaded ${data.length} books.`);
       
       // SET LIBRARY IMMEDIATELY - Don't wait for cloud metadata
       setLibrary(data);
       setIsLoadingLibrary(false);
+      setGlobalStatus(null);
 
       // Load enriched metadata in the background
       (async () => {
@@ -575,7 +572,7 @@ export default function App() {
       }
 
       const result = await (ai as any).models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ role: 'user', parts }]
       });
       const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -745,7 +742,7 @@ export default function App() {
         try {
           const ai = new GoogleGenAI({ apiKey: g_apiKey });
           const result = await (ai as any).models.generateContent({
-            model: "gemini-1.5-flash",
+            model: "gemini-2.5-flash",
             contents: [{ role: 'user', parts: [{ text: `Create a short, vivid visual prompt (15 words max) for an AI image generator to create a book cover for: "${book.title}" by ${book.author}. Focus on the atmosphere and subject. No text.` }] }]
           });
           visualPrompt = result.candidates?.[0]?.content?.parts?.[0]?.text || visualPrompt;
@@ -1198,16 +1195,18 @@ export default function App() {
         // Save ghost text for TXT files too
         await coverDB.saveGhostText(file.name, text);
         await syncService.saveGhostText(file.name, text);
+      } else if (ext === 'epub') {
+        setTextContent(null);
+        // EPUB doesn't need ghost text extraction for now
       } else {
         setTextContent(null);
         // Start background ghost text extraction for PDF
         extractGhostText(file, file.name);
       }
-      
-      await loadProgress(file.name);
-      if (ext === 'txt') setIsLoaded(true);
-      else setIsLoaded(false);
 
+      await loadProgress(file.name);
+      if (ext === 'txt' || ext === 'epub') setIsLoaded(true);
+      else setIsLoaded(false);
       // Add to local library state immediately if not already present
       const isNew = !library.some(b => b.filename === file.name);
       if (isNew) {
@@ -1305,6 +1304,8 @@ export default function App() {
    * @param forcePage - Optional page number to jump to
    */
   const openFromLibrary = async (book: LibraryBook, forcePage?: number, skipHistory = false) => {
+    console.log('[UX] Opening book:', book.filename, { type: book.type, forcePage });
+    setGlobalStatus(`Abriendo "${book.title}"...`);
     const filename = book.filename;
     setFileName(filename);
     setFileType(book.type);
@@ -1326,14 +1327,17 @@ export default function App() {
       let blob: Blob;
       
       if (cached) {
-        console.log('Loading from cache:', filename);
+        console.log('[Cache] Hit:', filename);
+        setGlobalStatus(`Cargando "${book.title}" desde memoria local...`);
         blob = cached;
       } else {
-        console.log('Fetching from server:', filename);
+        console.log('[Server] Fetching:', filename);
+        setGlobalStatus(`Descargando "${book.title}" desde el servidor...`);
         const baseUrl = import.meta.env.BASE_URL || '/';
         const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
         const url = `${booksDirPath}${filename}`;
         const res = await fetch(url);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
         blob = await res.blob();
         // Save to cache
         await coverDB.saveBookContent(filename, blob);
@@ -1348,6 +1352,9 @@ export default function App() {
         setNumPages(1);
         await coverDB.saveGhostText(filename, text);
         await syncService.saveGhostText(filename, text);
+      } else if (book.type === 'epub') {
+        setTextContent(null);
+        // EPUB doesn't need ghost text extraction for now
       } else {
         setTextContent(null);
         extractGhostText(blob, filename);
@@ -1357,14 +1364,18 @@ export default function App() {
         setPageNumber(forcePage);
         setScrollRatio(0);
       } else {
+        setGlobalStatus(`Restaurando tu progreso en "${book.title}"...`);
         await loadProgress(filename);
       }
-    } catch (err) {
-      console.error('Error opening book:', err);
+      setGlobalStatus(null);
+    } catch (err: any) {
+      console.error('[UX Error] Failed to open book:', err);
+      setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
+      setGlobalStatus(null);
       showToast('Error al abrir el libro.');
     }
     
-    if (book.type === 'txt') setIsLoaded(true);
+    if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
     else setIsLoaded(false);
   };
 
@@ -1665,6 +1676,48 @@ export default function App() {
 
       {/* Kindle-Style Floating Header */}
       <AnimatePresence>
+        {globalStatus && (
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -20, opacity: 0 }}
+            className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-amber-600 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold flex items-center gap-3 border-2 border-amber-400"
+          >
+            <Loader2 className="animate-spin" size={20} />
+            <span>{globalStatus}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {globalError && (
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-stone-950/90 backdrop-blur-xl flex items-center justify-center p-6"
+          >
+            <div className="bg-red-900/20 border-2 border-red-500/50 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl">
+              <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20">
+                <X className="text-white" size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">{globalError.message}</h2>
+              <p className="text-red-200/70 text-sm mb-8 font-mono">{globalError.details || 'Error desconocido'}</p>
+              <button 
+                onClick={() => {
+                  setGlobalError(null);
+                  window.location.reload();
+                }}
+                className="w-full bg-white text-stone-950 font-bold py-4 rounded-xl hover:bg-stone-200 transition-colors shadow-lg"
+              >
+                Reintentar / Recargar
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showUI && !isManualHide && fileUrl && (
           <motion.header 
             initial={{ y: -100, opacity: 0 }}
@@ -1741,7 +1794,7 @@ export default function App() {
                     </button>
                     <label className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2 cursor-pointer">
                       <Upload size={12} /> Subir PDF
-                      <input type="file" accept=".pdf,.txt" className="hidden" onChange={(e) => { onFileChange(e); setShowMenu(false); }} />
+                      <input type="file" accept=".pdf,.txt,.epub" className="hidden" onChange={(e) => { onFileChange(e); setShowMenu(false); }} />
                     </label>
                     <button 
                       onClick={() => {
@@ -1952,7 +2005,7 @@ export default function App() {
                     try {
                       const genAI = new GoogleGenAI({ apiKey: g_apiKey });
                       const result = await genAI.models.generateContent({
-                        model: "gemini-1.5-flash",
+                        model: "gemini-2.5-flash",
                         contents: [{ role: 'user', parts: [{ text: `Generate a beautiful, minimalist SVG book cover (vertical 2:3 ratio, viewBox="0 0 400 600") for a book titled "${book.title}" by "${book.author}". 
                         Use this visual theme description: "${selectedTextMenu.text}". 
                         Include a thin, subtle border (1px) around the cover.
