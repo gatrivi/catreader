@@ -142,7 +142,7 @@ export default function App() {
   };
 
   const handleGeneratePFP = async () => {
-    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
     if (!g_apiKey || library.length === 0) return;
 
     setIsSyncing(true);
@@ -534,7 +534,7 @@ export default function App() {
    * Uses OCR for PDFs to handle "Google scan" noise and cryptic filenames.
    */
   const enrichBookWithGemini = async (book: LibraryBook) => {
-    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
     if (!g_apiKey) return null;
 
     setIdentifyingBookId(book.id);
@@ -606,7 +606,7 @@ export default function App() {
     showToast('Enriqueciendo biblioteca...');
     
     try {
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
       if (!g_apiKey) {
         showToast('Gemini API Key not found. Please set VITE_GEMINI_API_KEY in .env');
         return;
@@ -720,7 +720,7 @@ export default function App() {
       }
 
       // 3. NEW: If we have Gemini key, generate a high-quality SVG cover now
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
       if (g_apiKey) {
         console.log(`[Gemini] Generating custom SVG cover for: ${book.title}`);
         const enriched = await enrichBookWithGemini(book);
@@ -939,7 +939,7 @@ export default function App() {
       }
       
       const book = library[idx];
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
 
       // 1. Check if metadata needs enrichment (Gemini)
       const currentMeta = enrichedMetadataRef.current[book.filename];
@@ -1217,7 +1217,7 @@ export default function App() {
         setLibrary(prev => [newBook, ...prev]);
         
         // Auto-enrich new book
-        const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+        const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
         if (g_apiKey) {
           setTimeout(async () => {
             const enriched = await enrichBookWithGemini(newBook);
@@ -1888,7 +1888,7 @@ export default function App() {
                 const book = library.find(b => b.filename === fileName);
                 if (book) {
                   setIsSyncing(true);
-                  const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+                  const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
                   if (g_apiKey) {
                     try {
                       const genAI = new GoogleGenAI({ apiKey: g_apiKey });

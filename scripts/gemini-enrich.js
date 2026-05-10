@@ -6,9 +6,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const API_KEY = process.env.GEMINI_API_KEY;
-if (!API_KEY || API_KEY === 'MY_GEMINI_API_KEY') {
-  console.error('Error: GEMINI_API_KEY not found in .env');
+const API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+if (!API_KEY || API_KEY === 'your_api_key_here' || API_KEY === 'MY_GEMINI_API_KEY') {
+  console.error('Error: Gemini API Key not found in .env. Please set VITE_GEMINI_API_KEY.');
   process.exit(1);
 }
 
