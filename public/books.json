@@ -1,128 +1,170 @@
 [
   {
     "id": "0360-0435,_Cassianus,_The_Conferences_Of_John_Cassian,_EN.pdf",
-    "title": "0360-0435,_Cassianus,_The_Conferences_Of_John_Cassian,_EN",
     "filename": "0360-0435,_Cassianus,_The_Conferences_Of_John_Cassian,_EN.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Conferences of John Cassian",
+    "author": "John Cassian",
+    "svg": "<svg width=\"200\" height=\"300\" viewBox=\"0 0 200 300\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#F5F5DC\"/>\n  <text x=\"100\" y=\"110\" font-family=\"Georgia, serif\" font-size=\"22\" fill=\"#4B3A2C\" text-anchor=\"middle\">\n    The Conferences\n  </text>\n  <text x=\"100\" y=\"135\" font-family=\"Georgia, serif\" font-size=\"22\" fill=\"#4B3A2C\" text-anchor=\"middle\">\n    of John Cassian\n  </text>\n  <text x=\"100\" y=\"200\" font-family=\"Georgia, serif\" font-size=\"16\" fill=\"#4B3A2C\" text-anchor=\"middle\">\n    John Cassian\n  </text>\n</svg>"
   },
   {
     "id": "BuJoBonusPDF.pdf",
-    "title": "BuJoBonusPDF",
     "filename": "BuJoBonusPDF.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Bullet Journal Method",
+    "author": "Ryder Carroll",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n\n  <text x=\"200\" y=\"240\" font-family=\"Helvetica Neue, Arial, sans-serif\" font-size=\"42\" font-weight=\"bold\" fill=\"#000000\" text-anchor=\"middle\" letter-spacing=\"1\">\n    THE BULLET\n  </text>\n  <text x=\"200\" y=\"290\" font-family=\"Helvetica Neue, Arial, sans-serif\" font-size=\"42\" font-weight=\"bold\" fill=\"#000000\" text-anchor=\"middle\" letter-spacing=\"1\">\n    JOURNAL METHOD\n  </text>\n\n  <text x=\"200\" y=\"380\" font-family=\"Helvetica Neue, Arial, sans-serif\" font-size=\"26\" fill=\"#000000\" text-anchor=\"middle\">\n    RYDER CARROLL\n  </text>\n\n  <circle cx=\"200\" cy=\"500\" r=\"10\" fill=\"#000000\"/>\n</svg>"
   },
   {
     "id": "crop_Walter Russell - A New Concept Of The Universe.pdf",
-    "title": "crop_Walter Russell - A New Concept Of The Universe",
     "filename": "crop_Walter Russell - A New Concept Of The Universe.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "A New Concept of the Universe",
+    "author": "Walter Russell",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <linearGradient id=\"bgGradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n      <stop offset=\"0%\" stop-color=\"#020826\"/>\n      <stop offset=\"100%\" stop-color=\"#1E2749\"/>\n    </linearGradient>\n    <radialGradient id=\"glowGradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" fx=\"50%\" fy=\"50%\">\n      <stop offset=\"0%\" stop-color=\"#FFF8DC\" stop-opacity=\"0.4\"/>\n      <stop offset=\"70%\" stop-color=\"#FFF8DC\" stop-opacity=\"0.1\"/>\n      <stop offset=\"100%\" stop-color=\"#FFF8DC\" stop-opacity=\"0\"/>\n    </radialGradient>\n  </defs>\n  <rect width=\"100%\" height=\"100%\" fill=\"url(#bgGradient)\"/>\n  <circle cx=\"200\" cy=\"300\" r=\"150\" fill=\"url(#glowGradient)\"/>\n  <text x=\"200\" y=\"200\" font-family=\"Georgia, serif\" font-size=\"36\" fill=\"#E0E0E0\" text-anchor=\"middle\" letter-spacing=\"2\">A NEW CONCEPT</text>\n  <text x=\"200\" y=\"255\" font-family=\"Georgia, serif\" font-size=\"36\" fill=\"#E0E0E0\" text-anchor=\"middle\" letter-spacing=\"2\">OF THE UNIVERSE</text>\n  <text x=\"200\" y=\"420\" font-family=\"Georgia, serif\" font-size=\"24\" fill=\"#FFD700\" text-anchor=\"middle\">Walter Russell</text>\n</svg>"
   },
   {
     "id": "gloriesmary00ligugoog.pdf",
-    "title": "gloriesmary00ligugoog",
     "filename": "gloriesmary00ligugoog.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Glories of Mary",
+    "author": "Saint Alphonsus Liguori",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#1A237E\"/>\n\n  <text x=\"200\" y=\"220\" text-anchor=\"middle\" font-family=\"serif\" font-size=\"52\" fill=\"#FFD700\" font-weight=\"bold\">\n    The Glories\n  </text>\n  <text x=\"200\" y=\"275\" text-anchor=\"middle\" font-family=\"serif\" font-size=\"52\" fill=\"#FFD700\" font-weight=\"bold\">\n    of Mary\n  </text>\n\n  <text x=\"200\" y=\"370\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"28\" fill=\"#FFD700\">\n    Saint Alphonsus Liguori\n  </text>\n</svg>"
   },
   {
     "id": "Holy-Rosary_Complete-Prayers_Latin_15052024-1.pdf",
-    "title": "Holy-Rosary_Complete-Prayers_Latin_15052024-1",
     "filename": "Holy-Rosary_Complete-Prayers_Latin_15052024-1.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "An Essential Guide to the Holy Rosary in Latin",
+    "author": "Compiler Not Specified",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 200 300\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#0D47A1\"/>\n  <text x=\"100\" y=\"110\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#FFFFFF\" font-family=\"Georgia, serif\" font-size=\"20\" font-weight=\"bold\">\n    <tspan x=\"100\" dy=\"0\">AN ESSENTIAL GUIDE</tspan>\n    <tspan x=\"100\" dy=\"1.2em\">TO THE HOLY ROSARY</tspan>\n    <tspan x=\"100\" dy=\"1.2em\">IN LATIN</tspan>\n  </text>\n  <text x=\"100\" y=\"200\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#FFFFFF\" font-family=\"Georgia, serif\" font-size=\"12\">\n    Compiler Not Specified\n  </text>\n</svg>"
   },
   {
     "id": "instructions-for-entering-jhana-leigh-brasington.pdf",
-    "title": "instructions-for-entering-jhana-leigh-brasington",
     "filename": "instructions-for-entering-jhana-leigh-brasington.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Instructions for Entering Jhana",
+    "author": "Leigh Brasington",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <linearGradient id=\"grad1\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n      <stop offset=\"0%\" stop-color=\"#6a99a7\"/>\n      <stop offset=\"100%\" stop-color=\"#4f707f\"/>\n    </linearGradient>\n  </defs>\n  <rect width=\"400\" height=\"600\" fill=\"url(#grad1)\"/>\n\n  <text x=\"200\" y=\"230\" font-family=\"Lato, sans-serif\" font-size=\"40\" font-weight=\"normal\" fill=\"white\" text-anchor=\"middle\">\n    Instructions\n  </text>\n  <text x=\"200\" y=\"275\" font-family=\"Lato, sans-serif\" font-size=\"40\" font-weight=\"normal\" fill=\"white\" text-anchor=\"middle\">\n    for Entering\n  </text>\n  <text x=\"200\" y=\"345\" font-family=\"Lato, sans-serif\" font-size=\"60\" font-weight=\"bold\" fill=\"white\" text-anchor=\"middle\">\n    Jhana\n  </text>\n\n  <text x=\"200\" y=\"450\" font-family=\"Lato, sans-serif\" font-size=\"28\" fill=\"white\" text-anchor=\"middle\">\n    Leigh Brasington\n  </text>\n</svg>"
   },
   {
     "id": "Jeanne-de-Salzmann-The-Reality-of-Being-(OCR).pdf",
-    "title": "Jeanne-de-Salzmann-The-Reality-of-Being-(OCR)",
     "filename": "Jeanne-de-Salzmann-The-Reality-of-Being-(OCR).pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Reality of Being: The Fourth Way of Gurdjieff",
+    "author": "Jeanne de Salzmann",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#2C3E50\"/>\n  <text x=\"50%\" y=\"220\" font-family=\"'Palatino Linotype', Palatino, serif\" font-size=\"48\" fill=\"#ECF0F1\" text-anchor=\"middle\">\n    The Reality\n  </text>\n  <text x=\"50%\" y=\"275\" font-family=\"'Palatino Linotype', Palatino, serif\" font-size=\"48\" fill=\"#ECF0F1\" text-anchor=\"middle\">\n    of Being\n  </text>\n  <text x=\"50%\" y=\"330\" font-family=\"'Palatino Linotype', Palatino, serif\" font-size=\"24\" fill=\"#ECF0F1\" text-anchor=\"middle\">\n    The Fourth Way of Gurdjieff\n  </text>\n  <text x=\"50%\" y=\"540\" font-family=\"'Palatino Linotype', Palatino, serif\" font-size=\"22\" fill=\"#ECF0F1\" text-anchor=\"middle\">\n    Jeanne de Salzmann\n  </text>\n</svg>"
   },
   {
     "id": "LightOnMeditationHandout.pdf",
-    "title": "LightOnMeditationHandout",
     "filename": "LightOnMeditationHandout.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Progressive Stages of Meditation in Plain English",
+    "author": "Upasaka Culadasa",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect x=\"0\" y=\"0\" width=\"400\" height=\"600\" fill=\"#E0F2F7\"/>\n\n  <text x=\"200\" y=\"220\" font-family=\"Helvetica, Arial, sans-serif\" font-size=\"40\" font-weight=\"bold\" fill=\"#2C3E50\" text-anchor=\"middle\">\n    Progressive Stages\n  </text>\n  <text x=\"200\" y=\"275\" font-family=\"Helvetica, Arial, sans-serif\" font-size=\"40\" font-weight=\"bold\" fill=\"#2C3E50\" text-anchor=\"middle\">\n    of Meditation\n  </text>\n  <text x=\"200\" y=\"330\" font-family=\"Helvetica, Arial, sans-serif\" font-size=\"30\" fill=\"#2C3E50\" text-anchor=\"middle\">\n    in Plain English\n  </text>\n\n  <text x=\"200\" y=\"450\" font-family=\"Helvetica, Arial, sans-serif\" font-size=\"24\" fill=\"#5F7C93\" text-anchor=\"middle\">\n    Upasaka Culadasa\n  </text>\n</svg>"
   },
   {
     "id": "Mastering the Core Teachings of the Buddha An Unusually Hardcore Dharma Book by Daniel M. Ingram (z-lib.org).pdf",
-    "title": "Mastering the Core Teachings of the Buddha An Unusually Hardcore Dharma Book by Daniel M. Ingram (z-lib.org)",
     "filename": "Mastering the Core Teachings of the Buddha An Unusually Hardcore Dharma Book by Daniel M. Ingram (z-lib.org).pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Mastering the Core Teachings of the Buddha",
+    "author": "Daniel M. Ingram",
+    "svg": "<svg width=\"600\" height=\"900\" viewBox=\"0 0 600 900\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#34495E\"/>\n\n  <text x=\"300\" y=\"350\" font-family=\"Verdana, Arial, sans-serif\" font-size=\"55\" font-weight=\"bold\" fill=\"#F8F8FF\" text-anchor=\"middle\">\n    Mastering the\n  </text>\n  <text x=\"300\" y=\"425\" font-family=\"Verdana, Arial, sans-serif\" font-size=\"55\" font-weight=\"bold\" fill=\"#F8F8FF\" text-anchor=\"middle\">\n    Core Teachings\n  </text>\n  <text x=\"300\" y=\"500\" font-family=\"Verdana, Arial, sans-serif\" font-size=\"55\" font-weight=\"bold\" fill=\"#F8F8FF\" text-anchor=\"middle\">\n    of the Buddha\n  </text>\n\n  <text x=\"300\" y=\"680\" font-family=\"Verdana, Arial, sans-serif\" font-size=\"30\" fill=\"#F8F8FF\" text-anchor=\"middle\">\n    Daniel M. Ingram\n  </text>\n</svg>"
   },
   {
     "id": "Nicoll-Psychological-Commentaries-Gurdjieff-Ouspensky-Vol-1.pdf",
-    "title": "Nicoll-Psychological-Commentaries-Gurdjieff-Ouspensky-Vol-1",
     "filename": "Nicoll-Psychological-Commentaries-Gurdjieff-Ouspensky-Vol-1.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Psychological Commentaries on the Teaching of Gurdjieff and Ouspensky Volume 1",
+    "author": "Maurice Nicoll",
+    "svg": "<svg width=\"600\" height=\"900\" viewBox=\"0 0 600 900\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#1D2641\"/>\n\n  <text x=\"300\" y=\"150\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"24\" fill=\"#E0DCCA\" text-anchor=\"middle\" font-weight=\"normal\">\n    VOLUME 1\n  </text>\n\n  <text x=\"300\" y=\"300\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"65\" fill=\"#E0DCCA\" text-anchor=\"middle\" font-weight=\"bold\">\n    PSYCHOLOGICAL\n  </text>\n  <text x=\"300\" y=\"375\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"65\" fill=\"#E0DCCA\" text-anchor=\"middle\" font-weight=\"bold\">\n    COMMENTARIES\n  </text>\n\n  <text x=\"300\" y=\"450\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"30\" fill=\"#E0DCCA\" text-anchor=\"middle\">\n    on the Teaching of\n  </text>\n  <text x=\"300\" y=\"500\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"40\" fill=\"#E0DCCA\" text-anchor=\"middle\" font-weight=\"500\">\n    Gurdjieff and Ouspensky\n  </text>\n\n  <text x=\"300\" y=\"780\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"38\" fill=\"#E0DCCA\" text-anchor=\"middle\" font-weight=\"normal\">\n    Maurice Nicoll\n  </text>\n</svg>"
   },
   {
     "id": "passiontide and holy week.pdf",
-    "title": "passiontide and holy week",
     "filename": "passiontide and holy week.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Passiontide and Holy Week",
+    "author": "Dom Prosper Gueranger, O.S.B.",
+    "svg": "<svg width=\"300\" height=\"450\" viewBox=\"0 0 300 450\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#3B2449\"/>\n  <text x=\"50%\" y=\"170\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#F0F0F0\" font-family=\"Georgia, serif\" font-size=\"36\" font-weight=\"bold\">\n    PASSIONTIDE AND\n  </text>\n  <text x=\"50%\" y=\"220\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#F0F0F0\" font-family=\"Georgia, serif\" font-size=\"36\" font-weight=\"bold\">\n    HOLY WEEK\n  </text>\n  <text x=\"50%\" y=\"300\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#D0D0D0\" font-family=\"Arial, sans-serif\" font-size=\"18\">\n    Dom Prosper Gueranger, O.S.B.\n  </text>\n</svg>"
   },
   {
     "id": "README.txt",
-    "title": "README",
     "filename": "README.txt",
-    "type": "txt"
+    "type": "txt",
+    "title": "CatReader README",
+    "author": "System",
+    "svg": "<svg width=\"200\" height=\"300\" viewBox=\"0 0 200 300\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"100%\" height=\"100%\" fill=\"#333\"/><text x=\"50%\" y=\"50%\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#fff\" font-family=\"monospace\" font-size=\"20\">README</text></svg>"
   },
   {
     "id": "Right_Concentration_A_Practical_Guide_to_The_Jhan_3409699_(z-lib.org).pdf",
-    "title": "Right_Concentration_A_Practical_Guide_to_The_Jhan_3409699_(z-lib.org)",
     "filename": "Right_Concentration_A_Practical_Guide_to_The_Jhan_3409699_(z-lib.org).pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Right Concentration: A Practical Guide to the Jhānas",
+    "author": "Leigh Brasington",
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 300\">\n  <defs>\n    <linearGradient id=\"gradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n      <stop offset=\"0%\" style=\"stop-color:#5C6BC0;stop-opacity:1\" />\n      <stop offset=\"100%\" style=\"stop-color:#362C66;stop-opacity:1\" />\n    </linearGradient>\n  </defs>\n  <rect x=\"0\" y=\"0\" width=\"200\" height=\"300\" fill=\"url(#gradient)\" />\n  <text x=\"100\" y=\"95\" font-family=\"sans-serif\" font-size=\"14\" fill=\"#FFFFFF\" text-anchor=\"middle\">Right</text>\n  <text x=\"100\" y=\"125\" font-family=\"sans-serif\" font-size=\"28\" font-weight=\"bold\" fill=\"#FFFFFF\" text-anchor=\"middle\">CONCENTRATION</text>\n  <text x=\"100\" y=\"155\" font-family=\"sans-serif\" font-size=\"12\" fill=\"#FFFFFF\" text-anchor=\"middle\">A Practical Guide to the Jhānas</text>\n  <text x=\"100\" y=\"230\" font-family=\"sans-serif\" font-size=\"16\" fill=\"#FFFFFF\" font-weight=\"bold\" text-anchor=\"middle\">Leigh Brasington</text>\n</svg>"
   },
   {
     "id": "Saint-Basil-and-his-rule-a-study-in-early-monasticism.pdf",
-    "title": "Saint-Basil-and-his-rule-a-study-in-early-monasticism",
     "filename": "Saint-Basil-and-his-rule-a-study-in-early-monasticism.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "ST. BASIL AND HIS RULE A STUDY IN EARLY MONASTICISM",
+    "author": "E. F. MORISON",
+    "svg": "<svg width=\"300\" height=\"450\" viewBox=\"0 0 300 450\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#34495e\"/>\n  <text x=\"50%\" y=\"150\" font-family=\"Georgia, serif\" font-size=\"32\" font-weight=\"bold\" fill=\"#ecf0f1\" text-anchor=\"middle\">ST. BASIL</text>\n  <text x=\"50%\" y=\"190\" font-family=\"Georgia, serif\" font-size=\"32\" font-weight=\"bold\" fill=\"#ecf0f1\" text-anchor=\"middle\">AND HIS RULE</text>\n  <text x=\"50%\" y=\"260\" font-family=\"Georgia, serif\" font-size=\"18\" fill=\"#bdc3c7\" text-anchor=\"middle\">A STUDY IN EARLY</text>\n  <text x=\"50%\" y=\"285\" font-family=\"Georgia, serif\" font-size=\"18\" fill=\"#bdc3c7\" text-anchor=\"middle\">MONASTICISM</text>\n  <text x=\"50%\" y=\"380\" font-family=\"Georgia, serif\" font-size=\"20\" fill=\"#95a5a6\" text-anchor=\"middle\">E. F. MORISON</text>\n</svg>"
   },
   {
     "id": "TheCatholicGirlsGuide.pdf",
-    "title": "TheCatholicGirlsGuide",
     "filename": "TheCatholicGirlsGuide.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Catholic Girl's Guide",
+    "author": "Unknown",
+    "svg": "<svg width=\"300\" height=\"450\" viewBox=\"0 0 300 450\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"300\" height=\"450\" fill=\"#E0F2F7\"/>\n  <text x=\"150\" y=\"160\" font-family=\"Georgia, serif\" fill=\"#2C3E50\" text-anchor=\"middle\">\n    <tspan x=\"150\" dy=\"0\" font-size=\"36\">The</tspan>\n    <tspan x=\"150\" dy=\"45\" font-size=\"48\">Catholic</tspan>\n    <tspan x=\"150\" dy=\"45\" font-size=\"40\">Girl's</tspan>\n    <tspan x=\"150\" dy=\"45\" font-size=\"44\">Guide</tspan>\n  </text>\n  <g transform=\"translate(150, 340)\">\n    <rect x=\"-10\" y=\"-15\" width=\"20\" height=\"30\" fill=\"#FFD700\"/>\n    <rect x=\"-15\" y=\"-10\" width=\"30\" height=\"20\" fill=\"#FFD700\"/>\n  </g>\n  <text x=\"150\" y=\"410\" font-family=\"Georgia, serif\" font-size=\"18\" fill=\"#5D6D7E\" text-anchor=\"middle\">Unknown Author</text>\n</svg>"
   },
   {
     "id": "thecompleteascet03liguuoftnew.pdf",
-    "title": "thecompleteascet03liguuoftnew",
     "filename": "thecompleteascet03liguuoftnew.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Preparation for Death: Meditations on the Eternal Truths",
+    "author": "St. Alphonsus de Liguori",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect x=\"0\" y=\"0\" width=\"400\" height=\"600\" fill=\"#283747\"/>\n  <text x=\"50%\" y=\"240\" fill=\"#F5F7FA\" font-family=\"Georgia, serif\" font-size=\"48\" font-weight=\"bold\" text-anchor=\"middle\">\n    PREPARATION\n  </text>\n  <text x=\"50%\" y=\"295\" fill=\"#F5F7FA\" font-family=\"Georgia, serif\" font-size=\"48\" font-weight=\"bold\" text-anchor=\"middle\">\n    FOR DEATH\n  </text>\n  <text x=\"50%\" y=\"360\" fill=\"#B2C2CD\" font-family=\"sans-serif\" font-size=\"24\" text-anchor=\"middle\">\n    Meditations on the Eternal Truths\n  </text>\n  <text x=\"50%\" y=\"480\" fill=\"#B2C2CD\" font-family=\"Georgia, serif\" font-size=\"30\" text-anchor=\"middle\">\n    St. Alphonsus de Liguori\n  </text>\n</svg>"
   },
   {
     "id": "thecompleteascet21liguuoft.pdf",
-    "title": "thecompleteascet21liguuoft",
     "filename": "thecompleteascet21liguuoft.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Complete Ascetic",
+    "author": "Unknown Author",
+    "svg": "<svg width=\"600\" height=\"900\" viewBox=\"0 0 600 900\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#2C3E50\"/>\n  <text x=\"300\" y=\"400\" font-family=\"Georgia, serif\" font-size=\"55\" fill=\"#ECF0F1\" text-anchor=\"middle\">\n    The Complete Ascetic\n  </text>\n  <text x=\"300\" y=\"500\" font-family=\"Georgia, serif\" font-size=\"28\" fill=\"#ECF0F1\" text-anchor=\"middle\">\n    Unknown Author\n  </text>\n</svg>"
   },
   {
     "id": "The_Cloud_of_Unknowing-Unknown.epub",
-    "title": "The_Cloud_of_Unknowing-Unknown",
     "filename": "The_Cloud_of_Unknowing-Unknown.epub",
-    "type": "epub"
+    "type": "epub",
+    "title": "The Cloud of Unknowing",
+    "author": "Anonymous",
+    "svg": "<svg width=\"200\" height=\"300\" viewBox=\"0 0 200 300\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"100%\" height=\"100%\" fill=\"#4A5568\"/><text x=\"50%\" y=\"45%\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#E2E8F0\" font-family=\"serif\" font-size=\"18\">The Cloud of</text><text x=\"50%\" y=\"55%\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"#E2E8F0\" font-family=\"serif\" font-size=\"18\">Unknowing</text></svg>"
   },
   {
     "id": "The_Cloud_of_Unknowing-Unknown.pdf",
-    "title": "The_Cloud_of_Unknowing-Unknown",
     "filename": "The_Cloud_of_Unknowing-Unknown.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Cloud of Unknowing",
+    "author": "Unknown Author",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <linearGradient id=\"backgroundGradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n      <stop offset=\"0%\" style=\"stop-color:#34495e; stop-opacity:1\" />\n      <stop offset=\"100%\" style=\"stop-color:#2c3e50; stop-opacity:1\" />\n    </linearGradient>\n  </defs>\n  <rect x=\"0\" y=\"0\" width=\"400\" height=\"600\" fill=\"url(#backgroundGradient)\"/>\n  <text x=\"200\" y=\"260\" font-family=\"Georgia, serif\" font-size=\"48\" fill=\"#ecf0f1\" text-anchor=\"middle\" font-weight=\"bold\">\n    The Cloud\n  </text>\n  <text x=\"200\" y=\"315\" font-family=\"Georgia, serif\" font-size=\"48\" fill=\"#ecf0f1\" text-anchor=\"middle\" font-weight=\"bold\">\n    of Unknowing\n  </text>\n  <text x=\"200\" y=\"410\" font-family=\"Georgia, serif\" font-size=\"24\" fill=\"#bdc3c7\" text-anchor=\"middle\">\n    Unknown Author\n  </text>\n</svg>"
   },
   {
     "id": "The_Secret_of_Light_by_Walter_Russell_1974.pdf",
-    "title": "The_Secret_of_Light_by_Walter_Russell_1974",
     "filename": "The_Secret_of_Light_by_Walter_Russell_1974.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "The Secret of Light",
+    "author": "Walter Russell",
+    "svg": "<svg width=\"600\" height=\"900\" viewBox=\"0 0 600 900\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"100%\" height=\"100%\" fill=\"#0A1930\"/>\n  <text x=\"300\" y=\"380\" font-family=\"Arial, Helvetica, sans-serif\" font-size=\"60\" fill=\"#FFD700\" text-anchor=\"middle\" font-weight=\"bold\">\n    The Secret\n  </text>\n  <text x=\"300\" y=\"460\" font-family=\"Arial, Helvetica, sans-serif\" font-size=\"60\" fill=\"#FFD700\" text-anchor=\"middle\" font-weight=\"bold\">\n    of Light\n  </text>\n  <text x=\"300\" y=\"580\" font-family=\"Arial, Helvetica, sans-serif\" font-size=\"30\" fill=\"#FFFFFF\" text-anchor=\"middle\">\n    Walter Russell\n  </text>\n</svg>"
   },
   {
     "id": "Unravelling-the-Mysteries-of-Mind-and-Body-Through-Abhidhamma.pdf",
-    "title": "Unravelling-the-Mysteries-of-Mind-and-Body-Through-Abhidhamma",
     "filename": "Unravelling-the-Mysteries-of-Mind-and-Body-Through-Abhidhamma.pdf",
-    "type": "pdf"
+    "type": "pdf",
+    "title": "Unravelling the Mysteries of Mind and Body Through Abhidhamma",
+    "author": "Sayalay Susila",
+    "svg": "<svg width=\"400\" height=\"600\" viewBox=\"0 0 400 600\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect width=\"400\" height=\"600\" fill=\"#1A4458\"/>\n  <text x=\"200\" y=\"220\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"36\" font-weight=\"bold\" fill=\"#F0E6C8\" text-anchor=\"middle\">\n    <tspan x=\"200\" dy=\"0\">UNRAVELLING THE</tspan>\n    <tspan x=\"200\" dy=\"45\">MYSTERIES OF MIND</tspan>\n    <tspan x=\"200\" dy=\"45\">AND BODY THROUGH</tspan>\n    <tspan x=\"200\" dy=\"45\">ABHIDHAMMA</tspan>\n  </text>\n  <text x=\"200\" y=\"450\" font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\" font-size=\"24\" fill=\"#F0E6C8\" text-anchor=\"middle\">\n    <tspan x=\"200\" dy=\"0\">BY</tspan>\n    <tspan x=\"200\" dy=\"35\">Sayalay Susila</tspan>\n  </text>\n</svg>"
   }
 ]
