@@ -48,10 +48,14 @@ async function getMetadataAndCover(filename, sampleText) {
     Analyze the following text from the first few pages of a book file named "${filename}".
     1. Identify the actual Book Title and Author Name.
     2. If you see introductory pages (e.g., Google Books "digitized by Google" notices, library stamps, or legal info), IGNORE THEM and find the real title and author further in the text.
-    3. Create a beautiful, minimalist book cover in SVG format.
-       - Use a color palette that matches the book's theme.
-       - Include the title and author in the SVG.
-       - Vertical 2:3 ratio.
+    3. Create a high-end, professional, and artistic book cover in SVG format (400x600).
+       - DO NOT just use a solid background and plain text.
+       - Use sophisticated SVG features: <linearGradient>, <radialGradient>, <path> for abstract shapes, symbols, or artistic motifs.
+       - The design MUST reflect the book's specific themes (e.g., if it's about spirituality, use ethereal light and organic paths; if it's a technical manual, use structured geometric patterns).
+       - Use a professional color palette.
+       - Typography: Elegant font styling, proper weighting, and strategic positioning.
+       - The Title should be prominent and artistic. The Author should be clear but secondary.
+       - The final result should look like a premium physical book cover.
     
     Return ONLY a JSON object:
     {
@@ -66,7 +70,7 @@ async function getMetadataAndCover(filename, sampleText) {
 
   try {
     const result = await genAI.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
     const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -97,14 +101,15 @@ async function main() {
 
   const results = [];
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     console.log(`- Processing: ${file}`);
     const filePath = path.join(booksDir, file);
     const ext = path.extname(file).toLowerCase();
     
-    // Check if we already have detailed metadata (optional: skip if exists)
+    // Force re-enrichment for the first 5 to show style change (0 to 4)
     const existing = currentBooks.find(b => b.filename === file);
-    if (existing && existing.author && existing.svg) {
+    if (existing && existing.author && existing.svg && i >= 5) {
         console.log(`  Skipping (already enriched)`);
         results.push(existing);
         continue;
@@ -142,7 +147,7 @@ async function main() {
     }
     
     // Wait a bit to avoid rate limits
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 2000));
   }
 
   fs.writeFileSync(outputFile, JSON.stringify(results, null, 2));
