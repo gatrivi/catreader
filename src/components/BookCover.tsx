@@ -115,10 +115,20 @@ export const BookCover: React.FC<BookCoverProps> = ({
               animate={{ opacity: 1 }}
               className="w-full h-full flex flex-col relative"
             >
-              {displayCover ? (
-                <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
-              ) : svgDataUrl ? (
+              {/* Format Badge */}
+              <div className={cn(
+                "absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter z-30 shadow-sm border backdrop-blur-md",
+                book.type.toLowerCase() === 'pdf' && "bg-red-500/20 text-red-200 border-red-500/30",
+                book.type.toLowerCase() === 'epub' && "bg-blue-500/20 text-blue-200 border-blue-500/30",
+                book.type.toLowerCase() === 'txt' && "bg-emerald-500/20 text-emerald-200 border-emerald-500/30"
+              )}>
+                {book.type}
+              </div>
+
+              {svgDataUrl ? (
                 <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+              ) : displayCover ? (
+                <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
               ) : (
                 <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
                   <div className={cn(

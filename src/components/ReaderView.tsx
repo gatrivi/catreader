@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Document, Page } from 'react-pdf';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, Check, X } from 'lucide-react';
 import { EpubView } from './EpubView';
 import { SadMonkIcon } from './SadMonkIcon';
+import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -22,6 +21,8 @@ interface ReaderViewProps {
   isRestoring: boolean;
   pageRatios: number[];
   isFocusMode?: boolean;
+  isCaptureMode?: boolean;
+  onCapture?: (base64: string) => void;
   onLoadSuccess: (pdf: any) => void;
   onPageRenderSuccess: (p: number) => void;
   onPageRenderError?: (p: number, error: Error) => void;
@@ -40,6 +41,8 @@ interface PageItemProps {
   calculatedHeight: number;
   minWidth: number;
   isFocusMode?: boolean;
+  isCaptureMode?: boolean;
+  onCapture?: (base64: string) => void;
   onRenderSuccess: (p: number) => void;
   onRenderError?: (p: number, error: Error) => void;
 }
@@ -53,10 +56,15 @@ const PageItem: React.FC<PageItemProps> = ({
   calculatedHeight,
   minWidth,
   isFocusMode,
+  isCaptureMode,
+  onCapture,
   onRenderSuccess,
   onRenderError,
 }) => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'rendered' | 'error'>('idle');
+  const [selection, setSelection] = useState<{ x1: number, y1: number, x2: number, y2: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -100,13 +108,69 @@ const PageItem: React.FC<PageItemProps> = ({
     onRenderError?.(pageNum, err);
   }, [pageNum, onRenderError]);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!isCaptureMode) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setSelection({ x1: x, y1: y, x2: x, y2: y });
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isCaptureMode || !isDragging || !selection) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setSelection({ ...selection, x2: e.clientX - rect.left, y2: e.clientY - rect.top });
+  };
+
+  const handleMouseUp = () => {
+    if (!isCaptureMode) return;
+    setIsDragging(false);
+  };
+
+  const confirmCapture = async () => {
+    if (!selection || !onCapture) return;
+    const canvas = containerRef.current?.querySelector('canvas');
+    if (!canvas) return;
+
+    const x = Math.min(selection.x1, selection.x2);
+    const y = Math.min(selection.y1, selection.y2);
+    const width = Math.abs(selection.x2 - selection.x1);
+    const height = Math.abs(selection.y2 - selection.y1);
+
+    if (width < 10 || height < 10) return;
+
+    const scale = canvas.width / canvas.clientWidth;
+    const captureCanvas = document.createElement('canvas');
+    captureCanvas.width = width * scale;
+    captureCanvas.height = height * scale;
+    const ctx = captureCanvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(
+      canvas,
+      x * scale, y * scale, width * scale, height * scale,
+      0, 0, width * scale, height * scale
+    );
+
+    onCapture(captureCanvas.toDataURL('image/jpeg', 0.9));
+    setSelection(null);
+  };
+
   return (
     <div
       id={`page-${pageNum}`}
+      ref={containerRef}
       data-page={pageNum}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
       className={cn(
         "page-wrapper relative bg-white shadow-lg mb-8 mx-auto transition-all duration-500 overflow-hidden",
-        isFocusMode && "ring-2 ring-indigo-500/20"
+        isFocusMode && "ring-2 ring-indigo-500/20",
+        isCaptureMode && "cursor-crosshair"
       )}
       style={{
         width: 'fit-content',
@@ -119,7 +183,7 @@ const PageItem: React.FC<PageItemProps> = ({
     >
       {isVisible && (
         <div 
-          className="transition-transform duration-500 ease-in-out"
+          className="transition-transform duration-500 ease-in-out relative"
           style={{ 
             transform: isFocusMode ? 'scale(1.15)' : 'scale(1)',
             transformOrigin: 'center center'
@@ -148,12 +212,32 @@ const PageItem: React.FC<PageItemProps> = ({
             pageNumber={pageNum}
             scale={zoom}
             width={800}
-            renderTextLayer={true}
-            renderAnnotationLayer={true}
+            renderTextLayer={!isCaptureMode}
+            renderAnnotationLayer={!isCaptureMode}
             loading={null}
             onRenderSuccess={handleSuccess}
             onRenderError={handleError}
           />
+          
+          {/* Selection Overlay */}
+          {isCaptureMode && selection && (
+            <div 
+              className="absolute border-2 border-amber-500 bg-amber-500/10 z-50 flex items-start justify-end"
+              style={{
+                left: Math.min(selection.x1, selection.x2),
+                top: Math.min(selection.y1, selection.y2),
+                width: Math.abs(selection.x2 - selection.x1),
+                height: Math.abs(selection.y2 - selection.y1)
+              }}
+            >
+              {!isDragging && (
+                <div className="flex gap-1 p-1 bg-amber-500 rounded-bl-lg shadow-lg">
+                  <button onClick={confirmCapture} className="text-white hover:bg-white/20 p-0.5 rounded transition-colors"><Check size={16} /></button>
+                  <button onClick={() => setSelection(null)} className="text-white hover:bg-white/20 p-0.5 rounded transition-colors"><X size={16} /></button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -181,6 +265,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   theme,
   pageRatios,
   isFocusMode,
+  isCaptureMode,
+  onCapture,
   onLoadSuccess,
   onPageRenderSuccess,
   onPageRenderError,
@@ -203,22 +289,38 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
   const handleMouseUp = useCallback(() => {
     if (fileType !== 'pdf' && fileType !== 'txt') return;
+    if (isCaptureMode) return;
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0 && onTextSelection) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       onTextSelection(selection.toString().trim(), rect.left + rect.width / 2, rect.top);
     }
-  }, [onTextSelection, fileType]);
+  }, [onTextSelection, fileType, isCaptureMode]);
 
   return (
     <div
       className={cn(
-        'min-h-full flex flex-col items-center justify-start p-0 sm:p-8',
-        isSimplified && 'bg-stone-900 transition-none'
+        'min-h-full flex flex-col items-center justify-start p-0 sm:p-8 transition-colors duration-500',
+        isSimplified && 'bg-stone-900 transition-none',
+        themeStyles[theme]
       )}
       onMouseUp={handleMouseUp}
     >
+      <AnimatePresence>
+        {isCaptureMode && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-amber-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-3 border border-amber-400"
+          >
+            <Crop size={20} />
+            <span>Modo Captura: Arrastra para seleccionar una portada</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {fileType === 'pdf' ? (
         <div
           className="relative shadow-2xl flex flex-col gap-0 py-0"
@@ -259,6 +361,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                     calculatedHeight={calculatedHeight}
                     minWidth={minWidth}
                     isFocusMode={isFocusMode}
+                    isCaptureMode={isCaptureMode}
+                    onCapture={onCapture}
                     onRenderSuccess={onPageRenderSuccess}
                     onRenderError={onPageRenderError}
                   />

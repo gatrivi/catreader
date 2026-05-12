@@ -107,10 +107,10 @@ async function main() {
     const filePath = path.join(booksDir, file);
     const ext = path.extname(file).toLowerCase();
     
-    // Force re-enrichment for the first 5 to show style change (0 to 4)
+    // Check if we already have a high-fidelity SVG
     const existing = currentBooks.find(b => b.filename === file);
-    if (existing && existing.author && existing.svg && i >= 5) {
-        console.log(`  Skipping (already enriched)`);
+    if (existing && existing.svg && (existing.svg.includes('Gradient') || existing.svg.includes('gradient'))) {
+        console.log(`  Skipping (already high-fidelity)`);
         results.push(existing);
         continue;
     }

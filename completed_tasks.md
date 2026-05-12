@@ -15,7 +15,10 @@ The following features and fixes have been implemented and are ready for review:
     - Integrated **Google Books API** to automatically search for professional covers based on title and author.
     - Integrated **Pollinations.ai** as an AI fallback to generate thematic covers when professional ones aren't available.
 
-## Architecture & Backend (v1.2.0 - v1.3.0)
+## Architecture & Backend (v2.4.1)
+- [x] **Modularization**: Extracted logic from `App.tsx` (2100+ lines) into specialized hooks: `useLibrary`, `useReaderSync`, and `useGoogleDrive`.
+- [x] **Zoom Preservation**: Implemented per-device-category zoom settings (mobile, tablet, desktop) that persist across sessions and sync via cloud.
+- [x] **Unit Testing**: Added tests for `useReaderSync` to verify zoom logic and backward compatibility with old data formats.
 - **[x] Component Refactoring**: Extracted core logic from `App.tsx` into modular components (`LibraryView`, `ReaderView`, `BookCover`, `EditModal`).
 - **[x] Firebase Migration**: Transitioned from KVDB to **Firebase Firestore** for more robust cross-device sync.
 - **[x] Anonymous Auth**: Implemented background sign-in to maintain the "No Login Hell" rule while ensuring private storage.
