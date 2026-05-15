@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2 } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { authService } from '../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
@@ -53,6 +53,7 @@ interface LibraryViewProps {
   onShareBook?: (book: LibraryBook) => void;
   dailyHighlight?: Highlight | null;
   onDismissHighlight?: () => void;
+  onConsolidate?: () => void;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -81,7 +82,8 @@ export const LibraryView = ({
   enrichmentProgress,
   onShareBook,
   dailyHighlight,
-  onDismissHighlight
+  onDismissHighlight,
+  onConsolidate
   }: LibraryViewProps) => {
 
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(
@@ -214,6 +216,29 @@ export const LibraryView = ({
     setDragState(null);
   };
 
+  const lastWheelTime = useRef(0);
+  const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flipRack = (dir: 'next' | 'prev') => {
+    if (dir === 'next' && currentRack < shelves.length - 1) {
+      setCurrentRack(prev => prev + 1);
+    } else if (dir === 'prev' && currentRack > 0) {
+      setCurrentRack(prev => prev - 1);
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (searchQuery) return;
+    const now = Date.now();
+    if (now - lastWheelTime.current < 800) return; // Cooldown to prevent rapid flipping
+    
+    if (Math.abs(e.deltaY) > 30) {
+      if (e.deltaY > 0) flipRack('next');
+      else flipRack('prev');
+      lastWheelTime.current = now;
+    }
+  };
+
   const bgStyle = !isSimplified
     ? (wallpaper === 'custom' && customWallpaper
         ? `url(${customWallpaper})`
@@ -229,6 +254,7 @@ export const LibraryView = ({
         backgroundSize: wallpaper === 'custom' ? 'cover' : 'auto',
         backgroundPosition: 'center'
       }}
+      onWheel={handleWheel}
     >
       {/* Header */}
       <div className="shrink-0 px-4 pt-4 pb-2 z-50">
@@ -320,6 +346,17 @@ export const LibraryView = ({
 
             {onMagicEnrich && (
               <div className="flex items-center gap-2">
+                {onConsolidate && (
+                  <button 
+                    onClick={onConsolidate}
+                    className="flex items-center gap-1.5 bg-stone-900 text-stone-400 hover:text-emerald-400 hover:bg-stone-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5"
+                    title="Consolidar Biblioteca: Eliminar huecos vacíos y agrupar libros"
+                    aria-label="Consolidate library"
+                  >
+                    <Package2 size={12} />
+                    Consolidar
+                  </button>
+                )}
                 {enrichmentProgress && enrichmentProgress.total > 0 && (
                   <div className="flex flex-col items-end mr-1">
                     <span className="text-[9px] font-mono text-indigo-400 font-bold leading-none">
@@ -378,7 +415,7 @@ export const LibraryView = ({
             </div>
           </div>
         ) : searchQuery ? (
-          <div className="h-full overflow-y-auto scrollbar-thin px-4 sm:px-8 py-8 pb-20">
+          <div className="h-full overflow-y-auto scrollbar-thin px-4 sm:px-8 pt-24 pb-20">
             <div className="max-w-7xl mx-auto">
               <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
                 <div>
@@ -446,10 +483,10 @@ export const LibraryView = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-12 py-8"
+                  className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-12 pt-28 pb-20"
                 >
                   {/* Rack Header */}
-                  <div className="mb-6 flex items-center gap-4">
+                  <div className="mb-8 flex items-center gap-4">
                     <ShelfTitle 
                       title={shelves[currentRack].title} 
                       onChange={(title) => onUpdateShelfTitle(shelves[currentRack].id, title)}
@@ -457,7 +494,7 @@ export const LibraryView = ({
                   </div>
 
                   {/* Strict 4x4 Grid */}
-                  <div className="grid grid-cols-4 grid-rows-4 gap-x-4 gap-y-8 sm:gap-x-8 sm:gap-y-12 w-full max-w-4xl aspect-[4/3] max-h-[70vh] items-end">
+                  <div className="grid grid-cols-4 grid-rows-4 gap-x-4 gap-y-4 sm:gap-x-12 sm:gap-y-8 w-full max-w-6xl h-full max-h-[75vh] items-center justify-items-center">
                     {Array.from({ length: 16 }).map((_, idx) => {
                       const bookId = shelves[currentRack].bookIds[idx];
                       const book = bookId ? getBook(bookId) : null;
@@ -466,8 +503,9 @@ export const LibraryView = ({
                         <div 
                           key={`slot-${currentRack}-${idx}`}
                           className={cn(
-                            "relative aspect-[2/3] flex flex-col items-center justify-end",
-                            !book && "border-2 border-dashed border-white/5 rounded-xl opacity-20"
+                            "relative w-full h-full flex flex-col items-center justify-center min-h-0 transition-all duration-300",
+                            !book && "border-2 border-dashed border-white/5 rounded-2xl opacity-10 hover:opacity-30 hover:bg-white/5",
+                            dragOverBook?.shelfId === shelves[currentRack].id && dragOverBook?.index === idx && "ring-2 ring-amber-500 bg-amber-500/10 opacity-100 scale-105 z-10"
                           )}
                           onDragOver={(e) => handleBookDragOver(e, shelves[currentRack].id, idx)}
                           onDrop={(e) => handleBookDrop(e, shelves[currentRack].id, idx)}
@@ -478,7 +516,7 @@ export const LibraryView = ({
                               onDragStart={(e) => handleDragStart(e, book.id, shelves[currentRack].id, idx)}
                               onDragEnd={handleDragEnd}
                               className={cn(
-                                "w-full h-full transition-all",
+                                "w-full max-w-[150px] transition-all cursor-grab active:cursor-grabbing",
                                 dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
                             >
@@ -506,37 +544,84 @@ export const LibraryView = ({
 
             {/* Breadcrumbs (Pagination Dots) */}
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 z-30">
-              {shelves.map((_, idx) => (
+              {shelves.map((shelf, idx) => (
                 <button
                   key={`dot-${idx}`}
                   onClick={() => setCurrentRack(idx)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (currentRack !== idx && !flipTimeoutRef.current) {
+                      flipTimeoutRef.current = setTimeout(() => {
+                        setCurrentRack(idx);
+                        flipTimeoutRef.current = null;
+                      }, 500);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (flipTimeoutRef.current) {
+                      clearTimeout(flipTimeoutRef.current);
+                      flipTimeoutRef.current = null;
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragState) onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
+                  }}
                   className={cn(
-                    "w-2 h-2 rounded-full transition-all",
+                    "w-2 h-2 rounded-full transition-all p-4 -m-4 flex items-center justify-center", // Larger hit area
                     currentRack === idx 
                       ? "bg-amber-500 w-4 shadow-[0_0_8px_rgba(245,158,11,0.5)]" 
                       : "bg-white/20 hover:bg-white/40"
                   )}
                   aria-label={`Go to rack ${idx + 1}`}
-                />
+                >
+                  <div className={cn("w-2 h-2 rounded-full", currentRack === idx ? "bg-amber-500 w-4" : "bg-white/20")} />
+                </button>
               ))}
             </div>
 
-            {/* Navigation Arrows (Desktop) */}
+            {/* Navigation Arrows (Desktop) & Drag Edge Zones */}
             <div className="absolute inset-y-0 left-0 right-0 pointer-events-none hidden md:flex items-center justify-between px-4 lg:px-12 z-20">
-              <button 
-                onClick={() => setCurrentRack(prev => Math.max(0, prev - 1))}
-                disabled={currentRack === 0}
-                className="pointer-events-auto p-3 rounded-full bg-black/20 hover:bg-black/40 text-white/50 hover:text-white transition-all disabled:opacity-0"
+              <div 
+                className="w-20 h-full pointer-events-auto flex items-center justify-start group"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!flipTimeoutRef.current && currentRack > 0) {
+                    flipTimeoutRef.current = setTimeout(() => {
+                      flipRack('prev');
+                      flipTimeoutRef.current = null;
+                    }, 600);
+                  }
+                }}
               >
-                <ChevronLeft size={32} />
-              </button>
-              <button 
-                onClick={() => setCurrentRack(prev => Math.min(shelves.length - 1, prev + 1))}
-                disabled={currentRack === shelves.length - 1}
-                className="pointer-events-auto p-3 rounded-full bg-black/20 hover:bg-black/40 text-white/50 hover:text-white transition-all disabled:opacity-0"
+                <button 
+                  onClick={() => flipRack('prev')}
+                  disabled={currentRack === 0}
+                  className="p-3 rounded-full bg-black/20 hover:bg-black/40 text-white/50 hover:text-white transition-all disabled:opacity-0"
+                >
+                  <ChevronLeft size={32} />
+                </button>
+              </div>
+              <div 
+                className="w-20 h-full pointer-events-auto flex items-center justify-end group"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!flipTimeoutRef.current && currentRack < shelves.length - 1) {
+                    flipTimeoutRef.current = setTimeout(() => {
+                      flipRack('next');
+                      flipTimeoutRef.current = null;
+                    }, 600);
+                  }
+                }}
               >
-                <ChevronRight size={32} />
-              </button>
+                <button 
+                  onClick={() => flipRack('next')}
+                  disabled={currentRack === shelves.length - 1}
+                  className="p-3 rounded-full bg-black/20 hover:bg-black/40 text-white/50 hover:text-white transition-all disabled:opacity-0"
+                >
+                  <ChevronRight size={32} />
+                </button>
+              </div>
             </div>
           </div>
         )}

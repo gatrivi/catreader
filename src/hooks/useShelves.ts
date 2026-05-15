@@ -93,13 +93,41 @@ export function useShelves(library: Array<{ id: string }>) {
     setShelves(prev => {
       const next = prev.map(s => ({ ...s, bookIds: [...s.bookIds] }));
       const shelf = next.find(s => s.id === shelfId);
-      if (shelf && fromIndex >= 0 && toIndex >= 0 && fromIndex < shelf.bookIds.length && toIndex < shelf.bookIds.length) {
+      if (shelf) {
+        // Handle moving to an empty slot beyond current length
+        const targetIndex = Math.min(toIndex, 15);
         const [moved] = shelf.bookIds.splice(fromIndex, 1);
-        shelf.bookIds.splice(toIndex, 0, moved);
+        
+        // If targetIndex is beyond current length, just push
+        if (targetIndex >= shelf.bookIds.length) {
+          shelf.bookIds.push(moved);
+        } else {
+          shelf.bookIds.splice(targetIndex, 0, moved);
+        }
       }
       return next;
     });
   }, []);
 
-  return { shelves, updateShelfTitle, moveBook, reorderBook };
+  const consolidateShelves = useCallback(() => {
+    setShelves(prev => {
+      const allBooks = prev.flatMap(s => s.bookIds);
+      const next = prev.map(s => ({ ...s, bookIds: [] as string[] }));
+      
+      allBooks.forEach((bookId, idx) => {
+        const shelfIdx = Math.floor(idx / 16);
+        if (next[shelfIdx]) {
+          next[shelfIdx].bookIds.push(bookId);
+        } else {
+          // If we have more books than existing shelves, add them to the last shelf for now
+          // In v2.6.5 we might want to auto-create shelves
+          next[next.length - 1].bookIds.push(bookId);
+        }
+      });
+      
+      return next;
+    });
+  }, []);
+
+  return { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves };
 }

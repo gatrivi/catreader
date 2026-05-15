@@ -15,10 +15,26 @@ The following features and fixes have been implemented and are ready for review:
     - Integrated **Google Books API** to automatically search for professional covers based on title and author.
     - Integrated **Pollinations.ai** as an AI fallback to generate thematic covers when professional ones aren't available.
 
-## Persistence & Stability Fixes (v2.6.1)
-- [x] **AI Cover Persistence**: Fixed a bug where covers generated via "Magic Cover" were not being saved to the persistent metadata.
-- [x] **Upload Safety Timeout**: Added the 10-second safety timeout to the book upload flow (`onFileChange`) to prevent hangs after manual uploads.
-- [x] **Metadata Engine Update**: Enhanced the metadata hook to support SVG persistence during manual updates.
+## Library Consolidation & Reordering (v2.6.5)
+- [x] **"Consolidar" Feature**: Added a one-click button in the header to automatically remove all empty gaps across your library, packing all books into the fewest possible racks.
+- [x] **Auto-Flow Movement**: When dragging a book to a new rack, it now correctly flows into the targeted slot or appends to the end, making cross-rack organization much faster.
+- [x] **Pagination Drop**: Dragging and dropping a book directly onto a breadcrumb (pagination dot) now moves that book to that specific rack.
+- [x] **Auto-Flip Fixes**: Stabilized the edge-sensing logic to prevent flickering when "walking" books between multiple racks.
+
+## Cross-Page Movement (v2.6.4)
+- [x] **Drop on Breadcrumbs**: You can now move a book to a different rack by dragging it directly onto a pagination dot (breadcrumb).
+- [x] **Auto-Flip on Drag**: Hovering a dragged book near the left or right edges (or over the navigation arrows) will automatically flip the page after a brief delay.
+- [x] **Enhanced Hitbox**: Pagination dots now have a larger invisible hitbox to make dropping books on them much easier on both mobile and desktop.
+
+## Library UX & Layout Fixes (v2.6.3)
+- [x] **Header Overlap Fix**: Increased the top padding for the library racks and search results to ensure they are never cropped by the floating top bar.
+- [x] **Rack Reordering**: Re-enabled drag-and-drop support for the paged UI. You can now move books between slots and racks by dragging them onto the dashed placeholders.
+- [x] **Visual Feedback**: Added high-contrast hover and drag-over effects to empty slots to make reordering more intuitive.
+
+## Paged Library Fixes (v2.6.2)
+- [x] **Mouse Wheel Navigation**: Added support for the mouse scroll wheel to change racks (pages), making desktop navigation much more natural.
+- [x] **Grid Centering Fix**: Fixed the layout issue where books were cut off. The 4x4 grid is now perfectly centered and scales better with the viewport height.
+- [x] **Persistence & Stability Fixes (v2.6.1)**: Fixed AI cover saving and added safety timeouts to the upload process.
 
 ## Paged "Home Screen" Library UI (v2.6.0)
 - [x] **Horizontal Paginated Layout**: Replaced vertical shelf scrolling with a horizontal carousel inspired by phone home screens.
