@@ -185,6 +185,10 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'h') setIsManualHide(prev => !prev);
       if (e.key.toLowerCase() === 'f') setIsFocusMode(prev => !prev);
+      if (e.key.toLowerCase() === 'e') {
+        const book = library.find(b => b.filename === fileName);
+        if (book) setEditingBook(book);
+      }
       if (e.key === 'Escape') {
         if (showDiagnostics) { setShowDiagnostics(false); return; }
         if (editingBook) { setEditingBook(null); return; }
@@ -730,6 +734,8 @@ export default function App() {
           <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronLeft size={16}/></button>
           <span className="text-[10px] font-mono tabular-nums min-w-[48px] text-center">{pageNumber} / {numPages}</span>
           <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronRight size={16}/></button>
+          <div className="w-px h-3 bg-white/10 mx-0.5" />
+          <button onClick={() => { const book = library.find(b => b.filename === fileName); if (book) setEditingBook(book); }} className="hover:text-amber-400 transition-colors p-0.5" title="Editar libro (E)"><Pencil size={14}/></button>
           {isSyncing && <Loader2 size={10} className="animate-spin absolute -right-5 text-indigo-400" />}
         </div>
       )}
