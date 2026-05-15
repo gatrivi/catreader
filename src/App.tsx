@@ -19,7 +19,8 @@ import {
   Maximize2,
   Pencil,
   Crop,
-  Check
+  Check,
+  BookText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, type Highlight } from './services/syncService';
@@ -72,7 +73,23 @@ export default function App() {
   const [renderErrors, setRenderErrors] = useState<Set<number>>(new Set());
   const [isManualHide, setIsManualHide] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [isReaderMode, setIsReaderMode] = useState(false);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
+  
+  const toggleReaderMode = async () => {
+    const nextMode = !isReaderMode;
+    setIsReaderMode(nextMode);
+    
+    if (nextMode && fileType === 'pdf' && !textContent) {
+      const text = await coverDB.getGhostText(fileName);
+      if (text) {
+        setTextContent(text);
+      } else {
+        showToast('Extracting text...');
+        // Text extraction is already running in background or should have run
+      }
+    }
+  };
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
   const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'wood');
@@ -88,7 +105,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.4.9';
+  const APP_VERSION = 'v2.6.1';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -293,7 +310,11 @@ export default function App() {
 
       await loadProgress(file.name);
       if (ext === 'txt' || ext === 'epub') setIsLoaded(true);
-      else setIsLoaded(false);
+      else {
+        setIsLoaded(false);
+        if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = setTimeout(() => setIsLoaded(true), 10000);
+      }
 
       const isNew = !library.some(b => b.filename === file.name);
       if (isNew) {
@@ -353,6 +374,7 @@ export default function App() {
     setNumPages(0);
     setIsLoaded(false);
     setTextContent(null);
+    setIsReaderMode(false);
     setQuadrant(1);
     localStorage.removeItem('catreader_last_book');
     if (!skipHistory) {
@@ -363,10 +385,17 @@ export default function App() {
     }
   };
 
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const openFromLibrary = async (book: LibraryBook, forcePage?: number, forceQuadrant?: number, skipHistory = false) => {
     const filename = book.filename;
+    console.log(`[Reader] Opening book: ${filename}`);
     setFileName(filename);
     setFileType(book.type);
+    
+    // Clear previous timeouts
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+
     const shelf = shelves.find(s => s.bookIds.includes(book.id));
     const shelfTitle = shelf?.title || 'library';
     if (!skipHistory) {
@@ -410,12 +439,23 @@ export default function App() {
       } else {
         await loadProgress(filename);
       }
+      
+      // Safety timeout for the "Restoring position" overlay
+      setTimeout(() => setIsRestoring(false), 5000);
     } catch (err: any) {
+      console.error('[Reader] Failed to open book:', err);
       setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
       showToast('Error al abrir el libro.');
     }
     if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
-    else setIsLoaded(false);
+    else {
+      setIsLoaded(false);
+      // Safety timeout for "Preparando páginas" (10s for heavy PDFs)
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.warn('[Reader] Loading timeout reached for:', filename);
+        setIsLoaded(true);
+      }, 10000);
+    }
   };
 
   // --- Browser Navigation ---
@@ -606,7 +646,9 @@ export default function App() {
             const book = library.find(b => b.filename === fileName);
             if (book) setEditingBook(book);
           }}>
-            <span className="text-[10px] font-medium truncate max-w-[120px] text-stone-300 group-hover/title:text-white transition-colors">{fileName}</span>
+            <span className="text-[10px] font-medium truncate max-w-[120px] text-stone-300 group-hover/title:text-white transition-colors">
+              {library.find(b => b.filename === fileName)?.title || fileName}
+            </span>
             <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 group-hover/title:scale-110" />
           </div>
           <div className="w-px h-3 bg-white/10 mx-0.5" />
@@ -623,6 +665,7 @@ export default function App() {
           </div>
           <div className="w-px h-3 bg-white/10 mx-0.5" />
           <div className="flex items-center gap-1">
+            <button onClick={toggleReaderMode} className={cn("p-1 rounded-full transition-all", isReaderMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Reader Mode"><BookText size={14} /></button>
             <button onClick={() => setIsFocusMode(!isFocusMode)} className={cn("p-1 rounded-full transition-all", isFocusMode ? "bg-indigo-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Focus (F)"><Maximize2 size={14} /></button>
             <button onClick={() => setIsCaptureMode(!isCaptureMode)} className={cn("p-1 rounded-full transition-all", isCaptureMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Capture Cover"><Crop size={14} /></button>
           </div>
@@ -698,6 +741,13 @@ export default function App() {
                 </span>
               </div>
             </div>
+            
+            <button 
+              onClick={() => closeBook()}
+              className="mt-4 px-6 py-2 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-all"
+            >
+              Cancelar
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -716,6 +766,7 @@ export default function App() {
             theme={theme} 
             scrollRatio={scrollRatio} 
             isRestoring={isRestoring} 
+            isReaderMode={isReaderMode}
             pageRatios={pageRatios} 
             onLoadSuccess={async (pdf) => {
               setNumPages(pdf.numPages);
@@ -757,8 +808,16 @@ export default function App() {
                 }
               })();
             }} 
+            onLoadError={(err) => {
+              console.error('PDF Load Error:', err);
+              setIsLoaded(true); // Dismiss overlay so error message in ReaderView is visible
+              showToast('Error al cargar PDF');
+            }}
             onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); if (quadrant > 1) { const offset = ((quadrant - 1) / 4) * el.clientHeight; containerRef.current.scrollBy({ top: offset, behavior: 'instant' }); } } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
-            onPageRenderError={(_p, err) => setRenderErrors((prev) => new Set(prev).add(_p))} 
+            onPageRenderError={(_p, err) => {
+              setRenderErrors((prev) => new Set(prev).add(_p));
+              if (_p === pageNumber) setIsRestoring(false);
+            }} 
             onTextSelection={(text, x, y) => setSelectedTextMenu({ text, x, y })} 
             onEpubLocationChange={setEpubCfi} 
             epubCfi={epubCfi} 
@@ -781,7 +840,7 @@ export default function App() {
         <motion.div initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 10 }} className="fixed z-[100] bg-stone-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 items-center" style={{ left: `${selectedTextMenu.x}px`, top: `${selectedTextMenu.y - 50}px`, transform: 'translateX(-50%)' }}>
           <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { await updateBookMetadata(fileName, selectedTextMenu.text, book.author || ''); showToast('Título actualizado'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-white/10 rounded-lg transition-colors">Set Title</button>
           <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { await updateBookMetadata(fileName, book.title, selectedTextMenu.text); showToast('Autor actualizado'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-white/10 rounded-lg transition-colors">Set Author</button>
-          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book && enrichedMetadata[fileName]) { setIsSyncing(true); const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || ''; if (g_apiKey) { try { const ai = new GoogleGenAI({ apiKey: g_apiKey }); const result = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: [{ role: 'user', parts: [{ text: `Generate a minimalist SVG book cover for "${book.title}" by "${book.author}". Return ONLY SVG.` }] }] }); const svg = result.candidates?.[0]?.content?.parts?.[0]?.text || ''; const cleanSvg = svg.substring(svg.indexOf('<svg'), svg.lastIndexOf('</svg>') + 6); await updateBookMetadata(fileName, book.title, book.author || ''); setLibrary(prev => prev.map(b => b.filename === fileName ? { ...b, svg: cleanSvg } : b)); showToast('Portada generada'); } catch (e) {} } setIsSyncing(false); setSelectedTextMenu(null); } }} className="px-2 py-1 text-[10px] font-bold uppercase text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors">Magic Cover</button>
+          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { setIsSyncing(true); const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || ''; if (g_apiKey) { try { const ai = new GoogleGenAI({ apiKey: g_apiKey }); const result = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: [{ role: 'user', parts: [{ text: `Generate a minimalist SVG book cover for "${book.title}" by "${book.author}". Return ONLY SVG.` }] }] }); const svg = result.candidates?.[0]?.content?.parts?.[0]?.text || ''; const cleanSvg = svg.substring(svg.indexOf('<svg'), svg.lastIndexOf('</svg>') + 6); await updateBookMetadata(fileName, book.title, book.author || '', cleanSvg); showToast('Portada generada'); } catch (e) {} } setIsSyncing(false); setSelectedTextMenu(null); } }} className="px-2 py-1 text-[10px] font-bold uppercase text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors">Magic Cover</button>
           <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { const newHighlight: Highlight = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, bookId: fileName, bookTitle: book.title, text: selectedTextMenu.text, page: pageNumber, createdAt: Date.now() }; const updated = [...highlights, newHighlight]; setHighlights(updated); await coverDB.saveHighlights(updated); await syncService.saveHighlights(updated); showToast('Cita guardada'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-colors">Save Quote</button>
           <button onClick={() => setSelectedTextMenu(null)} className="p-1 text-stone-500 hover:text-white transition-colors"><X size={14} /></button>
         </motion.div>
@@ -798,7 +857,7 @@ export default function App() {
 
       <AnimatePresence>{toast.visible && (<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-stone-900/90 backdrop-blur-md text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-white/10">{toast.message}</motion.div>)}</AnimatePresence>
 
-      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }); setIsSyncing(false); } }} isSyncing={isSyncing} />
+      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} isSyncing={isSyncing} />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
     </div>
   );

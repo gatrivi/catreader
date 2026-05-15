@@ -15,6 +15,23 @@ The following features and fixes have been implemented and are ready for review:
     - Integrated **Google Books API** to automatically search for professional covers based on title and author.
     - Integrated **Pollinations.ai** as an AI fallback to generate thematic covers when professional ones aren't available.
 
+## Persistence & Stability Fixes (v2.6.1)
+- [x] **AI Cover Persistence**: Fixed a bug where covers generated via "Magic Cover" were not being saved to the persistent metadata.
+- [x] **Upload Safety Timeout**: Added the 10-second safety timeout to the book upload flow (`onFileChange`) to prevent hangs after manual uploads.
+- [x] **Metadata Engine Update**: Enhanced the metadata hook to support SVG persistence during manual updates.
+
+## Paged "Home Screen" Library UI (v2.6.0)
+- [x] **Horizontal Paginated Layout**: Replaced vertical shelf scrolling with a horizontal carousel inspired by phone home screens.
+- [x] **Strict 4x4 Grid**: Enforced a consistent 16-book grid (4 rows x 4 columns) per rack for a clean, uniform aesthetic.
+- [x] **Swipe & Drag Navigation**: Integrated `framer-motion` for fluid horizontal swiping and mouse-drag navigation between racks.
+- [x] **Pagination Breadcrumbs**: Added dot indicators (breadcrumbs) at the bottom to visualize total racks and current position.
+- [x] **Desktop Navigation**: Added high-visibility chevron arrows for easy paging on non-touch devices.
+
+## Critical Loading Fixes (v2.5.4)
+- [x] **Manual Escape Button**: Added a "Cancelar" button to the loading overlay, allowing you to force-exit if the reader hangs.
+- [x] **Timeout Collision Protection**: Implemented `loadingTimeoutRef` to prevent multiple loading timeouts from conflicting during rapid book switching.
+- [x] **Enriched Title Display**: The reader header now correctly displays the identified book title instead of the raw filename.
+
 ## Architecture & Backend (v2.4.1)
 - [x] **Modularization**: Extracted logic from `App.tsx` (2100+ lines) into specialized hooks: `useLibrary`, `useReaderSync`, and `useGoogleDrive`.
 - [x] **Zoom Preservation**: Implemented per-device-category zoom settings (mobile, tablet, desktop) that persist across sessions and sync via cloud.

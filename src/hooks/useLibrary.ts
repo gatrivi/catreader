@@ -286,44 +286,48 @@ export function useLibrary({
   /**
    * Fetches enhanced covers from various APIs.
    */
-  const fetchEnhancedCover = useCallback(async (book: LibraryBook) => {
+  const fetchEnhancedCover = useCallback(async (book: LibraryBook, forceAI = false) => {
     setIdentifyingBookId(book.id);
     try {
       const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
       
-      if (enrichedMetadataRef.current[book.filename]?.svg) {
+      // If forceAI is not set, try external APIs first
+      if (!forceAI) {
+        const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
+        const gBooksRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
+        const gBooksData = await gBooksRes.json();
+        
+        const thumbnail = gBooksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail || 
+                          gBooksData.items?.[0]?.volumeInfo?.imageLinks?.smallThumbnail;
+        
+        if (thumbnail) {
+          const secureThumbnail = thumbnail.replace('http://', 'https://');
+          await coverDB.saveCover(book.filename, secureThumbnail);
+          setCovers(prev => ({ ...prev, [book.filename]: secureThumbnail }));
+          return;
+        }
+
+        try {
+          const olQuery = encodeURIComponent(`${searchTitle} ${book.author || ''}`.trim());
+          const olRes = await fetch(`https://openlibrary.org/search.json?q=${olQuery}&limit=1`);
+          const olData = await olRes.json();
+          const olCoverId = olData.docs?.[0]?.cover_i;
+          if (olCoverId) {
+            const olCoverUrl = `https://covers.openlibrary.org/b/id/${olCoverId}-L.jpg`;
+            await coverDB.saveCover(book.filename, olCoverUrl);
+            setCovers(prev => ({ ...prev, [book.filename]: olCoverUrl }));
+            return;
+          }
+        } catch (olErr) {}
+      }
+
+      // If forceAI is set OR external APIs failed, try Gemini/SVG
+      if (enrichedMetadataRef.current[book.filename]?.svg && !forceAI) {
         const svg = enrichedMetadataRef.current[book.filename].svg as string;
         await coverDB.saveCover(book.filename, svg);
         setCovers(prev => ({ ...prev, [book.filename]: svg }));
         return;
       }
-
-      const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
-      const gBooksRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
-      const gBooksData = await gBooksRes.json();
-      
-      const thumbnail = gBooksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail || 
-                        gBooksData.items?.[0]?.volumeInfo?.imageLinks?.smallThumbnail;
-      
-      if (thumbnail) {
-        const secureThumbnail = thumbnail.replace('http://', 'https://');
-        await coverDB.saveCover(book.filename, secureThumbnail);
-        setCovers(prev => ({ ...prev, [book.filename]: secureThumbnail }));
-        return;
-      }
-
-      try {
-        const olQuery = encodeURIComponent(`${searchTitle} ${book.author || ''}`.trim());
-        const olRes = await fetch(`https://openlibrary.org/search.json?q=${olQuery}&limit=1`);
-        const olData = await olRes.json();
-        const olCoverId = olData.docs?.[0]?.cover_i;
-        if (olCoverId) {
-          const olCoverUrl = `https://covers.openlibrary.org/b/id/${olCoverId}-L.jpg`;
-          await coverDB.saveCover(book.filename, olCoverUrl);
-          setCovers(prev => ({ ...prev, [book.filename]: olCoverUrl }));
-          return;
-        }
-      } catch (olErr) {}
 
       const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
       if (g_apiKey) {
@@ -356,16 +360,16 @@ export function useLibrary({
     reader.readAsDataURL(file);
   };
 
-  const updateBookMetadata = async (filename: string, title: string, author: string) => {
+  const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string) => {
     const newMetadata = { 
       ...enrichedMetadata, 
-      [filename]: { ...enrichedMetadata[filename], title, author } 
+      [filename]: { ...enrichedMetadata[filename], title, author, svg: svg || enrichedMetadata[filename]?.svg } 
     };
     setEnrichedMetadata(newMetadata);
     localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
     await syncService.saveMetadata(newMetadata);
     setLibrary(prev => prev.map(book => 
-      book.filename === filename ? { ...book, title, author } : book
+      book.filename === filename ? { ...book, title, author, svg: svg || book.svg } : book
     ));
   };
 
@@ -458,7 +462,7 @@ export function useLibrary({
   return {
     library, setLibrary,
     enrichedMetadata,
-    covers,
+    covers, setCovers,
     isLoadingLibrary,
     enrichmentProgress,
     fetchLibrary,

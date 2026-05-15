@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, RefreshCw } from 'lucide-react';
+import { X, Upload, RefreshCw, Search } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -18,7 +18,7 @@ interface EditModalProps {
   onClose: () => void;
   onSave: (title: string, author: string) => void;
   onUploadCover: (file: File) => void;
-  onRegenerateCover: (title: string, author: string) => void;
+  onRegenerateCover: (title: string, author: string, forceAI?: boolean) => void;
   isSyncing: boolean;
 }
 
@@ -87,14 +87,14 @@ export const EditModal: React.FC<EditModalProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <label className="flex flex-col items-center justify-center gap-2 p-4 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl cursor-pointer transition-all group relative overflow-hidden">
+          <div className="grid grid-cols-3 gap-3">
+            <label className="flex flex-col items-center justify-center gap-2 p-3 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl cursor-pointer transition-all group relative overflow-hidden">
               {coverPreview ? (
                 <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
               ) : (
-                <Upload size={20} className="text-stone-400 group-hover:text-indigo-400" />
+                <Upload size={18} className="text-stone-400 group-hover:text-indigo-400" />
               )}
-              <span className={cn("text-[10px] font-bold uppercase tracking-tighter z-10", coverPreview ? "text-white drop-shadow-md" : "text-stone-500")}>Subir Portada</span>
+              <span className={cn("text-[9px] font-bold uppercase tracking-tighter z-10", coverPreview ? "text-white drop-shadow-md" : "text-stone-500")}>Subir</span>
               <input 
                 type="file" 
                 accept="image/*" 
@@ -114,11 +114,19 @@ export const EditModal: React.FC<EditModalProps> = ({
             </label>
             
             <button 
-              onClick={() => onRegenerateCover(title, author)}
-              className="flex flex-col items-center justify-center gap-2 p-4 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl transition-all group"
+              onClick={() => onRegenerateCover(title, author, true)}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl transition-all group"
             >
-              <RefreshCw size={20} className={cn("text-stone-400 group-hover:text-amber-400", isSyncing && "animate-spin")} />
-              <span className="text-[10px] font-bold uppercase tracking-tighter text-stone-500">IA Regenerar</span>
+              <RefreshCw size={18} className={cn("text-stone-400 group-hover:text-amber-400", isSyncing && "animate-spin")} />
+              <span className="text-[9px] font-bold uppercase tracking-tighter text-stone-500">IA Portada</span>
+            </button>
+
+            <button 
+              onClick={() => onRegenerateCover(title, author, false)}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl transition-all group"
+            >
+              <Search size={18} className={cn("text-stone-400 group-hover:text-emerald-400", isSyncing && "animate-spin")} />
+              <span className="text-[9px] font-bold uppercase tracking-tighter text-stone-500">Buscar</span>
             </button>
           </div>
 

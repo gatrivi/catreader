@@ -26,6 +26,7 @@ interface ReaderViewProps {
   isCaptureMode?: boolean;
   onCapture?: (base64: string) => void;
   onLoadSuccess: (pdf: any) => void;
+  onLoadError?: (error: Error) => void;
   onPageRenderSuccess: (p: number) => void;
   onPageRenderError?: (p: number, error: Error) => void;
   onTextSelection?: (text: string, x: number, y: number) => void;
@@ -34,6 +35,7 @@ interface ReaderViewProps {
   themeStyles: Record<string, string>;
   pdfFilter: Record<string, string>;
   isSimplified: boolean;
+  isReaderMode?: boolean;
 }
 
 interface PageItemProps {
@@ -270,6 +272,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   isCaptureMode,
   onCapture,
   onLoadSuccess,
+  onLoadError,
   onPageRenderSuccess,
   onPageRenderError,
   onTextSelection,
@@ -278,6 +281,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   themeStyles,
   pdfFilter,
   isSimplified,
+  isReaderMode,
 }) => {
   const [docError, setDocError] = useState<string | null>(null);
 
@@ -287,6 +291,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       onLoadSuccess(pdf);
     },
     [onLoadSuccess]
+  );
+
+  const handleLoadError = useCallback(
+    (err: Error) => {
+      setDocError(err.message);
+      onLoadError?.(err);
+    },
+    [onLoadError]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -323,7 +335,22 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         )}
       </AnimatePresence>
 
-      {fileType === 'pdf' ? (
+      {isReaderMode || fileType === 'txt' ? (
+        <div
+          className={cn(
+            'max-w-2xl w-full p-6 sm:p-12 font-serif whitespace-pre-wrap leading-relaxed shadow-xl rounded-2xl min-h-[80vh] selection:bg-amber-200 selection:text-amber-900 transition-all duration-300',
+            themeStyles[theme]
+          )}
+          style={{ fontSize: `${(typeof zoom === 'number' ? zoom : 1) * 1.25}rem` }}
+        >
+          {textContent || (
+            <div className="flex flex-col items-center justify-center py-20 text-stone-400 gap-4">
+              <Loader2 className="animate-spin" size={32} />
+              <p className="font-mono text-xs uppercase tracking-widest">Extracting text for reader mode...</p>
+            </div>
+          )}
+        </div>
+      ) : fileType === 'pdf' ? (
         <div
           className="relative shadow-2xl flex flex-col gap-0 py-0"
           style={{ filter: pdfFilter[theme] }}
@@ -331,7 +358,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           <Document
             file={fileUrl}
             onLoadSuccess={handleLoadSuccess}
-            onLoadError={(err: Error) => setDocError(err.message)}
+            onLoadError={handleLoadError}
             loading={null}
           >
             {docError ? (
@@ -368,15 +395,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               })
             )}
           </Document>
-        </div>
-      ) : fileType === 'txt' ? (
-        <div
-          className={cn(
-            'max-w-3xl w-full p-8 font-mono whitespace-pre-wrap leading-relaxed shadow-sm rounded-lg',
-            themeStyles[theme]
-          )}
-        >
-          {textContent}
         </div>
       ) : fileType === 'epub' ? (
         <div className="w-full h-[calc(100vh-120px)] flex flex-col">

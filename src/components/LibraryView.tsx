@@ -88,6 +88,7 @@ export const LibraryView = ({
     localStorage.getItem('catreader_custom_wallpaper')
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentRack, setCurrentRack] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pfp = authService.getPFP();
 
@@ -360,7 +361,7 @@ export const LibraryView = ({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden flex flex-col">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-stone-400 gap-4">
             <Loader2 className="animate-spin text-amber-600" size={32} />
@@ -376,147 +377,110 @@ export const LibraryView = ({
               <button className="text-amber-500 font-bold" onClick={onGoogleDrive}>Importar Libros</button>
             </div>
           </div>
-        ) : (
-          <div className="h-full overflow-y-auto scrollbar-thin overflow-x-hidden pb-20">
-            {/* Enrichment Progress Bar */}
-            <AnimatePresence>
-              {enrichmentProgress && (
-                <motion.div
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="sticky top-0 left-0 right-0 z-50 px-6 py-4 pointer-events-none"
-                >
-                  <div className="max-w-xl mx-auto bg-stone-900/90 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl p-4 pointer-events-auto">
-                    <div className="flex justify-between items-center mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                          <Wand2 size={16} className="text-indigo-400 animate-pulse" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Magic Identification</p>
-                          <p className="text-xs text-white font-serif truncate max-w-[200px]">{enrichmentProgress.filename}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-xs font-mono font-bold text-indigo-400">
-                          {Math.round((enrichmentProgress.current / enrichmentProgress.total) * 100)}%
-                        </span>
-                        {clearProgress && (
-                          <button onClick={clearProgress} className="text-stone-500 hover:text-white transition-colors">
-                            <X size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="h-1.5 w-full bg-stone-800 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${(enrichmentProgress.current / enrichmentProgress.total) * 100}%` }}
-                        className="h-full bg-gradient-to-r from-indigo-600 via-purple-500 to-indigo-600 shadow-[0_0_15px_rgba(79,70,229,0.5)]"
-                      />
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
-              {searchQuery ? (
+        ) : searchQuery ? (
+          <div className="h-full overflow-y-auto scrollbar-thin px-4 sm:px-8 py-8 pb-20">
+            <div className="max-w-7xl mx-auto">
+              <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
                 <div>
-                  <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
-                    <div>
-                      <h2 className="text-2xl font-serif text-white font-bold">Resultados</h2>
-                      <p className="text-stone-500 text-xs uppercase tracking-widest mt-1">Buscando: {searchQuery}</p>
-                    </div>
-                    <p className="text-amber-500 text-sm font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
-                      {filteredBooks.length} {filteredBooks.length === 1 ? 'libro' : 'libros'}
-                    </p>
+                  <h2 className="text-2xl font-serif text-white font-bold">Resultados</h2>
+                  <p className="text-stone-500 text-xs uppercase tracking-widest mt-1">Buscando: {searchQuery}</p>
+                </div>
+                <p className="text-amber-500 text-sm font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+                  {filteredBooks.length} {filteredBooks.length === 1 ? 'libro' : 'libros'}
+                </p>
+              </div>
+
+              {filteredBooks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-stone-600">
+                  <div className="w-20 h-20 bg-stone-900/50 rounded-full flex items-center justify-center mb-6 border border-white/5">
+                    <Search size={32} className="opacity-20" />
                   </div>
-                  
-                  {filteredBooks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-stone-600">
-                      <div className="w-20 h-20 bg-stone-900/50 rounded-full flex items-center justify-center mb-6 border border-white/5">
-                        <Search size={32} className="opacity-20" />
-                      </div>
-                      <p className="italic text-lg">No se encontraron coincidencias</p>
-                      <button 
-                        onClick={() => setSearchQuery('')}
-                        className="mt-4 text-amber-500 hover:text-amber-400 font-bold underline"
-                      >
-                        Limpiar búsqueda
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16">
-                      {filteredBooks.map(book => (
-                        <div key={book.id} className="relative flex flex-col group/item">
-                           <BookCover 
-                              book={book}
-                              cover={covers[book.filename]}
-                              onClick={() => onOpenBook(book)}
-                              onEdit={() => onEditBook(book)}
-                              onShare={() => onShareBook?.(book)}
-                              isSimplified={isSimplified}
-                              isIdentifying={identifyingBookId === book.id}
-                            />
-                            {!isSimplified && <ShelfLedge />}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <p className="italic text-lg">No se encontraron coincidencias</p>
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="mt-4 text-amber-500 hover:text-amber-400 font-bold underline"
+                  >
+                    Limpiar búsqueda
+                  </button>
                 </div>
               ) : (
-                <div className="space-y-16">
-                  {shelves.map((shelf) => {
-                    const shelfBooks = shelf.bookIds
-                      .map(id => getBook(id))
-                      .filter((b): b is LibraryBook => !!b);
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16">
+                  {filteredBooks.map(book => (
+                    <div key={book.id} className="relative flex flex-col group/item">
+                       <BookCover 
+                          book={book}
+                          cover={covers[book.filename]}
+                          onClick={() => onOpenBook(book)}
+                          onEdit={() => onEditBook(book)}
+                          onShare={() => onShareBook?.(book)}
+                          isSimplified={isSimplified}
+                          isIdentifying={identifyingBookId === book.id}
+                        />
+                        {!isSimplified && <ShelfLedge />}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden">
+            {/* Carousel Container */}
+            <motion.div 
+              className="flex w-full h-full cursor-grab active:cursor-grabbing"
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              onDragEnd={(_, info) => {
+                const threshold = 50;
+                if (info.offset.x < -threshold && currentRack < shelves.length - 1) {
+                  setCurrentRack(prev => prev + 1);
+                } else if (info.offset.x > threshold && currentRack > 0) {
+                  setCurrentRack(prev => prev - 1);
+                }
+              }}
+            >
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={currentRack}
+                  initial={{ x: 300, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: -300, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                  className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-12 py-8"
+                >
+                  {/* Rack Header */}
+                  <div className="mb-6 flex items-center gap-4">
+                    <ShelfTitle 
+                      title={shelves[currentRack].title} 
+                      onChange={(title) => onUpdateShelfTitle(shelves[currentRack].id, title)}
+                    />
+                  </div>
 
-                    if (shelfBooks.length === 0 && shelf.id !== 'shelf-0') return null;
+                  {/* Strict 4x4 Grid */}
+                  <div className="grid grid-cols-4 grid-rows-4 gap-x-4 gap-y-8 sm:gap-x-8 sm:gap-y-12 w-full max-w-4xl aspect-[4/3] max-h-[70vh] items-end">
+                    {Array.from({ length: 16 }).map((_, idx) => {
+                      const bookId = shelves[currentRack].bookIds[idx];
+                      const book = bookId ? getBook(bookId) : null;
 
-                    return (
-                      <div 
-                        key={shelf.id}
-                        className={cn(
-                          "relative group/shelf pt-8 rounded-3xl transition-all duration-500",
-                          dragOverShelf === shelf.id && "bg-indigo-500/10 ring-2 ring-indigo-500/30"
-                        )}
-                        onDragOver={(e) => handleShelfDragOver(e, shelf.id)}
-                        onDragEnter={(e) => handleShelfDragEnter(e, shelf.id)}
-                        onDragLeave={handleShelfDragLeave}
-                        onDrop={(e) => handleShelfDrop(e, shelf.id)}
-                      >
-                        {/* Sticky Shelf Title */}
-                        <div className="sticky top-0 z-20 flex items-center justify-between mb-10 pointer-events-none">
-                          <div className="pointer-events-auto bg-stone-950/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/5 shadow-xl transition-transform group-hover/shelf:scale-105">
-                            <ShelfTitle 
-                              title={shelf.title} 
-                              onChange={(title) => onUpdateShelfTitle(shelf.id, title)}
-                            />
-                          </div>
-                          <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent ml-4" />
-                        </div>
-
-                        {/* Responsive Books Grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16 items-end">
-                          {shelfBooks.map((book, bookIdx) => {
-                            const offsetY = Math.sin(bookIdx * 1.3) * 5;
-                            const offsetX = Math.cos(bookIdx * 0.9) * 3;
-                            return (
+                      return (
+                        <div 
+                          key={`slot-${currentRack}-${idx}`}
+                          className={cn(
+                            "relative aspect-[2/3] flex flex-col items-center justify-end",
+                            !book && "border-2 border-dashed border-white/5 rounded-xl opacity-20"
+                          )}
+                          onDragOver={(e) => handleBookDragOver(e, shelves[currentRack].id, idx)}
+                          onDrop={(e) => handleBookDrop(e, shelves[currentRack].id, idx)}
+                        >
+                          {book ? (
                             <div
-                              key={book.id}
                               draggable
-                              onDragStart={(e) => handleDragStart(e, book.id, shelf.id, bookIdx)}
+                              onDragStart={(e) => handleDragStart(e, book.id, shelves[currentRack].id, idx)}
                               onDragEnd={handleDragEnd}
                               className={cn(
-                                "relative flex flex-col group/item cursor-grab active:cursor-grabbing transition-all",
-                                dragState?.bookId === book.id && "opacity-20 grayscale",
-                                dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-amber-500 rounded-lg scale-105 z-10"
+                                "w-full h-full transition-all",
+                                dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
-                              style={{ transform: `translate(${offsetX}%, ${offsetY}%)` }}
-                              onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
-                              onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
                             >
                               <BookCover 
                                 book={book}
@@ -529,20 +493,50 @@ export const LibraryView = ({
                               />
                               {!isSimplified && <ShelfLedge />}
                             </div>
-                          );})}
-
-                          {/* Empty shelf placeholder for drop */}
-                          {shelfBooks.length === 0 && (
-                            <div className="col-span-full h-32 flex items-center justify-center border-2 border-dashed border-white/5 rounded-3xl text-stone-600 font-serif italic">
-                              Este estante está esperando su primer libro...
-                            </div>
+                          ) : (
+                            <div className="w-full h-full" />
                           )}
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
+
+            {/* Breadcrumbs (Pagination Dots) */}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 z-30">
+              {shelves.map((_, idx) => (
+                <button
+                  key={`dot-${idx}`}
+                  onClick={() => setCurrentRack(idx)}
+                  className={cn(
+                    "w-2 h-2 rounded-full transition-all",
+                    currentRack === idx 
+                      ? "bg-amber-500 w-4 shadow-[0_0_8px_rgba(245,158,11,0.5)]" 
+                      : "bg-white/20 hover:bg-white/40"
+                  )}
+                  aria-label={`Go to rack ${idx + 1}`}
+                />
+              ))}
+            </div>
+
+            {/* Navigation Arrows (Desktop) */}
+            <div className="absolute inset-y-0 left-0 right-0 pointer-events-none hidden md:flex items-center justify-between px-4 lg:px-12 z-20">
+              <button 
+                onClick={() => setCurrentRack(prev => Math.max(0, prev - 1))}
+                disabled={currentRack === 0}
+                className="pointer-events-auto p-3 rounded-full bg-black/20 hover:bg-black/40 text-white/50 hover:text-white transition-all disabled:opacity-0"
+              >
+                <ChevronLeft size={32} />
+              </button>
+              <button 
+                onClick={() => setCurrentRack(prev => Math.min(shelves.length - 1, prev + 1))}
+                disabled={currentRack === shelves.length - 1}
+                className="pointer-events-auto p-3 rounded-full bg-black/20 hover:bg-black/40 text-white/50 hover:text-white transition-all disabled:opacity-0"
+              >
+                <ChevronRight size={32} />
+              </button>
             </div>
           </div>
         )}
