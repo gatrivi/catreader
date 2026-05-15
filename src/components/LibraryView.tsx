@@ -500,7 +500,10 @@ export const LibraryView = ({
 
                         {/* Responsive Books Grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16 items-end">
-                          {shelfBooks.map((book, bookIdx) => (
+                          {shelfBooks.map((book, bookIdx) => {
+                            const offsetY = Math.sin(bookIdx * 1.3) * 5;
+                            const offsetX = Math.cos(bookIdx * 0.9) * 3;
+                            return (
                             <div
                               key={book.id}
                               draggable
@@ -511,6 +514,7 @@ export const LibraryView = ({
                                 dragState?.bookId === book.id && "opacity-20 grayscale",
                                 dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-amber-500 rounded-lg scale-105 z-10"
                               )}
+                              style={{ transform: `translate(${offsetX}%, ${offsetY}%)` }}
                               onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
                               onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
                             >
@@ -525,7 +529,7 @@ export const LibraryView = ({
                               />
                               {!isSimplified && <ShelfLedge />}
                             </div>
-                          ))}
+                          );})}
 
                           {/* Empty shelf placeholder for drop */}
                           {shelfBooks.length === 0 && (
