@@ -59,4 +59,41 @@ describe('syncService', () => {
     
     expect(result).toBe(null);
   });
+
+  it('should save highlights to Firestore', async () => {
+    (setDoc as any).mockResolvedValue(true);
+
+    const highlights = [
+      { id: 'h1', bookId: 'b1', bookTitle: 'Test Book', text: 'Hello world', page: 5, createdAt: Date.now() }
+    ];
+
+    const result = await syncService.saveHighlights(highlights);
+
+    expect(result).toBe(true);
+    expect(setDoc).toHaveBeenCalled();
+  });
+
+  it('should load highlights from Firestore', async () => {
+    const highlights = [
+      { id: 'h1', bookId: 'b1', bookTitle: 'Test Book', text: 'Hello world', page: 5, createdAt: Date.now() }
+    ];
+    (getDoc as any).mockResolvedValue({
+      exists: () => true,
+      data: () => ({ items: highlights })
+    });
+
+    const result = await syncService.loadHighlights();
+
+    expect(result).toEqual(highlights);
+  });
+
+  it('should return null if highlights doc does not exist', async () => {
+    (getDoc as any).mockResolvedValue({
+      exists: () => false
+    });
+
+    const result = await syncService.loadHighlights();
+
+    expect(result).toBe(null);
+  });
 });

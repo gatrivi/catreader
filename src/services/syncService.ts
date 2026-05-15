@@ -16,6 +16,15 @@ export interface ReadingProgress {
   updatedAt: number;
 }
 
+export interface Highlight {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  text: string;
+  page?: number;
+  createdAt: number;
+}
+
 const getUserId = async () => {
   const portableId = authService.getPortableId();
   if (portableId) return portableId;
@@ -120,6 +129,36 @@ export const syncService = {
       return null;
     } catch (err) {
       console.error('Firestore GhostText Load Error:', err);
+      return null;
+    }
+  },
+
+  async saveHighlights(highlights: Highlight[]) {
+    const uid = await getUserId();
+    const docRef = doc(db, 'users', uid, 'highlights', 'all');
+    try {
+      await setDoc(docRef, {
+        items: highlights,
+        updatedAt: serverTimestamp()
+      });
+      return true;
+    } catch (err) {
+      console.error('Firestore Highlights Save Error:', err);
+      return false;
+    }
+  },
+
+  async loadHighlights(): Promise<Highlight[] | null> {
+    const uid = await getUserId();
+    const docRef = doc(db, 'users', uid, 'highlights', 'all');
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        return snap.data().items || [];
+      }
+      return null;
+    } catch (err) {
+      console.error('Firestore Highlights Load Error:', err);
       return null;
     }
   }

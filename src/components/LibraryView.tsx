@@ -19,6 +19,15 @@ interface LibraryBook {
   type: string;
 }
 
+interface Highlight {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  text: string;
+  page?: number;
+  createdAt: number;
+}
+
 interface LibraryViewProps {
   library: LibraryBook[];
   covers: Record<string, string>;
@@ -42,9 +51,11 @@ interface LibraryViewProps {
   isSyncing?: boolean;
   enrichmentProgress?: { current: number; total: number; filename?: string };
   onShareBook?: (book: LibraryBook) => void;
+  dailyHighlight?: Highlight | null;
+  onDismissHighlight?: () => void;
 }
 
-const RACKS_PER_PAGE = 4; // 4 rows
+const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
 
 export const LibraryView = ({ 
   library, 
@@ -68,14 +79,14 @@ export const LibraryView = ({
   identifyingBookId,
   isSyncing,
   enrichmentProgress,
-  onShareBook
+  onShareBook,
+  dailyHighlight,
+  onDismissHighlight
   }: LibraryViewProps) => {
 
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(
     localStorage.getItem('catreader_custom_wallpaper')
   );
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [currentPage, setCurrentPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pfp = authService.getPFP();
@@ -88,62 +99,22 @@ export const LibraryView = ({
   const svgDataUrl = pfp ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(pfp)))}` : null;
 
   const wallpapers: Record<string, string> = {
-    wood: 'repeating-linear-gradient(to bottom, #2d1d13, #2d1d13 300px, #1a110b 300px, #1a110b 320px)',
+    wood: 'linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url("https://www.transparenttextures.com/patterns/wood-pattern.png"), #2d1d13',
     dim: '#1c1917',
     slate: '#0f172a',
     glass: 'conic-gradient(from 0deg at 50% 50%, #4c1d95 0deg, #831843 60deg, #1e3a8a 120deg, #064e3b 180deg, #78350f 240deg, #4c1d95 300deg)'
   };
 
-  // Divide shelves into "Pages" (4 racks per page)
-  const pages: Shelf[][] = [];
-  for (let i = 0; i < shelves.length; i += RACKS_PER_PAGE) {
-    pages.push(shelves.slice(i, i + RACKS_PER_PAGE));
-  }
-
-  // Find which page the identifying book is on
-  const identifyingPageIdx = identifyingBookId ? pages.findIndex(page => 
-    page.some(shelf => shelf.bookIds.includes(identifyingBookId))
-  ) : -1;
-  
-  const showNudge = identifyingPageIdx !== -1 && identifyingPageIdx !== currentPage;
-  const nudgeDirection = identifyingPageIdx < currentPage ? 'left' : 'right';
-
-  const scrollToPage = useCallback((index: number) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({
-      left: index * window.innerWidth,
-      behavior: 'smooth'
-    });
-  }, []);
-
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const handleScroll = () => {
-      const idx = Math.round(el.scrollLeft / window.innerWidth);
-      setCurrentPage(idx);
-    };
-    el.addEventListener('scroll', handleScroll, { passive: true });
-
-    // Keyboard navigation
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        scrollToPage(Math.max(0, currentPage - 1));
-      } else if (e.key === 'ArrowRight') {
-        scrollToPage(Math.min(pages.length - 1, currentPage + 1));
-      } else if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      el.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [currentPage, pages.length, scrollToPage]);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleCustomWallpaper = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -164,6 +135,12 @@ export const LibraryView = ({
     fromShelfId: string;
     fromIndex: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!dailyHighlight) return;
+    const timer = setTimeout(() => onDismissHighlight?.(), 8000);
+    return () => clearTimeout(timer);
+  }, [dailyHighlight, onDismissHighlight]);
   const [dragOverShelf, setDragOverShelf] = useState<string | null>(null);
   const dragCounter = useRef(0);
 
@@ -248,12 +225,12 @@ export const LibraryView = ({
       style={{ 
         background: bgStyle,
         backgroundAttachment: 'fixed',
-        backgroundSize: wallpaper === 'custom' ? 'cover' : '100% 320px',
+        backgroundSize: wallpaper === 'custom' ? 'cover' : 'auto',
         backgroundPosition: 'center'
       }}
     >
       {/* Header */}
-      <div className="shrink-0 px-4 pt-4 pb-2">
+      <div className="shrink-0 px-4 pt-4 pb-2 z-50">
         <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-950/80 backdrop-blur-md p-3 rounded-2xl border border-white/5 shadow-2xl max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
             <button 
@@ -400,7 +377,7 @@ export const LibraryView = ({
             </div>
           </div>
         ) : (
-          <>
+          <div className="h-full overflow-y-auto scrollbar-thin overflow-x-hidden pb-20">
             {/* Enrichment Progress Bar */}
             <AnimatePresence>
               {enrichmentProgress && (
@@ -408,7 +385,7 @@ export const LibraryView = ({
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="absolute top-0 left-0 right-0 z-50 px-6 py-4 pointer-events-none"
+                  className="sticky top-0 left-0 right-0 z-50 px-6 py-4 pointer-events-none"
                 >
                   <div className="max-w-xl mx-auto bg-stone-900/90 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl p-4 pointer-events-auto">
                     <div className="flex justify-between items-center mb-3">
@@ -444,9 +421,9 @@ export const LibraryView = ({
               )}
             </AnimatePresence>
 
-            {searchQuery ? (
-              <div className="h-full overflow-y-auto p-4 sm:p-8 scrollbar-thin">
-                <div className="max-w-7xl mx-auto">
+            <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
+              {searchQuery ? (
+                <div>
                   <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
                     <div>
                       <h2 className="text-2xl font-serif text-white font-bold">Resultados</h2>
@@ -471,9 +448,9 @@ export const LibraryView = ({
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-10">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16">
                       {filteredBooks.map(book => (
-                        <div key={book.id} className="flex flex-col gap-3">
+                        <div key={book.id} className="relative flex flex-col group/item">
                            <BookCover 
                               book={book}
                               cover={covers[book.filename]}
@@ -483,168 +460,135 @@ export const LibraryView = ({
                               isSimplified={isSimplified}
                               isIdentifying={identifyingBookId === book.id}
                             />
+                            {!isSimplified && <ShelfLedge />}
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-              </div>
-            ) : (
-              <div 
-                ref={scrollRef}
-                className="h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-stretch"
-              >
-                {pages.map((pageRacks, pageIdx) => (
-                  <div 
-                    key={pageIdx} 
-                    className="w-full min-w-full h-full snap-center flex flex-col p-2 sm:p-4"
-                  >
-                    <div className="flex-1 grid grid-rows-4 gap-[2%] h-full">
-                      {pageRacks.map((rack) => {
-                        const rackBooks = rack.bookIds
-                          .map(id => getBook(id))
-                          .filter((b): b is LibraryBook => !!b);
+              ) : (
+                <div className="space-y-16">
+                  {shelves.map((shelf) => {
+                    const shelfBooks = shelf.bookIds
+                      .map(id => getBook(id))
+                      .filter((b): b is LibraryBook => !!b);
 
-                        const isDragOver = dragOverShelf === rack.id;
+                    if (shelfBooks.length === 0 && shelf.id !== 'shelf-0') return null;
 
-                        return (
-                          <div 
-                            key={rack.id}
-                            className={cn(
-                              "relative flex flex-col justify-end pb-1 px-2 rounded-lg transition-all duration-300",
-                              !isSimplified && "bg-black/10 backdrop-blur-[2px] border-b border-white/5",
-                              isDragOver && "bg-indigo-500/10 ring-1 ring-indigo-500/50"
-                            )}
-                            onDragOver={(e) => handleShelfDragOver(e, rack.id)}
-                            onDragEnter={(e) => handleShelfDragEnter(e, rack.id)}
-                            onDragLeave={handleShelfDragLeave}
-                            onDrop={(e) => handleShelfDrop(e, rack.id)}
-                          >
-                            {/* Rack Info (Hidden or minimal) */}
-                            <div className="absolute top-1 left-2 flex items-center gap-2 opacity-30 hover:opacity-100 transition-opacity z-10">
-                              <ShelfTitle 
-                                title={rack.title} 
-                                onChange={(title) => onUpdateShelfTitle(rack.id, title)}
-                              />
-                            </div>
-
-                            {/* Books Grid - 4 columns */}
-                            <div className="grid grid-cols-4 gap-2 items-end">
-                              {rackBooks.slice(0, 4).map((book, bookIdx) => (
-                                <div
-                                  key={book.id}
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, book.id, rack.id, bookIdx)}
-                                  onDragEnd={handleDragEnd}
-                                  className={cn(
-                                    "cursor-grab active:cursor-grabbing transition-all shrink-0 relative",
-                                    dragState?.bookId === book.id && "opacity-40",
-                                    dragOverBook?.shelfId === rack.id && dragOverBook?.index === bookIdx && "ring-2 ring-indigo-500 rounded-lg scale-105 z-10"
-                                  )}
-                                  onDragOver={(e) => handleBookDragOver(e, rack.id, bookIdx)}
-                                  onDrop={(e) => handleBookDrop(e, rack.id, bookIdx)}
-                                >
-                                  <BookCover 
-                                    book={book}
-                                    cover={covers[book.filename]}
-                                    onClick={() => onOpenBook(book)}
-                                    onEdit={() => onEditBook(book)}
-                                    onShare={() => onShareBook?.(book)}
-                                    isSimplified={isSimplified}
-                                    isIdentifying={identifyingBookId === book.id}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Grounded Rack Line */}
-                            {!isSimplified && (
-                              <div className={cn(
-                                "h-[3px] w-full rounded-full mt-1 shrink-0 shadow-lg",
-                                wallpaper === 'glass' ? "bg-white/20" : "bg-gradient-to-r from-amber-900/40 via-amber-700/40 to-amber-900/40"
-                              )} />
-                            )}
+                    return (
+                      <div 
+                        key={shelf.id}
+                        className={cn(
+                          "relative group/shelf pt-8 rounded-3xl transition-all duration-500",
+                          dragOverShelf === shelf.id && "bg-indigo-500/10 ring-2 ring-indigo-500/30"
+                        )}
+                        onDragOver={(e) => handleShelfDragOver(e, shelf.id)}
+                        onDragEnter={(e) => handleShelfDragEnter(e, shelf.id)}
+                        onDragLeave={handleShelfDragLeave}
+                        onDrop={(e) => handleShelfDrop(e, shelf.id)}
+                      >
+                        {/* Sticky Shelf Title */}
+                        <div className="sticky top-0 z-20 flex items-center justify-between mb-10 pointer-events-none">
+                          <div className="pointer-events-auto bg-stone-950/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/5 shadow-xl transition-transform group-hover/shelf:scale-105">
+                            <ShelfTitle 
+                              title={shelf.title} 
+                              onChange={(title) => onUpdateShelfTitle(shelf.id, title)}
+                            />
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                          <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent ml-4" />
+                        </div>
 
-            {/* Navigation Nudge for identifying book on another page */}
-            <AnimatePresence>
-              {showNudge && (
-                <motion.div
-                  initial={{ opacity: 0, x: nudgeDirection === 'left' ? -50 : 50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: nudgeDirection === 'left' ? -50 : 50 }}
-                  onClick={() => scrollToPage(identifyingPageIdx)}
-                  className={cn(
-                    "absolute top-[65%] z-[60] cursor-pointer group flex flex-col items-center gap-3",
-                    nudgeDirection === 'left' ? "left-6" : "right-6"
-                  )}
-                >
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-amber-500 rounded-full blur-xl opacity-40 animate-pulse" />
-                    <div className="relative bg-amber-600 text-white rounded-full p-4 shadow-2xl shadow-amber-900/40 animate-bounce">
-                      {nudgeDirection === 'left' ? <ChevronLeft size={32} /> : <ChevronRight size={32} />}
-                    </div>
-                  </div>
-                  <div className="bg-stone-900/90 backdrop-blur-md border border-amber-500/40 px-4 py-2 rounded-2xl shadow-2xl ring-1 ring-white/10">
-                    <p className="text-xs font-black uppercase tracking-[0.1em] text-amber-400 flex items-center gap-2 whitespace-nowrap">
-                      <Sparkles size={14} className="animate-spin-slow" /> Magia en otro Rack
-                    </p>
-                  </div>
-                </motion.div>
+                        {/* Responsive Books Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16 items-end">
+                          {shelfBooks.map((book, bookIdx) => (
+                            <div
+                              key={book.id}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, book.id, shelf.id, bookIdx)}
+                              onDragEnd={handleDragEnd}
+                              className={cn(
+                                "relative flex flex-col group/item cursor-grab active:cursor-grabbing transition-all",
+                                dragState?.bookId === book.id && "opacity-20 grayscale",
+                                dragOverBook?.shelfId === shelf.id && dragOverBook?.index === bookIdx && "ring-2 ring-amber-500 rounded-lg scale-105 z-10"
+                              )}
+                              onDragOver={(e) => handleBookDragOver(e, shelf.id, bookIdx)}
+                              onDrop={(e) => handleBookDrop(e, shelf.id, bookIdx)}
+                            >
+                              <BookCover 
+                                book={book}
+                                cover={covers[book.filename]}
+                                onClick={() => onOpenBook(book)}
+                                onEdit={() => onEditBook(book)}
+                                onShare={() => onShareBook?.(book)}
+                                isSimplified={isSimplified}
+                                isIdentifying={identifyingBookId === book.id}
+                              />
+                              {!isSimplified && <ShelfLedge />}
+                            </div>
+                          ))}
+
+                          {/* Empty shelf placeholder for drop */}
+                          {shelfBooks.length === 0 && (
+                            <div className="col-span-full h-32 flex items-center justify-center border-2 border-dashed border-white/5 rounded-3xl text-stone-600 font-serif italic">
+                              Este estante está esperando su primer libro...
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-            </AnimatePresence>
-
-            {/* Navigation Arrows for Desktop */}
-            {!searchQuery && pages.length > 1 && (
-              <>
-                <button
-                  onClick={() => scrollToPage(Math.max(0, currentPage - 1))}
-                  disabled={currentPage === 0}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-sm border border-white/5 shadow-2xl hidden md:block"
-                  aria-label="Previous Page"
-                >
-                  <ChevronLeft size={24} />
-                </button>
-                <button
-                  onClick={() => scrollToPage(Math.min(pages.length - 1, currentPage + 1))}
-                  disabled={currentPage === pages.length - 1}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-stone-950/60 text-white/70 hover:bg-stone-950/80 hover:text-white disabled:opacity-0 transition-all backdrop-blur-sm border border-white/5 shadow-2xl hidden md:block"
-                  aria-label="Next Page"
-                >
-                  <ChevronRight size={24} />
-                </button>
-              </>
-            )}
-
-            {/* Page Indicators (Home Screen Style) */}
-            {!searchQuery && pages.length > 1 && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-30">
-                {pages.map((_, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => scrollToPage(idx)}
-                    className={cn(
-                      "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                      currentPage === idx ? "bg-white w-4" : "bg-white/20 hover:bg-white/40"
-                    )}
-                    aria-label={`Go to page ${idx + 1}`}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
       </div>
+
+      {/* Daily Quote Banner */}
+      <AnimatePresence>
+        {dailyHighlight && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="shrink-0 z-50 px-4 py-3"
+          >
+            <div className="max-w-3xl mx-auto bg-stone-950/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl px-5 py-3 flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-serif italic text-stone-300 leading-relaxed line-clamp-3">
+                  “{dailyHighlight.text}”
+                </p>
+                <p className="text-[10px] text-amber-500/80 font-bold uppercase tracking-widest mt-1 truncate">
+                  {dailyHighlight.bookTitle}
+                </p>
+              </div>
+              <button
+                onClick={() => onDismissHighlight?.()}
+                className="text-stone-500 hover:text-white transition-colors p-0.5 shrink-0"
+                aria-label="Dismiss quote"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+
+function ShelfLedge() {
+  return (
+    <div className="relative h-6 w-full mt-[-8px] z-0 pointer-events-none">
+      {/* The main plank top surface */}
+      <div className="absolute inset-x-[-12px] top-0 h-4 bg-gradient-to-b from-[#3d2b1f] to-[#2a1d13] rounded-sm shadow-xl border-t border-white/10" />
+      {/* The plank front edge (depth) */}
+      <div className="absolute inset-x-[-12px] top-4 h-3 bg-[#1a110b] rounded-b-md shadow-2xl border-t border-black/40" />
+      {/* Decorative shadow under the ledge */}
+      <div className="absolute inset-x-[-20px] top-7 h-8 bg-black/40 blur-xl rounded-full" />
+    </div>
+  );
+}
 
 function ShelfTitle({ title, onChange }: { title: string; onChange: (title: string) => void }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -660,7 +604,7 @@ function ShelfTitle({ title, onChange }: { title: string; onChange: (title: stri
 
   if (isEditing) {
     return (
-      <div className="flex items-center gap-2 z-10 relative">
+      <div className="flex items-center gap-2">
         <input
           ref={inputRef}
           value={draft}
@@ -674,7 +618,7 @@ function ShelfTitle({ title, onChange }: { title: string; onChange: (title: stri
             }
           }}
           autoFocus
-          className="bg-stone-900/80 text-amber-100 text-xs font-serif font-bold px-2 py-0.5 rounded-lg border border-amber-700/40 outline-none focus:border-amber-500 w-40"
+          className="bg-black/50 text-amber-200 text-sm font-serif font-bold px-3 py-0.5 rounded-lg border border-amber-500/50 outline-none focus:ring-1 focus:ring-amber-500 w-48 shadow-inner"
         />
       </div>
     );
@@ -687,12 +631,13 @@ function ShelfTitle({ title, onChange }: { title: string; onChange: (title: stri
         setIsEditing(true);
         setTimeout(() => inputRef.current?.focus(), 0);
       }}
-      className="flex items-center gap-1.5 z-10 relative group/shelf"
+      className="flex items-center gap-2 group/edit transition-all"
     >
-      <h2 className="text-xs font-serif font-bold text-amber-100/80 group-hover/shelf:text-amber-100 transition-colors">
+      <h2 className="text-sm font-serif font-bold text-amber-100/90 tracking-wide">
         {title}
       </h2>
-      <Pencil size={9} className="text-amber-100/0 group-hover/shelf:text-amber-100/50 transition-colors" />
+      <Pencil size={10} className="text-amber-500 opacity-0 group-hover/edit:opacity-100 transition-opacity" />
     </button>
   );
 }
+

@@ -22,7 +22,7 @@ import {
   Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { syncService } from './services/syncService';
+import { syncService, type Highlight } from './services/syncService';
 import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -82,10 +82,12 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [identifyingBookId, setIdentifyingBookId] = useState<string | null>(null);
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [dailyHighlight, setDailyHighlight] = useState<Highlight | null>(null);
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.4.5';
+  const APP_VERSION = 'v2.4.7';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -95,7 +97,7 @@ export default function App() {
   const {
     library, setLibrary,
     enrichedMetadata,
-    covers,
+    covers, setCovers,
     isLoadingLibrary,
     enrichmentProgress,
     fetchLibrary,
@@ -443,6 +445,20 @@ export default function App() {
   }, [library]);
 
   useEffect(() => {
+    const loadHighlights = async () => {
+      const local = await coverDB.getHighlights();
+      const remote = await syncService.loadHighlights();
+      const merged = remote && remote.length > (local?.length || 0) ? remote : (local || []);
+      setHighlights(merged);
+      if (merged.length > 0) {
+        const random = merged[Math.floor(Math.random() * merged.length)];
+        setDailyHighlight(random);
+      }
+    };
+    loadHighlights();
+  }, []);
+
+  useEffect(() => {
     if (fileName && pageNumber > 1) {
       const url = new URL(window.location.href);
       url.searchParams.set('page', pageNumber.toString());
@@ -655,7 +671,7 @@ export default function App() {
 
       <main ref={containerRef} className="flex-1 overflow-auto scrollbar-none relative" onDoubleClick={handleDoubleClick}>
         {!fileUrl ? (
-          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?read=${book.filename}`); showToast('Enlace copiado'); }} />
+          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?read=${book.filename}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 
@@ -694,6 +710,7 @@ export default function App() {
           <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { await updateBookMetadata(fileName, selectedTextMenu.text, book.author || ''); showToast('Título actualizado'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-white/10 rounded-lg transition-colors">Set Title</button>
           <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { await updateBookMetadata(fileName, book.title, selectedTextMenu.text); showToast('Autor actualizado'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-white/10 rounded-lg transition-colors">Set Author</button>
           <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book && enrichedMetadata[fileName]) { setIsSyncing(true); const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || ''; if (g_apiKey) { try { const ai = new GoogleGenAI({ apiKey: g_apiKey }); const result = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: [{ role: 'user', parts: [{ text: `Generate a minimalist SVG book cover for "${book.title}" by "${book.author}". Return ONLY SVG.` }] }] }); const svg = result.candidates?.[0]?.content?.parts?.[0]?.text || ''; const cleanSvg = svg.substring(svg.indexOf('<svg'), svg.lastIndexOf('</svg>') + 6); await updateBookMetadata(fileName, book.title, book.author || ''); setLibrary(prev => prev.map(b => b.filename === fileName ? { ...b, svg: cleanSvg } : b)); showToast('Portada generada'); } catch (e) {} } setIsSyncing(false); setSelectedTextMenu(null); } }} className="px-2 py-1 text-[10px] font-bold uppercase text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors">Magic Cover</button>
+          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { const newHighlight: Highlight = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, bookId: fileName, bookTitle: book.title, text: selectedTextMenu.text, page: pageNumber, createdAt: Date.now() }; const updated = [...highlights, newHighlight]; setHighlights(updated); await coverDB.saveHighlights(updated); await syncService.saveHighlights(updated); showToast('Cita guardada'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-colors">Save Quote</button>
           <button onClick={() => setSelectedTextMenu(null)} className="p-1 text-stone-500 hover:text-white transition-colors"><X size={14} /></button>
         </motion.div>
       )}</AnimatePresence>

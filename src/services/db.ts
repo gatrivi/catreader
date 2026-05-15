@@ -8,10 +8,11 @@ export const coverDB = {
   storeName: 'covers',
   contentStore: 'content',
   ghostStore: 'ghostText',
+  highlightsStore: 'highlights',
   
   async init(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 3); // Bumped version for ghostText store
+      const request = indexedDB.open(this.dbName, 4); // Bumped version for highlights store
       request.onupgradeneeded = (e: any) => {
         const db = request.result;
         if (!db.objectStoreNames.contains(this.storeName)) {
@@ -22,6 +23,9 @@ export const coverDB = {
         }
         if (!db.objectStoreNames.contains(this.ghostStore)) {
           db.createObjectStore(this.ghostStore);
+        }
+        if (!db.objectStoreNames.contains(this.highlightsStore)) {
+          db.createObjectStore(this.highlightsStore);
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -106,5 +110,34 @@ export const coverDB = {
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });
+  },
+
+  async saveHighlights(highlights: Highlight[]): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.highlightsStore, 'readwrite');
+      tx.objectStore(this.highlightsStore).put(highlights, 'all');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async getHighlights(): Promise<Highlight[] | null> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.highlightsStore, 'readonly');
+      const request = tx.objectStore(this.highlightsStore).get('all');
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
   }
 };
+
+export interface Highlight {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  text: string;
+  page?: number;
+  createdAt: number;
+}
