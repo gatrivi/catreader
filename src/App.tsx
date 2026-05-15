@@ -598,8 +598,8 @@ export default function App() {
             const book = library.find(b => b.filename === fileName);
             if (book) setEditingBook(book);
           }}>
-            <span className="text-[10px] font-medium truncate max-w-[100px] text-stone-300 group-hover/title:text-white transition-colors">{fileName}</span>
-            <Pencil size={10} className="text-stone-500 group-hover/title:text-amber-500 transition-colors opacity-0 group-hover/title:opacity-100" />
+            <span className="text-[10px] font-medium truncate max-w-[120px] text-stone-300 group-hover/title:text-white transition-colors">{fileName}</span>
+            <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 group-hover/title:scale-110" />
           </div>
           <div className="w-px h-3 bg-white/10 mx-0.5" />
           <div className="flex items-center gap-0.5">
@@ -734,8 +734,6 @@ export default function App() {
           <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronLeft size={16}/></button>
           <span className="text-[10px] font-mono tabular-nums min-w-[48px] text-center">{pageNumber} / {numPages}</span>
           <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronRight size={16}/></button>
-          <div className="w-px h-3 bg-white/10 mx-0.5" />
-          <button onClick={() => { const book = library.find(b => b.filename === fileName); if (book) setEditingBook(book); }} className="hover:text-amber-400 transition-colors p-0.5" title="Editar libro (E)"><Pencil size={14}/></button>
           {isSyncing && <Loader2 size={10} className="animate-spin absolute -right-5 text-indigo-400" />}
         </div>
       )}
