@@ -107,7 +107,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.7.3';
+  const APP_VERSION = 'v2.7.4';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -460,6 +460,7 @@ export default function App() {
     }
 
     setIsOpening(true);
+    setTimeout(() => setIsOpening(false), 1500); // Safety fallback
     console.log(`[Reader] Opening book: ${filename}`);
     
     // Revoke previous URL if opening a different book
@@ -961,11 +962,17 @@ export default function App() {
             isSimplified={isSimplified} 
             isFocusMode={isFocusMode}
             isCaptureMode={isCaptureMode}
-            onCapture={async (base64) => {
-              await coverDB.saveCover(fileName, base64);
-              setCovers(prev => ({ ...prev, [fileName]: base64 }));
+    onCapture={async (base64) => {
               setIsCaptureMode(false);
-              showToast('Portada actualizada');
+              showToast('Portada capturada, guardando...');
+              try {
+                await coverDB.saveCover(fileName, base64);
+                setCovers(prev => ({ ...prev, [fileName]: base64 }));
+                showToast('Portada actualizada');
+              } catch (e) {
+                console.error('Capture save error:', e);
+                showToast('Error al guardar portada');
+              }
             }}
           />
         )}

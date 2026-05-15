@@ -159,8 +159,9 @@ const PageItem: React.FC<PageItemProps> = ({
       0, 0, width * scale, height * scale
     );
 
-    onCapture(captureCanvas.toDataURL('image/jpeg', 0.9));
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.9);
     setSelection(null);
+    onCapture(dataUrl);
   };
 
   return (
@@ -216,13 +217,18 @@ const PageItem: React.FC<PageItemProps> = ({
             pageNumber={pageNum}
             scale={zoom}
             width={800}
-            renderTextLayer={!isCaptureMode}
-            renderAnnotationLayer={!isCaptureMode}
+            renderTextLayer={true}
+            renderAnnotationLayer={true}
             loading={null}
             onRenderSuccess={handleSuccess}
             onRenderError={handleError}
           />
           
+          {/* Capture Mode Block Layer */}
+          {isCaptureMode && (
+            <div className="absolute inset-0 z-20 cursor-crosshair" />
+          )}
+
           {/* Selection Overlay */}
           {isCaptureMode && selection && (
             <div 
