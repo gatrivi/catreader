@@ -83,6 +83,7 @@ export default function App() {
   const [identifyingBookId, setIdentifyingBookId] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [dailyHighlight, setDailyHighlight] = useState<Highlight | null>(null);
+  const [loadSteps, setLoadSteps] = useState<{ downloaded: boolean; opened: boolean }>({ downloaded: false, opened: false });
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -654,17 +655,42 @@ export default function App() {
       )}
 
       <AnimatePresence>
-        {fileUrl && !isLoaded && (
+        {fileUrl && (!isLoaded || isRestoring) && (
           <motion.div
             key="reader-loading"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 bg-stone-950 flex flex-col items-center justify-center gap-4"
+            className="fixed inset-0 z-50 bg-stone-950 flex flex-col items-center justify-center gap-6"
           >
             <Loader2 className="animate-spin text-amber-500" size={40} />
-            <p className="text-sm font-serif italic text-stone-400 tracking-wide">Abriendo libro…</p>
+            <div className="flex flex-col gap-2 text-xs font-mono text-stone-400">
+              <div className="flex items-center gap-2">
+                <Check size={14} className="text-emerald-500" />
+                <span className="text-stone-300">Libro descargado</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isLoaded ? (
+                  <Check size={14} className="text-emerald-500" />
+                ) : (
+                  <Loader2 size={14} className="animate-spin text-amber-500" />
+                )}
+                <span className={isLoaded ? 'text-stone-300' : 'text-stone-200'}>
+                  {isLoaded ? 'Páginas listas' : 'Preparando páginas…'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isRestoring ? (
+                  <Loader2 size={14} className="animate-spin text-amber-500" />
+                ) : (
+                  <Check size={14} className="text-emerald-500" />
+                )}
+                <span className={isRestoring ? 'text-stone-200' : 'text-stone-300'}>
+                  {isRestoring ? 'Restaurando posición…' : 'Posición restaurada'}
+                </span>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -686,18 +712,43 @@ export default function App() {
             pageRatios={pageRatios} 
             onLoadSuccess={async (pdf) => {
               setNumPages(pdf.numPages);
+              const fallback = 595 / 842;
+              const ratios = Array(pdf.numPages).fill(fallback);
+
+              // Fetch current page ratio first so target page renders accurately
               try {
-                const ratios: number[] = [];
-                for (let i = 1; i <= pdf.numPages; i++) {
-                  const page = await pdf.getPage(i);
-                  const viewport = page.getViewport({ scale: 1 });
-                  ratios.push(viewport.width / viewport.height);
-                }
-                setPageRatios(ratios);
-              } catch (e) {
-                console.error('Ratio extraction failed:', e);
-              }
+                const page = await pdf.getPage(Math.min(pageNumber, pdf.numPages));
+                const viewport = page.getViewport({ scale: 1 });
+                ratios[pageNumber - 1] = viewport.width / viewport.height;
+              } catch (e) { /* ignore */ }
+
+              setPageRatios(ratios);
               setIsLoaded(true);
+
+              // Fill remaining ratios in background batches
+              (async () => {
+                try {
+                  const batchSize = 20;
+                  for (let i = 0; i < pdf.numPages; i += batchSize) {
+                    const batch: Promise<void>[] = [];
+                    for (let j = i; j < Math.min(i + batchSize, pdf.numPages); j++) {
+                      if (ratios[j] !== fallback) continue;
+                      batch.push(
+                        pdf.getPage(j + 1)
+                          .then(p => {
+                            const vp = p.getViewport({ scale: 1 });
+                            ratios[j] = vp.width / vp.height;
+                          })
+                          .catch(() => {})
+                      );
+                    }
+                    if (batch.length) await Promise.all(batch);
+                  }
+                  setPageRatios([...ratios]);
+                } catch (e) {
+                  console.error('Background ratio extraction failed:', e);
+                }
+              })();
             }} 
             onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
             onPageRenderError={(_p, err) => setRenderErrors((prev) => new Set(prev).add(_p))} 
