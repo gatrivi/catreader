@@ -105,7 +105,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.6.5';
+  const APP_VERSION = 'v2.6.8';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -369,6 +369,9 @@ export default function App() {
   };
 
   const closeBook = (skipHistory = false) => {
+    if (fileUrl && fileUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(fileUrl);
+    }
     setFileUrl(null);
     setFileName('');
     setNumPages(0);
@@ -389,7 +392,20 @@ export default function App() {
 
   const openFromLibrary = async (book: LibraryBook, forcePage?: number, forceQuadrant?: number, skipHistory = false) => {
     const filename = book.filename;
+    
+    // If book is already open, just jump to page/quadrant if specified
+    if (filename === fileName && fileUrl) {
+      if (forcePage) scrollToPage(forcePage);
+      return;
+    }
+
     console.log(`[Reader] Opening book: ${filename}`);
+    
+    // Revoke previous URL if opening a different book
+    if (fileUrl && fileUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(fileUrl);
+    }
+
     setFileName(filename);
     setFileType(book.type);
     
@@ -754,7 +770,7 @@ export default function App() {
 
       <main ref={containerRef} className="flex-1 overflow-auto scrollbar-none relative" onDoubleClick={handleDoubleClick}>
         {!fileUrl ? (
-          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onConsolidate={consolidateShelves} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
+          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 

@@ -15,6 +15,24 @@ The following features and fixes have been implemented and are ready for review:
     - Integrated **Google Books API** to automatically search for professional covers based on title and author.
     - Integrated **Pollinations.ai** as an AI fallback to generate thematic covers when professional ones aren't available.
 
+## Reader Stability & Performance (v2.6.8)
+- [x] **Anti-Flicker Protection**: Added a safety check to `openFromLibrary` that prevents re-opening a book if it's already active. This solves the "spontaneous loading screen" issue caused by background library updates or navigation events.
+- [x] **Memory Management**: Implemented proper Blob URL revocation. The app now cleans up temporary PDF memory when you close a book or switch to a new one, preventing the "black screen" crashes on long reading sessions.
+- [x] **URL Consistency**: Stabilized the interaction between scrolling progress and browser history to ensure that URL updates don't accidentally trigger a full reader reload.
+
+## Pagination & Breadcrumb Fixes (v2.6.7)
+- [x] **Smart Wrapping**: Breadcrumbs now support wrapping and have a max-width limit to prevent overlapping on screens with many racks.
+- [x] **Conflict-Free Hitboxes**: Refactored the dot container to remove negative margins, ensuring every dot is distinct and easy to click or drop books onto.
+- [x] **High-Contrast Active State**: The active dot now uses a smooth scale animation and intense glow, making your current position obvious even in a crowded list.
+- [x] **Enhanced Drag Feedback**: Added a scaling effect when dragging a book over breadcrumbs to confirm it's ready for a drop.
+
+## Library UX & Reordering Polish (v2.6.6)
+- [x] **Zero-Overlap Layout**: Increased top padding to `pt-36` to guarantee books are never cropped by the header.
+- [x] **Intuitive Grab Handles**: Added a visible `Grip` handle that appears on book covers when hovered, making it obvious where to grab.
+- [x] **Dynamic Help Hints**: Added a floating instruction bar that appearing during a drag to guide you on where to drop books.
+- [x] **High-Contrast Breadcrumbs**: Improved the visual feedback when dragging over pagination dots with larger hitboxes and ring highlights.
+- [x] **Cleaner Header**: Removed the manual "Consolidar" button to reduce clutter, focusing on effortless manual organization.
+
 ## Library Consolidation & Reordering (v2.6.5)
 - [x] **"Consolidar" Feature**: Added a one-click button in the header to automatically remove all empty gaps across your library, packing all books into the fewest possible racks.
 - [x] **Auto-Flow Movement**: When dragging a book to a new rack, it now correctly flows into the targeted slot or appends to the end, making cross-rack organization much faster.

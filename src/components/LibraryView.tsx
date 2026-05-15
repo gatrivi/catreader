@@ -53,7 +53,6 @@ interface LibraryViewProps {
   onShareBook?: (book: LibraryBook) => void;
   dailyHighlight?: Highlight | null;
   onDismissHighlight?: () => void;
-  onConsolidate?: () => void;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -82,8 +81,7 @@ export const LibraryView = ({
   enrichmentProgress,
   onShareBook,
   dailyHighlight,
-  onDismissHighlight,
-  onConsolidate
+  onDismissHighlight
   }: LibraryViewProps) => {
 
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(
@@ -346,17 +344,6 @@ export const LibraryView = ({
 
             {onMagicEnrich && (
               <div className="flex items-center gap-2">
-                {onConsolidate && (
-                  <button 
-                    onClick={onConsolidate}
-                    className="flex items-center gap-1.5 bg-stone-900 text-stone-400 hover:text-emerald-400 hover:bg-stone-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5"
-                    title="Consolidar Biblioteca: Eliminar huecos vacíos y agrupar libros"
-                    aria-label="Consolidate library"
-                  >
-                    <Package2 size={12} />
-                    Consolidar
-                  </button>
-                )}
                 {enrichmentProgress && enrichmentProgress.total > 0 && (
                   <div className="flex flex-col items-end mr-1">
                     <span className="text-[9px] font-mono text-indigo-400 font-bold leading-none">
@@ -415,7 +402,7 @@ export const LibraryView = ({
             </div>
           </div>
         ) : searchQuery ? (
-          <div className="h-full overflow-y-auto scrollbar-thin px-4 sm:px-8 pt-24 pb-20">
+          <div className="h-full overflow-y-auto scrollbar-thin px-4 sm:px-8 pt-32 pb-20">
             <div className="max-w-7xl mx-auto">
               <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
                 <div>
@@ -483,8 +470,20 @@ export const LibraryView = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-12 pt-28 pb-20"
+                  className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-12 pt-36 pb-20"
                 >
+                  <AnimatePresence>
+                    {dragState && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-indigo-600 text-white px-6 py-2 rounded-full shadow-2xl text-[10px] font-bold uppercase tracking-widest border border-indigo-400"
+                      >
+                        Suelta en un hueco vacío o en los puntos de abajo para mover
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   {/* Rack Header */}
                   <div className="mb-8 flex items-center gap-4">
                     <ShelfTitle 
@@ -543,7 +542,7 @@ export const LibraryView = ({
             </motion.div>
 
             {/* Breadcrumbs (Pagination Dots) */}
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 z-30">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 z-30 max-w-[80vw]">
               {shelves.map((shelf, idx) => (
                 <button
                   key={`dot-${idx}`}
@@ -568,14 +567,18 @@ export const LibraryView = ({
                     if (dragState) onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
                   }}
                   className={cn(
-                    "w-2 h-2 rounded-full transition-all p-4 -m-4 flex items-center justify-center", // Larger hit area
-                    currentRack === idx 
-                      ? "bg-amber-500 w-4 shadow-[0_0_8px_rgba(245,158,11,0.5)]" 
-                      : "bg-white/20 hover:bg-white/40"
+                    "relative w-3 h-3 flex items-center justify-center transition-all group/dot",
+                    dragState && "hover:scale-150"
                   )}
                   aria-label={`Go to rack ${idx + 1}`}
                 >
-                  <div className={cn("w-2 h-2 rounded-full", currentRack === idx ? "bg-amber-500 w-4" : "bg-white/20")} />
+                  <div className={cn(
+                    "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                    currentRack === idx 
+                      ? "bg-amber-500 scale-[2.5] shadow-[0_0_8px_rgba(245,158,11,0.6)]" 
+                      : "bg-white/20 group-hover/dot:bg-white/50",
+                    dragState && "ring-2 ring-indigo-500/0 group-hover/dot:ring-indigo-500/50"
+                  )} />
                 </button>
               ))}
             </div>

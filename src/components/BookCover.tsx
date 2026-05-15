@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Share2, Sparkles, AlertCircle } from 'lucide-react';
+import { Pencil, Share2, Sparkles, AlertCircle, GripVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -70,6 +70,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
       <motion.div 
         onClick={isSupported ? onClick : undefined}
         layoutId={`book-container-${book.id}`}
+        title="Arrastra para mover el libro"
         className={cn(
           "relative w-full aspect-[2/3] sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden",
           isSimplified 
@@ -195,6 +196,11 @@ export const BookCover: React.FC<BookCoverProps> = ({
           >
             <Share2 size={10} />
           </button>
+        </div>
+
+        {/* Drag Handle indicator */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 bg-black/40 backdrop-blur-sm p-3 rounded-full border border-white/20">
+          <GripVertical size={24} className="text-white shadow-xl" />
         </div>
       </motion.div>
     </div>

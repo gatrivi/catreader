@@ -47,7 +47,7 @@ keep a version number always visible in the upper right corneer of the app, and 
 ### SESSION CONTEXT (2026-05-11)
 
 ### What Was Done
-- **Version:** `v2.6.5`
+- **Version:** `v2.6.8`
 - **Library Search:** Added real-time filtering with `/` shortcut and dedicated results view.
 - **Format Badges:** Visual type identification (PDF/EPUB/TXT) on book covers.
 - **Reader Enhancements:** Integrated 'Edit Book' in header and More menu.
