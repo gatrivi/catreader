@@ -8,7 +8,7 @@
     "dev": "tsx server.ts",
     "prebuild": "node scripts/generate-library.js",
     "enrich": "node scripts/gemini-enrich.js",
-    "build": "vite build",
+    "build": "vite build && node scripts/post-build.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",

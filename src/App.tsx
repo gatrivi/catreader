@@ -44,6 +44,7 @@ import { useLibrary, LibraryBook } from './hooks/useLibrary';
 
 import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
+import { buildBookPath, parseBookPath, matchBookBySlug } from './utils/routing';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -83,11 +84,11 @@ export default function App() {
   const [identifyingBookId, setIdentifyingBookId] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [dailyHighlight, setDailyHighlight] = useState<Highlight | null>(null);
-  const [loadSteps, setLoadSteps] = useState<{ downloaded: boolean; opened: boolean }>({ downloaded: false, opened: false });
+  const [quadrant, setQuadrant] = useState<number>(1);
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.4.8';
+  const APP_VERSION = 'v2.4.9';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -352,23 +353,26 @@ export default function App() {
     setNumPages(0);
     setIsLoaded(false);
     setTextContent(null);
+    setQuadrant(1);
     localStorage.removeItem('catreader_last_book');
     if (!skipHistory) {
       const url = new URL(window.location.href);
-      url.searchParams.delete('read');
-      url.searchParams.delete('page');
+      url.pathname = '/';
+      url.search = '';
       window.history.pushState({}, '', url.toString());
     }
   };
 
-  const openFromLibrary = async (book: LibraryBook, forcePage?: number, skipHistory = false) => {
+  const openFromLibrary = async (book: LibraryBook, forcePage?: number, forceQuadrant?: number, skipHistory = false) => {
     const filename = book.filename;
     setFileName(filename);
     setFileType(book.type);
+    const shelf = shelves.find(s => s.bookIds.includes(book.id));
+    const shelfTitle = shelf?.title || 'library';
     if (!skipHistory) {
       const url = new URL(window.location.href);
-      url.searchParams.set('read', filename);
-      if (forcePage) url.searchParams.set('page', forcePage.toString());
+      url.pathname = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
+      url.search = '';
       window.history.pushState({ filename }, '', url.toString());
     }
     localStorage.setItem('catreader_last_book', filename);
@@ -402,6 +406,7 @@ export default function App() {
       if (forcePage) {
         setPageNumber(forcePage);
         setScrollRatio(0);
+        if (forceQuadrant) setQuadrant(forceQuadrant);
       } else {
         await loadProgress(filename);
       }
@@ -416,12 +421,11 @@ export default function App() {
   // --- Browser Navigation ---
   useEffect(() => {
     const handlePopState = () => {
-      const readQuery = new URLSearchParams(window.location.search).get('read');
-      if (readQuery) {
-        const book = library.find(b => b.filename === readQuery || b.id === readQuery);
+      const parsed = parseBookPath(window.location.pathname);
+      if (parsed) {
+        const book = matchBookBySlug(library, parsed.bookSlug);
         if (book) {
-          const pageQuery = new URLSearchParams(window.location.search).get('page');
-          openFromLibrary(book, pageQuery ? parseInt(pageQuery) : undefined, true);
+          openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
         }
       } else {
         closeBook(true);
@@ -433,16 +437,15 @@ export default function App() {
 
   useEffect(() => {
     if (library.length > 0 && !fileUrl) {
-      const params = new URLSearchParams(window.location.search);
-      const readQuery = params.get('read');
-      if (readQuery) {
-        const book = library.find(b => b.filename === readQuery || b.id === readQuery);
-        if (book) openFromLibrary(book, params.get('page') ? parseInt(params.get('page')!) : undefined, true);
+      const parsed = parseBookPath(window.location.pathname);
+      if (parsed) {
+        const book = matchBookBySlug(library, parsed.bookSlug);
+        if (book) openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
       } else {
         const lastBookId = localStorage.getItem('catreader_last_book');
         if (lastBookId) {
           const book = library.find(b => b.filename === lastBookId);
-          if (book) openFromLibrary(book, undefined, true);
+          if (book) openFromLibrary(book, undefined, undefined, true);
         }
       }
     }
@@ -463,12 +466,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (fileName && pageNumber > 1) {
+    if (fileName) {
+      const book = library.find(b => b.filename === fileName);
+      const shelf = book ? shelves.find(s => s.bookIds.includes(book.id)) : null;
+      const shelfTitle = shelf?.title || 'library';
       const url = new URL(window.location.href);
-      url.searchParams.set('page', pageNumber.toString());
+      url.pathname = buildBookPath(shelfTitle, fileName, pageNumber, quadrant);
+      url.search = '';
       window.history.replaceState(window.history.state, '', url.toString());
     }
-  }, [pageNumber, fileName]);
+  }, [pageNumber, quadrant, fileName, library, shelves]);
 
   useEffect(() => {
     if (fileType === 'txt' && isLoaded && scrollRatio > 0 && containerRef.current) {
@@ -697,7 +704,7 @@ export default function App() {
 
       <main ref={containerRef} className="flex-1 overflow-auto scrollbar-none relative" onDoubleClick={handleDoubleClick}>
         {!fileUrl ? (
-          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?read=${book.filename}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
+          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 
@@ -750,7 +757,7 @@ export default function App() {
                 }
               })();
             }} 
-            onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
+            onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); if (quadrant > 1) { const offset = ((quadrant - 1) / 4) * el.clientHeight; containerRef.current.scrollBy({ top: offset, behavior: 'instant' }); } } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
             onPageRenderError={(_p, err) => setRenderErrors((prev) => new Set(prev).add(_p))} 
             onTextSelection={(text, x, y) => setSelectedTextMenu({ text, x, y })} 
             onEpubLocationChange={setEpubCfi} 
