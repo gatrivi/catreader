@@ -38,8 +38,10 @@ interface LibraryViewProps {
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isSimplified: boolean;
   wallpaper: string;
+  customWallpaper: string | null;
   onToggleSimplified: () => void;
   onSetWallpaper: (w: string) => void;
+  onSetCustomWallpaper: (dataUrl: string) => void;
   shelves: Shelf[];
   onUpdateShelfTitle: (shelfId: string, title: string) => void;
   onMoveBook: (bookId: string, fromShelfId: string, toShelfId: string) => void;
@@ -53,6 +55,8 @@ interface LibraryViewProps {
   onShareBook?: (book: LibraryBook) => void;
   dailyHighlight?: Highlight | null;
   onDismissHighlight?: () => void;
+  onConsolidate?: () => void;
+  onGetProgress?: (bookId: string) => number;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -67,8 +71,10 @@ export const LibraryView = ({
   onFileUpload,
   isSimplified,
   wallpaper,
+  customWallpaper,
   onToggleSimplified,
   onSetWallpaper,
+  onSetCustomWallpaper,
   shelves,
   onUpdateShelfTitle,
   onMoveBook,
@@ -81,14 +87,16 @@ export const LibraryView = ({
   enrichmentProgress,
   onShareBook,
   dailyHighlight,
-  onDismissHighlight
+  onDismissHighlight,
+  onConsolidate,
+  onGetProgress
   }: LibraryViewProps) => {
 
-  const [customWallpaper, setCustomWallpaper] = useState<string | null>(
-    localStorage.getItem('catreader_custom_wallpaper')
-  );
   const [searchQuery, setSearchQuery] = useState('');
   const [currentRack, setCurrentRack] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
+  const [hoverColor, setHoverColor] = useState<string | null>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pfp = authService.getPFP();
 
@@ -117,15 +125,22 @@ export const LibraryView = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (!showSettings) return;
+    const handleClick = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) setShowSettings(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showSettings]);
+
   const handleCustomWallpaper = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      localStorage.setItem('catreader_custom_wallpaper', dataUrl);
-      setCustomWallpaper(dataUrl);
-      onSetWallpaper('custom');
+      onSetCustomWallpaper(dataUrl);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -247,139 +262,203 @@ export const LibraryView = ({
     <div 
       className={cn("h-full flex flex-col overflow-hidden", isSimplified ? "bg-stone-900" : "")} 
       style={{ 
-        background: bgStyle,
+        background: bgStyle.startsWith('url') || bgStyle.startsWith('#') || bgStyle.startsWith('linear') || bgStyle.startsWith('conic') ? bgStyle : `url(${bgStyle})`,
+        backgroundSize: isSimplified ? 'auto' : 'cover',
+        backgroundPosition: 'center',
         backgroundAttachment: 'fixed',
-        backgroundSize: wallpaper === 'custom' ? 'cover' : 'auto',
-        backgroundPosition: 'center'
+        backgroundRepeat: 'no-repeat'
       }}
       onWheel={handleWheel}
     >
-      {/* Header */}
-      <div className="shrink-0 px-4 pt-4 pb-2 z-50">
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-950/80 backdrop-blur-md p-3 rounded-2xl border border-white/5 shadow-2xl max-w-7xl mx-auto">
-          <div className="flex items-center gap-3">
+      {/* Ambient Lighting Overlay */}
+      <AnimatePresence>
+        {hoverColor && !isSimplified && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 pointer-events-none z-0 transition-colors duration-700"
+            style={{ 
+              background: `radial-gradient(circle at center, ${hoverColor}22 0%, transparent 70%)`,
+              backdropFilter: 'contrast(1.1) brightness(1.1)'
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Compact Header */}
+      <div className="shrink-0 px-4 pt-3 pb-2 z-50">
+        <div className="flex items-center justify-between gap-2 bg-stone-950/80 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-2xl max-w-7xl mx-auto h-[56px]">
+          <div className="flex items-center gap-2">
             <button 
               onClick={onProfileClick}
-              className="group relative w-10 h-10 rounded-full bg-stone-900 border border-white/10 flex items-center justify-center overflow-hidden transition-all hover:border-amber-500/50 shadow-lg"
+              className="group relative w-8 h-8 rounded-full bg-stone-900 border border-white/10 flex items-center justify-center overflow-hidden transition-all hover:border-amber-500/50 shadow-lg shrink-0"
               aria-label="Ver Perfil"
             >
               {svgDataUrl ? (
                 <img src={svgDataUrl} alt="PFP" className="w-full h-full object-cover" />
               ) : (
-                <User size={18} className="text-stone-500 group-hover:text-amber-500 transition-colors" />
+                <User size={14} className="text-stone-500 group-hover:text-amber-500 transition-colors" />
               )}
             </button>
-            <div>
-              <h1 className="text-lg font-serif font-bold text-white tracking-tight leading-none">Mi Biblioteca</h1>
-              <p className="text-[10px] text-stone-500 uppercase tracking-widest mt-0.5">CatReader Library</p>
+            <div className="hidden sm:block">
+              <h1 className="text-sm font-serif font-bold text-white tracking-tight leading-none">Mi Biblioteca</h1>
+              <p className="text-[8px] text-stone-500 uppercase tracking-widest mt-0.5">CatReader</p>
             </div>
           </div>
 
-          <div className="flex-1 max-w-sm relative group mx-4">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 group-focus-within:text-amber-500 transition-colors" />
+          <div className="flex-1 max-w-md relative group mx-2">
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 group-focus-within:text-amber-500 transition-colors" />
             <input 
               ref={searchInputRef}
               type="text"
               placeholder="Buscar libros..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-black/40 border border-white/5 rounded-xl py-2 pl-9 pr-8 text-xs text-white placeholder:text-stone-600 outline-none focus:border-amber-500/50 transition-all shadow-inner"
+              className="w-full bg-black/40 border border-white/5 rounded-xl py-1.5 pl-9 pr-8 text-[11px] text-white placeholder:text-stone-600 outline-none focus:border-amber-500/50 transition-all shadow-inner"
             />
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-white transition-colors"
               >
-                <X size={12} />
+                <X size={10} />
               </button>
             )}
           </div>
           
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 pr-1.5 border-r border-white/5">
               <button 
-                onClick={() => onSetWallpaper('wood')}
-                className={cn("w-5 h-5 rounded-lg bg-[#5c3a21] border border-white/10 transition-transform active:scale-95", wallpaper === 'wood' && "ring-2 ring-amber-600 shadow-lg shadow-amber-900/40")}
-                title="Madera"
-                aria-label="Madera wallpaper"
-              />
-              <button 
-                onClick={() => onSetWallpaper('dim')}
-                className={cn("w-5 h-5 rounded-lg bg-stone-800 border border-white/10 transition-transform active:scale-95", wallpaper === 'dim' && "ring-2 ring-amber-600")}
-                title="Dim"
-                aria-label="Dim wallpaper"
-              />
-              <button 
-                onClick={() => onSetWallpaper('slate')}
-                className={cn("w-5 h-5 rounded-lg bg-slate-900 border border-white/10 transition-transform active:scale-95", wallpaper === 'slate' && "ring-2 ring-amber-600")}
-                title="Slate"
-                aria-label="Slate wallpaper"
-              />
-              <button 
-                onClick={() => onSetWallpaper('glass')}
-                className={cn("w-5 h-5 rounded-lg border border-white/10 transition-transform active:scale-95", wallpaper === 'glass' && "ring-2 ring-amber-600")}
-                style={{ background: wallpapers.glass }}
-                title="Stained Glass"
-                aria-label="Glass wallpaper"
-              />
-              <label 
-                className={cn("w-5 h-5 rounded-lg border border-white/10 transition-transform active:scale-95 flex items-center justify-center cursor-pointer overflow-hidden",
-                  wallpaper === 'custom' && "ring-2 ring-amber-600"
-                )}
-                title="Custom"
-                aria-label="Custom wallpaper"
-                style={customWallpaper ? { backgroundImage: `url(${customWallpaper})`, backgroundSize: 'cover' } : { background: '#444' }}
+                onClick={onGoogleDrive}
+                className="flex items-center gap-1.5 bg-stone-900 text-stone-400 hover:text-white hover:bg-stone-800 transition-all px-2.5 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 shrink-0"
+                aria-label="Importar desde Google Drive"
               >
-                <ImagePlus size={10} className="text-white/70" />
-                <input type="file" accept="image/*" className="hidden" onChange={handleCustomWallpaper} />
-              </label>
-              <button 
-                onClick={onToggleSimplified}
-                className={cn("px-2 text-[10px] font-black uppercase text-stone-500 hover:text-white transition-colors", isSimplified && "text-amber-500")}
-                aria-label="Toggle simplified view"
-              >
-                {isSimplified ? 'Simple: ON' : 'Simple: OFF'}
+                <Cloud size={12} />
+                <span className="hidden md:inline">Importar</span>
               </button>
+              <label className="flex items-center gap-1.5 bg-amber-700 text-white hover:bg-amber-600 transition-all px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer shadow-lg shadow-amber-950/50 shrink-0" aria-label="Añadir libro">
+                <Upload size={12} />
+                <span className="hidden md:inline">Añadir</span>
+                <input type="file" accept=".pdf,.txt,.epub" className="hidden" onChange={onFileUpload} />
+              </label>
             </div>
 
-            {onMagicEnrich && (
-              <div className="flex items-center gap-2">
-                {enrichmentProgress && enrichmentProgress.total > 0 && (
-                  <div className="flex flex-col items-end mr-1">
-                    <span className="text-[9px] font-mono text-indigo-400 font-bold leading-none">
-                      {enrichmentProgress.current}/{enrichmentProgress.total}
-                    </span>
-                    <span className="text-[8px] text-stone-500 truncate max-w-[80px] leading-tight">
-                      {enrichmentProgress.filename}
-                    </span>
-                  </div>
-                )}
-                <button 
-                  onClick={onMagicEnrich}
-                  disabled={isSyncing}
-                  className="flex items-center gap-1.5 bg-indigo-900/60 text-indigo-200 hover:text-white hover:bg-indigo-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
-                  title="Enriquecer biblioteca con Gemini AI (títulos, autores y portadas)"
-                  aria-label="Magic enrich"
-                >
-                  <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />
-                  {isSyncing ? 'Procesando...' : 'Magic'}
-                </button>
-              </div>
-            )}
+            <div className="relative" ref={settingsRef}>
+              <button 
+                onClick={() => setShowSettings(!showSettings)}
+                className={cn("w-8 h-8 rounded-xl bg-stone-900 border border-white/5 flex items-center justify-center text-stone-400 hover:text-white hover:bg-stone-800 transition-all shadow-lg", showSettings && "bg-stone-800 text-amber-500 border-amber-500/20")}
+                aria-label="Settings"
+              >
+                <Sparkles size={14} className={cn(isSyncing && "animate-pulse")} />
+              </button>
 
-            <button 
-              onClick={onGoogleDrive}
-              className="flex items-center gap-1.5 bg-stone-900 text-stone-400 hover:text-white hover:bg-stone-800 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold border border-white/5"
-              aria-label="Importar desde Google Drive"
-            >
-              <Cloud size={12} />
-              Importar
-            </button>
-            <label className="flex items-center gap-1.5 bg-amber-700 text-white hover:bg-amber-600 transition-all px-3 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer shadow-lg shadow-amber-950/50" aria-label="Añadir libro">
-              <Upload size={12} />
-              Añadir
-              <input type="file" accept=".pdf,.txt,.epub" className="hidden" onChange={onFileUpload} />
-            </label>
+              <AnimatePresence>
+                {showSettings && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-3 w-64 bg-stone-950/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 z-[100]"
+                  >
+                    <div className="space-y-4">
+                      {/* Wallpaper Section */}
+                      <div>
+                        <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mb-2">Fondo de Biblioteca</p>
+                        <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5">
+                          <button 
+                            onClick={() => onSetWallpaper('wood')}
+                            className={cn("w-6 h-6 rounded-lg bg-[#5c3a21] border border-white/10 transition-transform active:scale-95", wallpaper === 'wood' && "ring-2 ring-amber-600")}
+                            title="Madera"
+                          />
+                          <button 
+                            onClick={() => onSetWallpaper('dim')}
+                            className={cn("w-6 h-6 rounded-lg bg-stone-800 border border-white/10 transition-transform active:scale-95", wallpaper === 'dim' && "ring-2 ring-amber-600")}
+                            title="Dim"
+                          />
+                          <button 
+                            onClick={() => onSetWallpaper('slate')}
+                            className={cn("w-6 h-6 rounded-lg bg-slate-900 border border-white/10 transition-transform active:scale-95", wallpaper === 'slate' && "ring-2 ring-amber-600")}
+                            title="Slate"
+                          />
+                          <button 
+                            onClick={() => onSetWallpaper('glass')}
+                            className={cn("w-6 h-6 rounded-lg border border-white/10 transition-transform active:scale-95", wallpaper === 'glass' && "ring-2 ring-amber-600")}
+                            style={{ background: wallpapers.glass }}
+                            title="Stained Glass"
+                          />
+                          <label 
+                            className={cn("w-6 h-6 rounded-lg border border-white/10 transition-transform active:scale-95 flex items-center justify-center cursor-pointer overflow-hidden",
+                              wallpaper === 'custom' && "ring-2 ring-amber-600"
+                            )}
+                            title="Custom"
+                            style={customWallpaper ? { backgroundImage: `url(${customWallpaper})`, backgroundSize: 'cover' } : { background: '#444' }}
+                          >
+                            <ImagePlus size={10} className="text-white/70" />
+                            <input type="file" accept="image/*" className="hidden" onChange={handleCustomWallpaper} />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* View Options */}
+                      <div className="pt-2 border-t border-white/5">
+                        <button 
+                          onClick={onToggleSimplified}
+                          className="w-full flex items-center justify-between group"
+                        >
+                          <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Vista Simplificada</span>
+                          <div className={cn("w-8 h-4 rounded-full border border-white/10 transition-all relative", isSimplified ? "bg-amber-600" : "bg-stone-900")}>
+                            <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", isSimplified ? "left-4.5" : "left-0.5")} />
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* AI Actions */}
+                      {(onMagicEnrich || onConsolidate) && (
+                        <div className="pt-2 border-t border-white/5 space-y-2">
+                          <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Acciones AI</p>
+                          {onMagicEnrich && (
+                            <button 
+                              onClick={() => { onMagicEnrich(); setShowSettings(false); }}
+                              disabled={isSyncing}
+                              className="w-full flex items-center gap-2 bg-indigo-900/40 text-indigo-200 hover:text-white hover:bg-indigo-800 transition-all px-3 py-2 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
+                            >
+                              <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />
+                              {isSyncing ? 'Enriqueciendo...' : 'Enriquecer Biblioteca'}
+                            </button>
+                          )}
+                          {onConsolidate && (
+                            <button 
+                              onClick={() => { onConsolidate(); setShowSettings(false); }}
+                              className="w-full flex items-center gap-2 bg-stone-900 text-stone-400 hover:text-emerald-400 hover:bg-stone-800 transition-all px-3 py-2 rounded-xl text-[10px] font-bold border border-white/5"
+                            >
+                              <Package2 size={12} />
+                              Agrupar Estantes
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {enrichmentProgress && enrichmentProgress.total > 0 && (
+                        <div className="pt-2 border-t border-white/5">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[9px] font-mono text-indigo-400 font-bold uppercase">Procesando</span>
+                            <span className="text-[9px] font-mono text-indigo-400 font-bold">{enrichmentProgress.current}/{enrichmentProgress.total}</span>
+                          </div>
+                          <div className="w-full h-1 bg-stone-900 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-indigo-500 transition-all duration-500" 
+                              style={{ width: `${(enrichmentProgress.current / enrichmentProgress.total) * 100}%` }}
+                            />
+                          </div>
+                          <p className="text-[8px] text-stone-500 truncate mt-1">{enrichmentProgress.filename}</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </div>
@@ -437,6 +516,8 @@ export const LibraryView = ({
                           onClick={() => onOpenBook(book)}
                           onEdit={() => onEditBook(book)}
                           onShare={() => onShareBook?.(book)}
+                          onHover={setHoverColor}
+                          readingProgress={onGetProgress?.(book.filename)}
                           isSimplified={isSimplified}
                           isIdentifying={identifyingBookId === book.id}
                         />
@@ -470,7 +551,7 @@ export const LibraryView = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-12 pt-36 pb-20"
+                  className="absolute inset-0 flex flex-col items-center justify-start px-4 sm:px-12 pt-40 pb-20 overflow-y-auto scrollbar-none"
                 >
                   <AnimatePresence>
                     {dragState && (
@@ -525,10 +606,13 @@ export const LibraryView = ({
                                 onClick={() => onOpenBook(book)}
                                 onEdit={() => onEditBook(book)}
                                 onShare={() => onShareBook?.(book)}
+                                onHover={setHoverColor}
+                                readingProgress={onGetProgress?.(book.filename)}
                                 isSimplified={isSimplified}
                                 isIdentifying={identifyingBookId === book.id}
                               />
                               {!isSimplified && <ShelfLedge />}
+
                             </div>
                           ) : (
                             <div className="w-full h-full" />
@@ -542,7 +626,7 @@ export const LibraryView = ({
             </motion.div>
 
             {/* Breadcrumbs (Pagination Dots) */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 z-30 max-w-[80vw]">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-30 max-w-[85vw] bg-black/40 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl">
               {shelves.map((shelf, idx) => (
                 <button
                   key={`dot-${idx}`}
@@ -567,17 +651,17 @@ export const LibraryView = ({
                     if (dragState) onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
                   }}
                   className={cn(
-                    "relative w-3 h-3 flex items-center justify-center transition-all group/dot",
-                    dragState && "hover:scale-150"
+                    "relative w-6 h-6 flex items-center justify-center transition-all group/dot",
+                    dragState && "hover:scale-150 active:scale-125"
                   )}
                   aria-label={`Go to rack ${idx + 1}`}
                 >
                   <div className={cn(
-                    "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                    "w-2.5 h-2.5 rounded-full transition-all duration-300",
                     currentRack === idx 
-                      ? "bg-amber-500 scale-[2.5] shadow-[0_0_8px_rgba(245,158,11,0.6)]" 
-                      : "bg-white/20 group-hover/dot:bg-white/50",
-                    dragState && "ring-2 ring-indigo-500/0 group-hover/dot:ring-indigo-500/50"
+                      ? "bg-amber-500 scale-[2] shadow-[0_0_12px_rgba(245,158,11,0.8)]" 
+                      : "bg-white/40 group-hover/dot:bg-white/80 group-hover/dot:scale-125",
+                    dragState && "ring-4 ring-indigo-500/0 group-hover/dot:ring-indigo-500/60 group-hover/dot:animate-pulse"
                   )} />
                 </button>
               ))}

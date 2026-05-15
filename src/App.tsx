@@ -93,19 +93,21 @@ export default function App() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
   const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'wood');
+  const [customWallpaper, setCustomWallpaper] = useState<string | null>(localStorage.getItem('catreader_custom_wallpaper'));
   const [pageRatios, setPageRatios] = useState<number[]>([]);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
   const [selectedTextMenu, setSelectedTextMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [identifyingBookId, setIdentifyingBookId] = useState<string | null>(null);
+  const [isOpening, setIsOpening] = useState(false);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [dailyHighlight, setDailyHighlight] = useState<Highlight | null>(null);
   const [quadrant, setQuadrant] = useState<number>(1);
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.6.8';
+  const APP_VERSION = 'v2.7.3';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -165,6 +167,64 @@ export default function App() {
   });
 
   const { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves } = useShelves(library);
+
+  // Helper to get reading progress for Aura effect
+  const getReadingProgress = useCallback((filename: string) => {
+    // This is a bit complex since progress is stored per book in Firestore or locally
+    // For the aura, we can check if we have any progress data in memory if it was recently loaded
+    // Or we can just return 0 for now until we have a central progress store
+    // Let's implement a simple version that checks if the current book matches
+    if (fileName === filename) return pageNumber / (numPages || 1);
+    
+    // For others, we might need a cache of progress. 
+    // Let's add a placeholder or simple logic for the demo.
+    return 0; 
+  }, [fileName, pageNumber, numPages]);
+
+  // --- Persistence & Settings ---
+  useEffect(() => {
+    const loadSettings = async () => {
+      const cloudSettings = await syncService.loadSettings();
+      if (cloudSettings) {
+        if (cloudSettings.wallpaper) {
+          setWallpaper(cloudSettings.wallpaper);
+          localStorage.setItem('catreader_wallpaper', cloudSettings.wallpaper);
+        }
+        if (cloudSettings.isSimplified !== undefined) {
+          setIsSimplified(cloudSettings.isSimplified);
+          localStorage.setItem('catreader_simplified', String(cloudSettings.isSimplified));
+        }
+        if (cloudSettings.customWallpaper) {
+          setCustomWallpaper(cloudSettings.customWallpaper);
+          localStorage.setItem('catreader_custom_wallpaper', cloudSettings.customWallpaper);
+        }
+      }
+    };
+    loadSettings();
+  }, []);
+
+  const handleSetWallpaper = useCallback((w: string) => {
+    setWallpaper(w);
+    localStorage.setItem('catreader_wallpaper', w);
+    syncService.saveSettings({ wallpaper: w });
+  }, []);
+
+  const handleSetCustomWallpaper = useCallback((dataUrl: string) => {
+    setCustomWallpaper(dataUrl);
+    localStorage.setItem('catreader_custom_wallpaper', dataUrl);
+    setWallpaper('custom');
+    localStorage.setItem('catreader_wallpaper', 'custom');
+    syncService.saveSettings({ customWallpaper: dataUrl, wallpaper: 'custom' });
+  }, []);
+
+  const handleToggleSimplified = useCallback(() => {
+    setIsSimplified(prev => {
+      const newVal = !prev;
+      localStorage.setItem('catreader_simplified', String(newVal));
+      syncService.saveSettings({ isSimplified: newVal });
+      return newVal;
+    });
+  }, []);
 
   // --- UI Lifecycle ---
   const uiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -399,6 +459,7 @@ export default function App() {
       return;
     }
 
+    setIsOpening(true);
     console.log(`[Reader] Opening book: ${filename}`);
     
     // Revoke previous URL if opening a different book
@@ -609,7 +670,39 @@ export default function App() {
       <button onClick={() => setShowDiagnostics(true)} className="fixed top-2 right-4 z-40 text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help">{APP_VERSION}</button>
 
       <AnimatePresence>
-        {showDiagnostics && (
+        {isOpening && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onAnimationComplete={() => setTimeout(() => setIsOpening(false), 800)}
+            className="fixed inset-0 z-[100] bg-stone-950 flex items-center justify-center perspective-1000"
+          >
+            <motion.div 
+              initial={{ rotateY: 0, scale: 0.8, opacity: 0 }}
+              animate={{ rotateY: -180, scale: 1.2, opacity: 1 }}
+              transition={{ duration: 0.8, ease: "easeInOut" }}
+              className="w-44 h-64 bg-[#f4ecd8] rounded-r-md border-l-8 border-[#8b5a2b] shadow-2xl relative preserve-3d"
+            >
+              {/* Cover Face */}
+              <div className="absolute inset-0 backface-hidden flex items-center justify-center p-4 text-center">
+                <div className="font-serif font-bold text-[#5b4636] text-xs">Abriendo libro...</div>
+              </div>
+              {/* Inside Face (Page) */}
+              <div className="absolute inset-0 backface-hidden rotate-y-180 bg-white flex items-center justify-center p-4">
+                 <div className="w-full h-full border-2 border-stone-100 flex flex-col gap-2 p-2">
+                    <div className="h-2 w-3/4 bg-stone-100 rounded" />
+                    <div className="h-2 w-full bg-stone-50 rounded" />
+                    <div className="h-2 w-5/6 bg-stone-100 rounded" />
+                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>{showDiagnostics && (
+
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-stone-950/95 backdrop-blur-xl p-6 sm:p-12 overflow-auto">
             <div className="max-w-4xl mx-auto">
               <div className="flex items-center justify-between mb-8 border-b border-white/10 pb-4">
@@ -770,7 +863,33 @@ export default function App() {
 
       <main ref={containerRef} className="flex-1 overflow-auto scrollbar-none relative" onDoubleClick={handleDoubleClick}>
         {!fileUrl ? (
-          <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
+          <LibraryView 
+            library={library} 
+            covers={covers} 
+            isLoading={isLoadingLibrary} 
+            onOpenBook={openFromLibrary} 
+            onEditBook={setEditingBook} 
+            onGoogleDrive={handleGoogleDrive} 
+            onFileUpload={onFileChange} 
+            isSimplified={isSimplified} 
+            wallpaper={wallpaper} 
+            customWallpaper={customWallpaper}
+            onToggleSimplified={handleToggleSimplified} 
+            onSetWallpaper={handleSetWallpaper} 
+            onSetCustomWallpaper={handleSetCustomWallpaper}
+            shelves={shelves} 
+            onUpdateShelfTitle={updateShelfTitle} 
+            onMoveBook={moveBook} 
+            onReorderBook={reorderBook} 
+            onConsolidate={consolidateShelves} 
+            onMagicEnrich={bulkMagic} 
+            onProfileClick={() => setShowProfile(true)} 
+            onGetProgress={getReadingProgress}
+            clearProgress={() => {}} 
+            identifyingBookId={identifyingBookId} 
+            isSyncing={isSyncing} 
+            enrichmentProgress={enrichmentProgress} 
+            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 

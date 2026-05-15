@@ -161,5 +161,35 @@ export const syncService = {
       console.error('Firestore Highlights Load Error:', err);
       return null;
     }
+  },
+
+  async saveSettings(settings: Record<string, any>) {
+    const uid = await getUserId();
+    const docRef = doc(db, 'users', uid, 'settings', 'prefs');
+    try {
+      await setDoc(docRef, {
+        ...settings,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('Firestore Settings Save Error:', err);
+      return false;
+    }
+  },
+
+  async loadSettings(): Promise<Record<string, any> | null> {
+    const uid = await getUserId();
+    const docRef = doc(db, 'users', uid, 'settings', 'prefs');
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        return snap.data();
+      }
+      return null;
+    } catch (err) {
+      console.error('Firestore Settings Load Error:', err);
+      return null;
+    }
   }
 };

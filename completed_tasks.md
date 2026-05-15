@@ -15,6 +15,22 @@ The following features and fixes have been implemented and are ready for review:
     - Integrated **Google Books API** to automatically search for professional covers based on title and author.
     - Integrated **Pollinations.ai** as an AI fallback to generate thematic covers when professional ones aren't available.
 
+## High-Visibility Pagination (v2.7.1)
+- [x] **Pagination Backdrop**: Added a semi-transparent, frosted glass bar behind the breadcrumbs. This ensures the dots are clearly visible regardless of your wallpaper's colors or complexity.
+- [x] **Enlarged Hitboxes**: Increased the interactive area of each dot by 3x. You no longer need pixel-perfect precision to flip pages or drop books.
+- [x] **"Magnetic" Drag Feedback**: Added a pulsing ring effect and significant scaling when dragging a book over a breadcrumb, making the "Drop here to move page" action unmistakable.
+- [x] **Enhanced Active State**: The current page dot now features an intense amber glow and a 2x scale boost to ground your position in the library.
+
+## Modernized Backgrounds & Aesthetics (v2.7.0)
+- [x] **"Cover" Fit Backgrounds**: Optimized the library background engine to use `background-size: cover` across all wallpapers. This ensures your custom photos always fill the screen perfectly without requiring manual cropping.
+- [x] **Centered Positioning**: All backgrounds are now centered automatically, keeping the most important part of your image visible regardless of screen size.
+- [x] **Visual Consistency**: Improved the CSS logic to handle solid colors, gradients, and images with the same high-performance rendering.
+
+## One-Time Sorting & Layout Fix (v2.6.9)
+- [x] **"Agrupar" Button**: Re-added the consolidation feature as an "Agrupar" button in the library header for this one-time task. This will pack your books into the first 2-3 racks.
+- [x] **Zero-Cropping Layout**: Switched rack alignment from `justify-center` to `justify-start` and increased top padding to `pt-40`. This guarantees books start below the header and aren't cropped on any screen size.
+- [x] **Scrollable Racks**: Added internal scroll support within each rack as a secondary safety for extremely small viewports.
+
 ## Reader Stability & Performance (v2.6.8)
 - [x] **Anti-Flicker Protection**: Added a safety check to `openFromLibrary` that prevents re-opening a book if it's already active. This solves the "spontaneous loading screen" issue caused by background library updates or navigation events.
 - [x] **Memory Management**: Implemented proper Blob URL revocation. The app now cleans up temporary PDF memory when you close a book or switch to a new one, preventing the "black screen" crashes on long reading sessions.

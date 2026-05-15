@@ -21,9 +21,11 @@ interface BookCoverProps {
     svg?: string;
   };
   cover?: string;
+  readingProgress?: number; // 0 to 1
   onClick: () => void;
   onEdit: () => void;
   onShare?: () => void;
+  onHover?: (color: string | null) => void;
   isSimplified?: boolean;
   isIdentifying?: boolean;
 }
@@ -31,9 +33,11 @@ interface BookCoverProps {
 export const BookCover: React.FC<BookCoverProps> = ({ 
   book, 
   cover, 
+  readingProgress = 0,
   onClick, 
   onEdit, 
   onShare, 
+  onHover,
   isSimplified,
   isIdentifying 
 }) => {
@@ -65,14 +69,58 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
 
+  // Estimate dominant color for aura and hover feedback
+  const auraColor = React.useMemo(() => {
+    if (readingProgress >= 0.95) return 'rgba(255, 215, 0, 0.4)'; // Golden for finished
+    if (readingProgress > 0) return 'rgba(16, 185, 129, 0.3)'; // Emerald for in progress
+    return 'rgba(255, 255, 255, 0.1)'; // Faint white for unread
+  }, [readingProgress]);
+
+  // Handle hover to report "color mood"
+  const handleMouseEnter = () => {
+    if (onHover) {
+      // In a real app, we might extract this from the image.
+      // For the demo, we use a color based on the book title hash.
+      const colors = ['#4c1d95', '#831843', '#1e3a8a', '#064e3b', '#78350f', '#1c1917'];
+      const hash = book.title.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      onHover(colors[hash % colors.length]);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (onHover) onHover(null);
+  };
+
   return (
-    <div className="group relative flex flex-col items-center w-full">
+    <div 
+      className="group relative flex flex-col items-center w-full"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Reading Aura */}
+      {!isSimplified && readingProgress > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ 
+            opacity: [0.3, 0.5, 0.3],
+            scale: [1, 1.05, 1],
+            boxShadow: [
+              `0 0 10px ${auraColor}`,
+              `0 0 25px ${auraColor}`,
+              `0 0 10px ${auraColor}`
+            ]
+          }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute inset-x-2 -inset-y-2 rounded-xl z-0 pointer-events-none"
+        />
+      )}
+
       <motion.div 
         onClick={isSupported ? onClick : undefined}
         layoutId={`book-container-${book.id}`}
         title="Arrastra para mover el libro"
         className={cn(
-          "relative w-full aspect-[2/3] sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden",
+          "relative w-full aspect-[2/3] sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
           isSimplified 
             ? "shadow-none border-stone-700 bg-stone-800" 
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]",
