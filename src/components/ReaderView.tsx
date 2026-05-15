@@ -1,4 +1,6 @@
-import { Loader2, AlertCircle, Check, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Loader2, AlertCircle, Check, X, Crop } from 'lucide-react';
+import { Document, Page } from 'react-pdf';
 import { EpubView } from './EpubView';
 import { SadMonkIcon } from './SadMonkIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -330,11 +332,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             file={fileUrl}
             onLoadSuccess={handleLoadSuccess}
             onLoadError={(err: Error) => setDocError(err.message)}
-            loading={
-              <div className="h-screen flex items-center justify-center">
-                <Loader2 className="animate-spin text-indigo-500" size={48} />
-              </div>
-            }
+            loading={null}
           >
             {docError ? (
               <div className="h-screen flex flex-col items-center justify-center text-center p-8">

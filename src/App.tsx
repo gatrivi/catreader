@@ -76,7 +76,6 @@ export default function App() {
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
   const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'wood');
   const [pageRatios, setPageRatios] = useState<number[]>([]);
-  const [extractingRatios, setExtractingRatios] = useState(false);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);
   const [selectedTextMenu, setSelectedTextMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
@@ -87,7 +86,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.4.7';
+  const APP_VERSION = 'v2.4.8';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -497,35 +496,18 @@ export default function App() {
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !fileUrl) return;
-    let scrollTimeout: ReturnType<typeof setTimeout>;
 
-    const handleScrollForPage = () => {
-      if (isRestoring) return;
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        const wrappers = container.querySelectorAll('.page-wrapper');
-        if (wrappers.length === 0) return;
-        const centerY = container.getBoundingClientRect().top + container.getBoundingClientRect().height / 2;
-        let bestPage = pageNumber, bestDist = Infinity;
-        wrappers.forEach((w) => {
-          const dist = Math.abs(w.getBoundingClientRect().top + w.getBoundingClientRect().height / 2 - centerY);
-          if (dist < bestDist) { bestDist = dist; bestPage = parseInt(w.getAttribute('data-page') || '1'); }
-        });
-        setPageNumber(bestPage);
-      }, 120);
-    };
-
-    container.addEventListener('scroll', handleScrollForPage, { passive: true });
     const observer = new IntersectionObserver((entries) => {
       if (isRestoring) return;
       let bestPage = pageNumber, bestRatio = -1;
       entries.forEach((entry) => {
         if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
-          bestRatio = entry.intersectionRatio; bestPage = parseInt(entry.target.getAttribute('data-page') || '1');
+          bestRatio = entry.intersectionRatio;
+          bestPage = parseInt(entry.target.getAttribute('data-page') || '1');
         }
       });
       if (bestRatio >= 0) setPageNumber(bestPage);
-    }, { threshold: Array.from({ length: 21 }, (_, i) => i * 0.05), root: container });
+    }, { threshold: [0, 0.25, 0.5, 0.75, 1], root: container });
 
     const updateObserver = () => container.querySelectorAll('.page-wrapper').forEach((p) => observer.observe(p));
     const mutationObserver = new MutationObserver(updateObserver);
@@ -533,8 +515,6 @@ export default function App() {
     updateObserver();
 
     return () => {
-      container.removeEventListener('scroll', handleScrollForPage);
-      clearTimeout(scrollTimeout);
       observer.disconnect();
       mutationObserver.disconnect();
     };
@@ -669,6 +649,22 @@ export default function App() {
         </div>
       )}
 
+      <AnimatePresence>
+        {fileUrl && !isLoaded && (
+          <motion.div
+            key="reader-loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-50 bg-stone-950 flex flex-col items-center justify-center gap-4"
+          >
+            <Loader2 className="animate-spin text-amber-500" size={40} />
+            <p className="text-sm font-serif italic text-stone-400 tracking-wide">Abriendo libro…</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <main ref={containerRef} className="flex-1 overflow-auto scrollbar-none relative" onDoubleClick={handleDoubleClick}>
         {!fileUrl ? (
           <LibraryView library={library} covers={covers} isLoading={isLoadingLibrary} onOpenBook={openFromLibrary} onEditBook={setEditingBook} onGoogleDrive={handleGoogleDrive} onFileUpload={onFileChange} isSimplified={isSimplified} wallpaper={wallpaper} onToggleSimplified={() => setIsSimplified(!isSimplified)} onSetWallpaper={setWallpaper} shelves={shelves} onUpdateShelfTitle={updateShelfTitle} onMoveBook={moveBook} onReorderBook={reorderBook} onMagicEnrich={bulkMagic} onProfileClick={() => setShowProfile(true)} clearProgress={() => {}} identifyingBookId={identifyingBookId} isSyncing={isSyncing} enrichmentProgress={enrichmentProgress} onShareBook={(book) => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?read=${book.filename}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
@@ -684,8 +680,22 @@ export default function App() {
             scrollRatio={scrollRatio} 
             isRestoring={isRestoring} 
             pageRatios={pageRatios} 
-            onLoadSuccess={(pdf) => { setNumPages(pdf.numPages); setIsLoaded(true); }} 
-            onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); } setScrollRatio(0); setIsRestoring(false); } }; setTimeout(jump, 100); } }} 
+            onLoadSuccess={async (pdf) => {
+              setNumPages(pdf.numPages);
+              try {
+                const ratios: number[] = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                  const page = await pdf.getPage(i);
+                  const viewport = page.getViewport({ scale: 1 });
+                  ratios.push(viewport.width / viewport.height);
+                }
+                setPageRatios(ratios);
+              } catch (e) {
+                console.error('Ratio extraction failed:', e);
+              }
+              setIsLoaded(true);
+            }} 
+            onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
             onPageRenderError={(_p, err) => setRenderErrors((prev) => new Set(prev).add(_p))} 
             onTextSelection={(text, x, y) => setSelectedTextMenu({ text, x, y })} 
             onEpubLocationChange={setEpubCfi} 
