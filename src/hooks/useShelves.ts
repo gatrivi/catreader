@@ -15,9 +15,34 @@ export function useShelves(library: Array<{ id: string }>) {
   // Load shelves from localStorage
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
+    const migrationKey = 'catreader_migration_v2.7.5';
+    const hasMigrated = localStorage.getItem(migrationKey);
+
     if (stored) {
       try {
-        const parsed = JSON.parse(stored);
+        let parsed = JSON.parse(stored);
+        
+        // One-time migration for Gaston's request
+        if (!hasMigrated && Array.isArray(parsed)) {
+          console.log('[Migration] Applying Gaston reorganization...');
+          const allBooks = parsed.flatMap((s: Shelf) => s.bookIds);
+          parsed = parsed.map((s: Shelf, i: number) => ({
+            ...s,
+            title: i === 0 ? 'Church' : i === 1 ? 'Meditation' : i === 2 ? 'Other' : s.title,
+            bookIds: [] as string[]
+          }));
+          
+          allBooks.forEach((id, idx) => {
+             const shelfIdx = Math.min(Math.floor(idx / 16), 2);
+             if (parsed[shelfIdx]) parsed[shelfIdx].bookIds.push(id);
+          });
+          
+          localStorage.setItem(migrationKey, 'true');
+          setShelves(parsed);
+          setInitialized(true);
+          return;
+        }
+
         if (Array.isArray(parsed) && parsed.length > 0) {
           setShelves(parsed);
           setInitialized(true);
@@ -28,10 +53,10 @@ export function useShelves(library: Array<{ id: string }>) {
       }
     }
 
-    // Create default 8 shelves
+    // Create default shelves
     const defaultShelves: Shelf[] = Array.from({ length: 8 }, (_, i) => ({
       id: `shelf-${i}`,
-      title: i === 0 ? 'Reading' : i === 1 ? 'To Read' : i === 2 ? 'Favorites' : `Shelf ${i + 1}`,
+      title: i === 0 ? 'Church' : i === 1 ? 'Meditation' : i === 2 ? 'Other' : `Shelf ${i + 1}`,
       bookIds: []
     }));
     setShelves(defaultShelves);
@@ -112,16 +137,17 @@ export function useShelves(library: Array<{ id: string }>) {
   const consolidateShelves = useCallback(() => {
     setShelves(prev => {
       const allBooks = prev.flatMap(s => s.bookIds);
-      const next = prev.map(s => ({ ...s, bookIds: [] as string[] }));
+      const next = prev.map((s, i) => ({ 
+        ...s, 
+        title: i === 0 ? 'Church' : i === 1 ? 'Meditation' : i === 2 ? 'Other' : s.title,
+        bookIds: [] as string[] 
+      }));
       
       allBooks.forEach((bookId, idx) => {
-        const shelfIdx = Math.floor(idx / 16);
+        // Pack into first 3 racks if possible (up to 16 per rack)
+        const shelfIdx = Math.min(Math.floor(idx / 16), 2);
         if (next[shelfIdx]) {
           next[shelfIdx].bookIds.push(bookId);
-        } else {
-          // If we have more books than existing shelves, add them to the last shelf for now
-          // In v2.6.5 we might want to auto-create shelves
-          next[next.length - 1].bookIds.push(bookId);
         }
       });
       

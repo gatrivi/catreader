@@ -15,4 +15,4 @@ Maintain a premium, distraction-free reading experience. "Laconic UX" is the pri
 3. **Validation:** Run `npm run lint` and `npm test` before any push.
 4. **Version:** Always increment version in `App.tsx` and end responses with the current version tag.
 
-**v2.7.4**
+**v2.7.5**

@@ -302,7 +302,7 @@ export const LibraryView = ({
               )}
             </button>
             <div className="hidden sm:block">
-              <h1 className="text-sm font-serif font-bold text-white tracking-tight leading-none">Mi Biblioteca</h1>
+              <h1 className="text-sm font-serif font-bold text-white tracking-tight leading-none">Libros de Gaston</h1>
               <p className="text-[8px] text-stone-500 uppercase tracking-widest mt-0.5">CatReader</p>
             </div>
           </div>
@@ -625,46 +625,113 @@ export const LibraryView = ({
               </AnimatePresence>
             </motion.div>
 
-            {/* Breadcrumbs (Pagination Dots) */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-30 max-w-[85vw] bg-black/40 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl">
-              {shelves.map((shelf, idx) => (
-                <button
-                  key={`dot-${idx}`}
-                  onClick={() => setCurrentRack(idx)}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (currentRack !== idx && !flipTimeoutRef.current) {
-                      flipTimeoutRef.current = setTimeout(() => {
-                        setCurrentRack(idx);
-                        flipTimeoutRef.current = null;
-                      }, 500);
-                    }
-                  }}
-                  onDragLeave={() => {
-                    if (flipTimeoutRef.current) {
-                      clearTimeout(flipTimeoutRef.current);
-                      flipTimeoutRef.current = null;
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragState) onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
-                  }}
-                  className={cn(
-                    "relative w-6 h-6 flex items-center justify-center transition-all group/dot",
-                    dragState && "hover:scale-150 active:scale-125"
-                  )}
-                  aria-label={`Go to rack ${idx + 1}`}
-                >
-                  <div className={cn(
-                    "w-2.5 h-2.5 rounded-full transition-all duration-300",
-                    currentRack === idx 
-                      ? "bg-amber-500 scale-[2] shadow-[0_0_12px_rgba(245,158,11,0.8)]" 
-                      : "bg-white/40 group-hover/dot:bg-white/80 group-hover/dot:scale-125",
-                    dragState && "ring-4 ring-indigo-500/0 group-hover/dot:ring-indigo-500/60 group-hover/dot:animate-pulse"
-                  )} />
-                </button>
-              ))}
+            {/* Navigation / Move Targets */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-[60] max-w-[90vw]">
+              <AnimatePresence mode="wait">
+                {dragState ? (
+                  <motion.div 
+                    initial={{ y: 50, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 50, opacity: 0 }}
+                    className="flex gap-3 p-3 bg-indigo-950/90 backdrop-blur-xl rounded-3xl border border-indigo-500/30 shadow-2xl shadow-indigo-900/50"
+                  >
+                    {shelves.slice(0, 3).map((shelf, idx) => (
+                      <div
+                        key={`target-${idx}`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragOverShelf(shelf.id);
+                        }}
+                        onDragLeave={() => setDragOverShelf(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
+                          setDragState(null);
+                          setDragOverShelf(null);
+                        }}
+                        className={cn(
+                          "px-6 py-4 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center gap-1 min-w-[120px]",
+                          dragOverShelf === shelf.id 
+                            ? "bg-indigo-500/40 border-indigo-400 scale-105 shadow-lg shadow-indigo-500/20" 
+                            : "bg-black/40 border-indigo-500/20 text-indigo-300"
+                        )}
+                      >
+                        <Library size={18} className={cn(dragOverShelf === shelf.id ? "text-white animate-bounce" : "opacity-50")} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">{shelf.title}</span>
+                      </div>
+                    ))}
+                    {/* Compact targets for remaining racks if any */}
+                    {shelves.length > 3 && (
+                       <div className="flex items-center gap-1.5 px-3 border-l border-white/10 ml-1">
+                          {shelves.slice(3).map((shelf, idx) => (
+                            <button
+                              key={`target-compact-${idx}`}
+                              onDragOver={(e) => { e.preventDefault(); setDragOverShelf(shelf.id); }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
+                                setDragState(null);
+                                setDragOverShelf(null);
+                              }}
+                              className={cn(
+                                "w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-all",
+                                dragOverShelf === shelf.id ? "bg-white/20 border-white" : "border-white/10"
+                              )}
+                              title={shelf.title}
+                            >
+                               <span className="text-[10px] font-bold text-white/40">{idx + 4}</span>
+                            </button>
+                          ))}
+                       </div>
+                    )}
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="flex flex-wrap items-center justify-center gap-x-4 gap-y-3 bg-black/40 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl"
+                  >
+                    {shelves.map((shelf, idx) => (
+                      <button
+                        key={`dot-${idx}`}
+                        onClick={() => setCurrentRack(idx)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (currentRack !== idx && !flipTimeoutRef.current) {
+                            flipTimeoutRef.current = setTimeout(() => {
+                              setCurrentRack(idx);
+                              flipTimeoutRef.current = null;
+                            }, 500);
+                          }
+                        }}
+                        onDragLeave={() => {
+                          if (flipTimeoutRef.current) {
+                            clearTimeout(flipTimeoutRef.current);
+                            flipTimeoutRef.current = null;
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (dragState) onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
+                        }}
+                        className={cn(
+                          "relative w-6 h-6 flex items-center justify-center transition-all group/dot",
+                          dragState && "hover:scale-150 active:scale-125"
+                        )}
+                        aria-label={`Go to rack ${idx + 1}`}
+                      >
+                        <div className={cn(
+                          "w-2.5 h-2.5 rounded-full transition-all duration-300",
+                          currentRack === idx 
+                            ? "bg-amber-500 scale-[2] shadow-[0_0_12px_rgba(245,158,11,0.8)]" 
+                            : "bg-white/40 group-hover/dot:bg-white/80 group-hover/dot:scale-125",
+                          dragState && "ring-4 ring-indigo-500/0 group-hover/dot:ring-indigo-500/60 group-hover/dot:animate-pulse"
+                        )} />
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Navigation Arrows (Desktop) & Drag Edge Zones */}
