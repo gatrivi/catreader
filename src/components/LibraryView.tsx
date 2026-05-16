@@ -272,17 +272,18 @@ export const LibraryView = ({
       }}
       onWheel={handleWheel}
     >
-      {/* Ambient Lighting Overlay */}
+      {/* Ambient Lighting & Vignette Overlay */}
       <AnimatePresence>
-        {hoverColor && !isSimplified && (
+        {!isSimplified && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 pointer-events-none z-0 transition-colors duration-700"
+            className="fixed inset-0 pointer-events-none z-[5]"
             style={{ 
-              background: `radial-gradient(circle at center, ${hoverColor}22 0%, transparent 70%)`,
-              backdropFilter: 'contrast(1.1) brightness(1.1)'
+              background: hoverColor 
+                ? `radial-gradient(circle at center, ${hoverColor}11 0%, rgba(0,0,0,0.6) 100%)`
+                : 'radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.4) 100%)',
+              transition: 'background 0.7s ease'
             }}
           />
         )}
@@ -585,8 +586,8 @@ export const LibraryView = ({
                     />
                   </div>
 
-                  {/* Strict 4x4 Grid */}
-                  <div className="grid grid-cols-4 grid-rows-4 gap-x-4 gap-y-4 sm:gap-x-12 sm:gap-y-8 w-full max-w-6xl h-full max-h-[75vh] items-center justify-items-center">
+                  {/* Flow Grid (replaces strict 4x4 for better responsiveness) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-12 sm:gap-x-12 sm:gap-y-16 w-full max-w-6xl items-start justify-items-center">
                     {Array.from({ length: 16 }).map((_, idx) => {
                       const bookId = shelves[currentRack].bookIds[idx];
                       const book = bookId ? getBook(bookId) : null;
@@ -638,14 +639,14 @@ export const LibraryView = ({
             </motion.div>
 
             {/* Navigation / Move Targets */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-[60] max-w-[90vw]">
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-[60] max-w-[90vw]">
               <AnimatePresence mode="wait">
                 {dragState ? (
                   <motion.div 
-                    initial={{ y: 50, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: 50, opacity: 0 }}
-                    className="flex gap-3 p-3 bg-indigo-950/90 backdrop-blur-xl rounded-3xl border border-indigo-500/30 shadow-2xl shadow-indigo-900/50"
+                    initial={{ y: 50, opacity: 0, scale: 0.9 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 50, opacity: 0, scale: 0.9 }}
+                    className="flex gap-2 p-2 bg-stone-900/95 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50"
                   >
                     {shelves.slice(0, 3).map((shelf, idx) => (
                       <div
@@ -662,82 +663,38 @@ export const LibraryView = ({
                           setDragOverShelf(null);
                         }}
                         className={cn(
-                          "px-6 py-4 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center gap-1 min-w-[120px]",
+                          "px-4 py-3 rounded-xl border border-dashed transition-all flex flex-col items-center gap-1 min-w-[100px]",
                           dragOverShelf === shelf.id 
-                            ? "bg-indigo-500/40 border-indigo-400 scale-105 shadow-lg shadow-indigo-500/20" 
-                            : "bg-black/40 border-indigo-500/20 text-indigo-300"
+                            ? "bg-amber-500/20 border-amber-500 scale-105" 
+                            : "bg-black/20 border-white/5 text-stone-400"
                         )}
                       >
-                        <Library size={18} className={cn(dragOverShelf === shelf.id ? "text-white animate-bounce" : "opacity-50")} />
-                        <span className="text-[10px] font-black uppercase tracking-widest">{shelf.title}</span>
+                        <Library size={14} className={cn(dragOverShelf === shelf.id ? "text-amber-500 animate-pulse" : "opacity-30")} />
+                        <span className="text-[9px] font-black uppercase tracking-tighter">{shelf.title}</span>
                       </div>
                     ))}
-                    {/* Compact targets for remaining racks if any */}
-                    {shelves.length > 3 && (
-                       <div className="flex items-center gap-1.5 px-3 border-l border-white/10 ml-1">
-                          {shelves.slice(3).map((shelf, idx) => (
-                            <button
-                              key={`target-compact-${idx}`}
-                              onDragOver={(e) => { e.preventDefault(); setDragOverShelf(shelf.id); }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
-                                setDragState(null);
-                                setDragOverShelf(null);
-                              }}
-                              className={cn(
-                                "w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-all",
-                                dragOverShelf === shelf.id ? "bg-white/20 border-white" : "border-white/10"
-                              )}
-                              title={shelf.title}
-                            >
-                               <span className="text-[10px] font-bold text-white/40">{idx + 4}</span>
-                            </button>
-                          ))}
-                       </div>
-                    )}
                   </motion.div>
                 ) : (
                   <motion.div 
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    className="flex flex-wrap items-center justify-center gap-x-4 gap-y-3 bg-black/40 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl"
+                    className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 bg-stone-950/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/5 shadow-xl"
                   >
                     {shelves.map((shelf, idx) => (
                       <button
                         key={`dot-${idx}`}
                         onClick={() => setCurrentRack(idx)}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          if (currentRack !== idx && !flipTimeoutRef.current) {
-                            flipTimeoutRef.current = setTimeout(() => {
-                              setCurrentRack(idx);
-                              flipTimeoutRef.current = null;
-                            }, 500);
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (flipTimeoutRef.current) {
-                            clearTimeout(flipTimeoutRef.current);
-                            flipTimeoutRef.current = null;
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (dragState) onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
-                        }}
                         className={cn(
-                          "relative w-6 h-6 flex items-center justify-center transition-all group/dot",
+                          "relative w-4 h-4 flex items-center justify-center transition-all group/dot",
                           dragState && "hover:scale-150 active:scale-125"
                         )}
                         aria-label={`Go to rack ${idx + 1}`}
                       >
                         <div className={cn(
-                          "w-2.5 h-2.5 rounded-full transition-all duration-300",
+                          "w-1.5 h-1.5 rounded-full transition-all duration-300",
                           currentRack === idx 
-                            ? "bg-amber-500 scale-[2] shadow-[0_0_12px_rgba(245,158,11,0.8)]" 
-                            : "bg-white/40 group-hover/dot:bg-white/80 group-hover/dot:scale-125",
-                          dragState && "ring-4 ring-indigo-500/0 group-hover/dot:ring-indigo-500/60 group-hover/dot:animate-pulse"
+                            ? "bg-amber-500 scale-[1.8] shadow-[0_0_8px_rgba(245,158,11,0.6)]" 
+                            : "bg-white/20 group-hover/dot:bg-white/40",
                         )} />
                       </button>
                     ))}

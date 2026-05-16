@@ -181,13 +181,13 @@ export const BookCover: React.FC<BookCoverProps> = ({
               ) : (
                 <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
                   <div className={cn(
-                    "font-serif font-bold text-sm leading-tight line-clamp-4 mt-2",
+                    "font-serif font-bold text-sm leading-tight line-clamp-4 mt-2 break-words",
                     isSimplified ? "text-stone-300" : "text-[#5b4636]"
                   )}>
                     {book.title}
                   </div>
                   <div className={cn(
-                    "font-serif text-[10px] uppercase tracking-widest line-clamp-2 mb-2",
+                    "font-serif text-[10px] uppercase tracking-widest line-clamp-2 mb-2 break-words",
                     isSimplified ? "text-stone-500" : "text-[#8b5a2b]"
                   )}>
                     {book.author || 'Autor Desconocido'}
@@ -215,34 +215,31 @@ export const BookCover: React.FC<BookCoverProps> = ({
           </>
         )}
 
-        {/* Action buttons - always visible but subtle */}
+        {/* Action buttons - discreet bottom-right pill */}
         <div className={cn(
-          "absolute top-1.5 right-1.5 flex items-center gap-1 z-20",
-          "transition-opacity",
-          // On touch devices always show; on desktop show on hover
-          "opacity-70 md:opacity-0 md:group-hover:opacity-100"
+          "absolute bottom-2 right-2 flex items-center gap-1.5 z-40 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 shadow-xl transition-all duration-300 transform",
+          "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 translate-y-2 group-hover:translate-y-0"
         )}>
           <button 
             onClick={(e) => {
               e.stopPropagation();
               onEdit();
             }}
-            className="p-1 rounded-full bg-black/40 text-white/80 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
-            title="Editar metadatos y portada"
-            aria-label="Editar metadatos y portada"
+            className="text-white/80 hover:text-amber-400 transition-colors"
+            title="Editar"
           >
-            <Pencil size={10} />
+            <Pencil size={12} />
           </button>
+          <div className="w-px h-3 bg-white/20 mx-0.5" />
           <button 
             onClick={(e) => {
               e.stopPropagation();
               if (onShare) onShare();
             }}
-            className="p-1 rounded-full bg-black/40 text-white/80 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
+            className="text-white/80 hover:text-amber-400 transition-colors"
             title="Compartir"
-            aria-label="Compartir"
           >
-            <Share2 size={10} />
+            <Share2 size={12} />
           </button>
         </div>
 

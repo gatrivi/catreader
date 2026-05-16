@@ -16,6 +16,12 @@
     "svg": "<svg width='400' height='600' viewBox='0 0 400 600' xmlns='http://www.w3.org/2000/svg'><defs><linearGradient id='coverGrad' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:#1a1c2c;stop-opacity:1' /><stop offset='100%' style='stop-color:#0d0e15;stop-opacity:1' /></linearGradient><radialGradient id='glow' cx='50%' cy='50%' r='50%' fx='50%' fy='50%'><stop offset='0%' style='stop-color:#ffd700;stop-opacity:0.15' /><stop offset='100%' style='stop-color:#ffd700;stop-opacity:0' /></radialGradient><pattern id='dotGrid' x='0' y='0' width='18' height='18' patternUnits='userSpaceOnUse'><circle cx='2' cy='2' r='0.6' fill='#4a4e69' /></pattern></defs><rect width='400' height='600' fill='url(#coverGrad)'/><rect width='400' height='600' fill='url(#dotGrid)' opacity='0.4'/><rect width='400' height='600' fill='url(#glow)'/><path d='M 200 40 L 200 120' stroke='#ffd700' stroke-width='1' opacity='0.6'/><path d='M 180 540 L 220 540' stroke='#ffd700' stroke-width='1' opacity='0.6'/><circle cx='200' cy='290' r='120' fill='none' stroke='#ffd700' stroke-width='0.5' opacity='0.2'/><g transform='translate(200, 260)'><text text-anchor='middle' font-family='Georgia, serif' font-size='22' fill='#e0e1dd' letter-spacing='6' font-weight='300'>THE</text><text y='45' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='38' fill='#ffd700' font-weight='900' letter-spacing='2'>BULLET JOURNAL</text><text y='85' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='32' fill='#e0e1dd' font-weight='700' letter-spacing='3'>METHOD</text></g><g transform='translate(200, 385)'><text text-anchor='middle' font-family='Helvetica, sans-serif' font-size='8' fill='#8d99ae' letter-spacing='1.5' font-weight='bold'>TRACK THE PAST  â€¢  ORDER THE PRESENT  â€¢  DESIGN THE FUTURE</text></g><path d='M 160 370 L 240 370' stroke='#ffd700' stroke-width='0.5' opacity='0.5'/><text x='200' y='520' text-anchor='middle' font-family='Georgia, serif' font-size='18' fill='#f1f1f1' letter-spacing='4' font-style='italic'>Ryder Carroll</text><rect x='20' y='20' width='360' height='560' fill='none' stroke='#ffd700' stroke-width='0.5' opacity='0.2'/></svg>"
   },
   {
+    "id": "cce_1497.pdf",
+    "filename": "cce_1497.pdf",
+    "type": "pdf",
+    "title": "cce_1497"
+  },
+  {
     "id": "crop_Walter Russell - A New Concept Of The Universe.pdf",
     "filename": "crop_Walter Russell - A New Concept Of The Universe.pdf",
     "type": "pdf",
