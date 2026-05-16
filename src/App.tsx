@@ -92,7 +92,7 @@ export default function App() {
   };
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
-  const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'wood');
+  const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'gaston');
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(localStorage.getItem('catreader_custom_wallpaper'));
   const [pageRatios, setPageRatios] = useState<number[]>([]);
   const [editingBook, setEditingBook] = useState<LibraryBook | null>(null);

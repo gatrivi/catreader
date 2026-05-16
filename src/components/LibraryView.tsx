@@ -106,8 +106,10 @@ export const LibraryView = ({
     book.filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const svgDataUrl = pfp ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(pfp)))}` : null;
+  const gastonPfpUrl = '/profile.jpg';
 
   const wallpapers: Record<string, string> = {
+    gaston: 'linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url("/background.jpg")',
     wood: 'linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url("https://www.transparenttextures.com/patterns/wood-pattern.png"), #2d1d13',
     dim: '#1c1917',
     slate: '#0f172a',
@@ -298,8 +300,12 @@ export const LibraryView = ({
               {svgDataUrl ? (
                 <img src={svgDataUrl} alt="PFP" className="w-full h-full object-cover" />
               ) : (
-                <User size={14} className="text-stone-500 group-hover:text-amber-500 transition-colors" />
+                <img src={gastonPfpUrl} alt="PFP" className="w-full h-full object-cover" onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                  (e.target as HTMLImageElement).parentElement?.querySelector('.fallback-user')?.classList.remove('hidden');
+                }} />
               )}
+              <User size={14} className="fallback-user text-stone-500 group-hover:text-amber-500 transition-colors hidden" />
             </button>
             <div className="hidden sm:block">
               <h1 className="text-sm font-serif font-bold text-white tracking-tight leading-none">Libros de Gaston</h1>
@@ -366,6 +372,12 @@ export const LibraryView = ({
                       <div>
                         <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mb-2">Fondo de Biblioteca</p>
                         <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5">
+                          <button 
+                            onClick={() => onSetWallpaper('gaston')}
+                            className={cn("w-6 h-6 rounded-lg bg-indigo-900 border border-white/10 transition-transform active:scale-95", wallpaper === 'gaston' && "ring-2 ring-amber-600")}
+                            title="Gaston"
+                            style={{ backgroundImage: 'url("/background.jpg")', backgroundSize: 'cover' }}
+                          />
                           <button 
                             onClick={() => onSetWallpaper('wood')}
                             className={cn("w-6 h-6 rounded-lg bg-[#5c3a21] border border-white/10 transition-transform active:scale-95", wallpaper === 'wood' && "ring-2 ring-amber-600")}
