@@ -313,6 +313,22 @@ export function useLibrary({
    * Fetches enhanced covers from various APIs.
    */
   const fetchEnhancedCover = useCallback(async (book: LibraryBook, forceAI = false) => {
+    // Check if there is already a custom user-captured/uploaded cover
+    try {
+      const existingCover = await coverDB.getCover(book.filename);
+      const isCustom = existingCover && (
+        existingCover.startsWith('data:image/jpeg') || 
+        existingCover.startsWith('data:image/png') || 
+        existingCover.startsWith('data:image/webp')
+      );
+      if (isCustom && !forceAI) {
+        console.log(`[Cover] Preserving custom/captured cover for: ${book.title}`);
+        return;
+      }
+    } catch (e) {
+      console.warn('[Cover] Error checking existing cover:', e);
+    }
+
     setIdentifyingBookId(book.id);
     try {
       const searchTitle = book.title.replace(/\[.*?\]|\(.*?\)/g, '').trim();
@@ -483,8 +499,22 @@ export function useLibrary({
           await syncService.saveMetadata(newMetadata);
           setLibrary(prev => prev.map(b => b.filename === book.filename ? { ...b, ...enriched } : b));
           if (enriched.svg) {
-            await coverDB.saveCover(book.filename, enriched.svg);
-            setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+            // Check if there is already a custom user-captured/uploaded cover before overwriting
+            try {
+              const existingCover = await coverDB.getCover(book.filename);
+              const isCustom = existingCover && (
+                existingCover.startsWith('data:image/jpeg') || 
+                existingCover.startsWith('data:image/png') || 
+                existingCover.startsWith('data:image/webp')
+              );
+              if (!isCustom) {
+                await coverDB.saveCover(book.filename, enriched.svg);
+                setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+              }
+            } catch (e) {
+              await coverDB.saveCover(book.filename, enriched.svg);
+              setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+            }
           }
         }
       }
