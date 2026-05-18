@@ -111,26 +111,52 @@ export function useLibrary({
                 await coverDB.saveBookMetadata(fname, meta);
               }
             } catch (fillErr) {}
-
-            const enriched = data.map((book: LibraryBook) => ({
-              ...book,
-              title: metadata[book.filename]?.title || book.title,
-              author: metadata[book.filename]?.author || '',
-              svg: metadata[book.filename]?.svg
-            }));
-            setLibrary(enriched);
           }
+
+          // Build complete library including manually uploaded books from IndexedDB
+          const staticFilenames = new Set(data.map((b: LibraryBook) => b.filename));
+          const customBooks: LibraryBook[] = [];
+          for (const [fname, meta] of Object.entries(metadata)) {
+            if (!staticFilenames.has(fname)) {
+              customBooks.push({
+                id: fname,
+                filename: fname,
+                type: fname.split('.').pop()?.toLowerCase() || 'pdf',
+                title: meta.title || fname.replace(/\.[^/.]+$/, ""),
+                author: meta.author || 'Desconocido',
+                svg: meta.svg || ''
+              });
+            }
+          }
+
+          const enriched = data.map((book: LibraryBook) => ({
+            ...book,
+            title: metadata[book.filename]?.title || book.title,
+            author: metadata[book.filename]?.author || '',
+            svg: metadata[book.filename]?.svg
+          }));
+
+          const allBooks = [...enriched, ...customBooks];
+          setLibrary(allBooks);
+
+          // Load covers from IndexedDB for ALL books (both static and custom)
+          const loadedCovers: Record<string, string> = {};
+          for (const book of allBooks) {
+            const cover = await coverDB.getCover(book.filename);
+            if (cover) loadedCovers[book.filename] = cover;
+          }
+          setCovers(loadedCovers);
         } catch (mErr) {
           console.warn('Metadata enrichment skipped:', mErr);
-        }
 
-        // Load covers from IndexedDB
-        const loadedCovers: Record<string, string> = {};
-        for (const book of data) {
-          const cover = await coverDB.getCover(book.filename);
-          if (cover) loadedCovers[book.filename] = cover;
+          // Fallback if metadata load fails
+          const loadedCovers: Record<string, string> = {};
+          for (const book of data) {
+            const cover = await coverDB.getCover(book.filename);
+            if (cover) loadedCovers[book.filename] = cover;
+          }
+          setCovers(loadedCovers);
         }
-        setCovers(loadedCovers);
       })();
     } catch (err) {
       console.error('Failed to fetch library:', err);

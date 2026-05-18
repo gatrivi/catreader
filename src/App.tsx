@@ -126,7 +126,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.7.7';
+  const APP_VERSION = 'v2.7.8';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -638,12 +638,13 @@ export default function App() {
   }, [library]);
 
   useEffect(() => {
+    if (editingBook) return;
     if (library.length > 0 && !fileUrl && !hasResumedRef.current) {
+      hasResumedRef.current = true; // Mark as resumed immediately to prevent any subsequent auto-resumes
       const parsed = parseBookPath(window.location.pathname);
       if (parsed) {
         const book = matchBookBySlug(library, parsed.bookSlug);
         if (book) {
-          hasResumedRef.current = true;
           openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
         }
       } else {
@@ -651,13 +652,12 @@ export default function App() {
         if (lastBookId) {
           const book = library.find(b => b.filename === lastBookId);
           if (book) {
-            hasResumedRef.current = true;
             openFromLibrary(book, undefined, undefined, true);
           }
         }
       }
     }
-  }, [library]);
+  }, [library, fileUrl, editingBook]);
 
   useEffect(() => {
     const loadHighlights = async () => {
