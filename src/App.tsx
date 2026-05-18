@@ -126,7 +126,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.7.8';
+  const APP_VERSION = 'v2.7.9';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1061,6 +1061,23 @@ export default function App() {
                 await coverDB.saveCover(fileName, base64);
                 setCovers(prev => ({ ...prev, [fileName]: base64 }));
                 showToast('Portada actualizada');
+
+                // Upload to Firebase Storage in the background for cross-device sync
+                setIsSyncing(true);
+                try {
+                  const downloadUrl = await syncService.uploadCoverBlob(fileName, base64);
+                  const coverSource = {
+                    type: 'user-custom' as const,
+                    url: downloadUrl || '',
+                    updatedAt: Date.now()
+                  };
+                  const currentMeta = enrichedMetadata[fileName] || { title: fileName.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
+                  await updateBookMetadata(fileName, currentMeta.title, currentMeta.author, currentMeta.svg, coverSource);
+                } catch (syncErr) {
+                  console.error('[Capture Sync] Failed to sync captured cover to cloud:', syncErr);
+                } finally {
+                  setIsSyncing(false);
+                }
               } catch (e) {
                 console.error('Capture save error:', e);
                 showToast('Error al guardar portada');

@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { db, ensureAuth } from '../firebase';
+import { db, ensureAuth, storage } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { authService } from './authService';
 
 export interface ReadingProgress {
@@ -71,7 +72,7 @@ export const syncService = {
     }
   },
 
-  async saveMetadata(metadata: Record<string, { title: string; author: string; svg?: string }>) {
+  async saveMetadata(metadata: Record<string, { title: string; author: string; svg?: string; coverSource?: any }>) {
     const uid = await getUserId();
     const docRef = doc(db, 'users', uid, 'library', 'metadata');
     try {
@@ -86,7 +87,7 @@ export const syncService = {
     }
   },
 
-  async loadMetadata(): Promise<Record<string, { title: string; author: string; svg?: string }> | null> {
+  async loadMetadata(): Promise<Record<string, { title: string; author: string; svg?: string; coverSource?: any }> | null> {
     const uid = await getUserId();
     const docRef = doc(db, 'users', uid, 'library', 'metadata');
     try {
@@ -97,6 +98,19 @@ export const syncService = {
       return null;
     } catch (err) {
       console.error('Firestore Metadata Load Error:', err);
+      return null;
+    }
+  },
+
+  async uploadCoverBlob(filename: string, base64Image: string): Promise<string | null> {
+    const uid = await getUserId();
+    const bookKey = filename.replace(/[^a-zA-Z0-9]/g, '_');
+    const storageRef = ref(storage, `users/${uid}/covers/${bookKey}`);
+    try {
+      await uploadString(storageRef, base64Image, 'data_url');
+      return await getDownloadURL(storageRef);
+    } catch (err) {
+      console.error('Firebase Storage Upload Error:', err);
       return null;
     }
   },

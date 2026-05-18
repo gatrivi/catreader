@@ -11,6 +11,12 @@ export interface LibraryBook {
   filename: string;
   type: string;
   svg?: string;
+  coverSource?: {
+    type: 'user-custom' | 'ai-generated' | 'openlibrary';
+    url?: string;
+    svgPath?: string;
+    updatedAt?: number;
+  };
 }
 
 interface UseLibraryProps {
@@ -35,7 +41,7 @@ export function useLibrary({
   isSyncing
 }: UseLibraryProps) {
   const [library, setLibrary] = useState<LibraryBook[]>([]);
-  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string }>>({});
+  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string; coverSource?: any }>>({});
   const [covers, setCovers] = useState<Record<string, string>>({});
   const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(true);
   const [isIdle, setIsIdle] = useState(false);
@@ -72,7 +78,7 @@ export function useLibrary({
       // Load enriched metadata in the background
       (async () => {
         try {
-          let metadata: Record<string, { title: string; author: string; svg?: string }> = {};
+          let metadata: Record<string, { title: string; author: string; svg?: string; coverSource?: any }> = {};
           
           // 1. Load from local IndexedDB (robust, persistent cache)
           try {
@@ -124,7 +130,8 @@ export function useLibrary({
                 type: fname.split('.').pop()?.toLowerCase() || 'pdf',
                 title: meta.title || fname.replace(/\.[^/.]+$/, ""),
                 author: meta.author || 'Desconocido',
-                svg: meta.svg || ''
+                svg: meta.svg || '',
+                coverSource: meta.coverSource || undefined
               });
             }
           }
@@ -133,7 +140,8 @@ export function useLibrary({
             ...book,
             title: metadata[book.filename]?.title || book.title,
             author: metadata[book.filename]?.author || '',
-            svg: metadata[book.filename]?.svg
+            svg: metadata[book.filename]?.svg,
+            coverSource: metadata[book.filename]?.coverSource || undefined
           }));
 
           const allBooks = [...enriched, ...customBooks];
@@ -143,7 +151,29 @@ export function useLibrary({
           const loadedCovers: Record<string, string> = {};
           for (const book of allBooks) {
             const cover = await coverDB.getCover(book.filename);
-            if (cover) loadedCovers[book.filename] = cover;
+            if (cover) {
+              loadedCovers[book.filename] = cover;
+            } else if (book.coverSource?.type === 'user-custom' && book.coverSource?.url) {
+              // LAZY REHYDRATION: Fetch custom cover from Firebase Storage in background
+              console.log(`[Cover Sync] Lazy downloading cover for: ${book.title}`);
+              (async (bUrl, bFilename) => {
+                try {
+                  const r = await fetch(bUrl);
+                  if (r.ok) {
+                    const blob = await r.blob();
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = reader.result as string;
+                      await coverDB.saveCover(bFilename, base64);
+                      setCovers(prev => ({ ...prev, [bFilename]: base64 }));
+                    };
+                    reader.readAsDataURL(blob);
+                  }
+                } catch (err) {
+                  console.error('[Cover Sync] Failed to lazy download cover:', err);
+                }
+              })(book.coverSource.url, book.filename);
+            }
           }
           setCovers(loadedCovers);
         } catch (mErr) {
@@ -427,12 +457,43 @@ export function useLibrary({
       const base64 = e.target?.result as string;
       await coverDB.saveCover(filename, base64);
       setCovers(prev => ({ ...prev, [filename]: base64 }));
+
+      // Upload to Firebase Storage in the background for cross-device rehydration
+      setIsSyncing(true);
+      try {
+        const downloadUrl = await syncService.uploadCoverBlob(filename, base64);
+        const coverSource = {
+          type: 'user-custom' as const,
+          url: downloadUrl || '',
+          updatedAt: Date.now()
+        };
+        const currentMeta = enrichedMetadata[filename] || { title: filename.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
+        const enrichedItem = { ...currentMeta, coverSource };
+        const newMetadata = { ...enrichedMetadata, [filename]: enrichedItem };
+        setEnrichedMetadata(newMetadata);
+        localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+        await coverDB.saveBookMetadata(filename, enrichedItem);
+        await syncService.saveMetadata(newMetadata);
+        setLibrary(prev => prev.map(book => 
+          book.filename === filename ? { ...book, coverSource } : book
+        ));
+      } catch (err) {
+        console.error('[Cover Upload] Failed to sync cover blob to cloud:', err);
+      } finally {
+        setIsSyncing(false);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string) => {
-    const enrichedItem = { title, author, svg: svg || enrichedMetadata[filename]?.svg };
+  const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string, coverSource?: LibraryBook['coverSource']) => {
+    const existingSource = coverSource || enrichedMetadata[filename]?.coverSource;
+    const enrichedItem = { 
+      title, 
+      author, 
+      svg: svg || enrichedMetadata[filename]?.svg,
+      coverSource: existingSource
+    };
     const newMetadata = { 
       ...enrichedMetadata, 
       [filename]: enrichedItem 
@@ -444,7 +505,7 @@ export function useLibrary({
     } catch (dbErr) {}
     await syncService.saveMetadata(newMetadata);
     setLibrary(prev => prev.map(book => 
-      book.filename === filename ? { ...book, title, author, svg: svg || book.svg } : book
+      book.filename === filename ? { ...book, title, author, svg: svg || book.svg, coverSource: existingSource } : book
     ));
   };
 
@@ -516,15 +577,19 @@ export function useLibrary({
         setEnrichmentProgress({ current: idx + 1, total: library.length, filename: book.filename });
         const enriched = await enrichBookWithGemini(book);
         if (enriched) {
-          const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enriched };
+          const existingSource = currentMeta?.coverSource;
+          const enrichedWithSource = { ...enriched, coverSource: existingSource };
+          
+          const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enrichedWithSource };
           setEnrichedMetadata(newMetadata);
           localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
           try {
-            await coverDB.saveBookMetadata(book.filename, enriched);
+            await coverDB.saveBookMetadata(book.filename, enrichedWithSource);
           } catch (dbErr) {}
           await syncService.saveMetadata(newMetadata);
-          setLibrary(prev => prev.map(b => b.filename === book.filename ? { ...b, ...enriched } : b));
-          if (enriched.svg) {
+          setLibrary(prev => prev.map(b => b.filename === book.filename ? { ...b, ...enrichedWithSource } : b));
+          
+          if (enriched.svg && existingSource?.type !== 'user-custom') {
             // Check if there is already a custom user-captured/uploaded cover before overwriting
             try {
               const existingCover = await coverDB.getCover(book.filename);
@@ -546,7 +611,9 @@ export function useLibrary({
       }
       
       const hasCover = coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
-      if (!hasCover) {
+      const hasUserCustomSource = currentMeta?.coverSource?.type === 'user-custom';
+      
+      if (!hasCover && !hasUserCustomSource) {
         setEnrichmentProgress({ current: idx + 1, total: library.length, filename: `Cover: ${book.title}` });
         await fetchEnhancedCover(book);
       }
