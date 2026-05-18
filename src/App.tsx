@@ -429,6 +429,17 @@ export default function App() {
           title: file.name.replace(/\.[^/.]+$/, "")
         };
         setLibrary(prev => [newBook, ...prev]);
+
+        // Stamp foundational metadata directly into IndexedDB for instant, indestructible offline resilience
+        const foundationalMeta = {
+          title: newBook.title,
+          author: 'Desconocido',
+          svg: ''
+        };
+        coverDB.saveBookMetadata(file.name, foundationalMeta).catch(dbErr => {
+          console.error('[Upload] Failed to stamp foundational metadata:', dbErr);
+        });
+
         const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
         if (g_apiKey) {
           setTimeout(async () => {

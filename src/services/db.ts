@@ -16,20 +16,32 @@ export const coverDB = {
       const request = indexedDB.open(this.dbName, 5); // Bumped version for bookMetadata store
       request.onupgradeneeded = (e: any) => {
         const db = request.result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName);
-        }
-        if (!db.objectStoreNames.contains(this.contentStore)) {
-          db.createObjectStore(this.contentStore);
-        }
-        if (!db.objectStoreNames.contains(this.ghostStore)) {
-          db.createObjectStore(this.ghostStore);
-        }
-        if (!db.objectStoreNames.contains(this.highlightsStore)) {
-          db.createObjectStore(this.highlightsStore);
-        }
-        if (!db.objectStoreNames.contains(this.metadataStore)) {
-          db.createObjectStore(this.metadataStore);
+        const oldVersion = e.oldVersion || 0;
+
+        // Cumulative fall-through version upgrade pipeline (no break statements)
+        switch (true) {
+          case oldVersion < 1:
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              db.createObjectStore(this.storeName);
+            }
+            if (!db.objectStoreNames.contains(this.contentStore)) {
+              db.createObjectStore(this.contentStore);
+            }
+            // fall through
+          case oldVersion < 2:
+            if (!db.objectStoreNames.contains(this.ghostStore)) {
+              db.createObjectStore(this.ghostStore);
+            }
+            // fall through
+          case oldVersion < 4:
+            if (!db.objectStoreNames.contains(this.highlightsStore)) {
+              db.createObjectStore(this.highlightsStore);
+            }
+            // fall through
+          case oldVersion < 5:
+            if (!db.objectStoreNames.contains(this.metadataStore)) {
+              db.createObjectStore(this.metadataStore);
+            }
         }
       };
       request.onsuccess = () => resolve(request.result);
