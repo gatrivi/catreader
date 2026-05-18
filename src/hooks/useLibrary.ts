@@ -3,6 +3,7 @@ import { syncService } from '../services/syncService';
 import { coverDB } from '../services/db';
 import { GoogleGenAI } from "@google/genai";
 import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { createThumbnail } from '../utils/image';
 
 export interface LibraryBook {
   id: string;
@@ -452,38 +453,35 @@ export function useLibrary({
   }, [enrichBookWithGemini, setIdentifyingBookId]);
 
   const handleCoverUpload = async (filename: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64 = e.target?.result as string;
-      await coverDB.saveCover(filename, base64);
-      setCovers(prev => ({ ...prev, [filename]: base64 }));
+    setIsSyncing(true);
+    try {
+      const { thumbnail, thumbHash } = await createThumbnail(file);
+      await coverDB.saveCover(filename, thumbnail);
+      setCovers(prev => ({ ...prev, [filename]: thumbnail }));
 
       // Upload to Firebase Storage in the background for cross-device rehydration
-      setIsSyncing(true);
-      try {
-        const downloadUrl = await syncService.uploadCoverBlob(filename, base64);
-        const coverSource = {
-          type: 'user-custom' as const,
-          url: downloadUrl || '',
-          updatedAt: Date.now()
-        };
-        const currentMeta = enrichedMetadata[filename] || { title: filename.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
-        const enrichedItem = { ...currentMeta, coverSource };
-        const newMetadata = { ...enrichedMetadata, [filename]: enrichedItem };
-        setEnrichedMetadata(newMetadata);
-        localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
-        await coverDB.saveBookMetadata(filename, enrichedItem);
-        await syncService.saveMetadata(newMetadata);
-        setLibrary(prev => prev.map(book => 
-          book.filename === filename ? { ...book, coverSource } : book
-        ));
-      } catch (err) {
-        console.error('[Cover Upload] Failed to sync cover blob to cloud:', err);
-      } finally {
-        setIsSyncing(false);
-      }
-    };
-    reader.readAsDataURL(file);
+      const downloadUrl = await syncService.uploadCoverBlob(filename, thumbnail);
+      const coverSource = {
+        type: 'user-custom' as const,
+        url: downloadUrl || '',
+        thumbHash,
+        updatedAt: Date.now()
+      };
+      const currentMeta = enrichedMetadata[filename] || { title: filename.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
+      const enrichedItem = { ...currentMeta, coverSource };
+      const newMetadata = { ...enrichedMetadata, [filename]: enrichedItem };
+      setEnrichedMetadata(newMetadata);
+      localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+      await coverDB.saveBookMetadata(filename, enrichedItem);
+      await syncService.saveMetadata(newMetadata);
+      setLibrary(prev => prev.map(book => 
+        book.filename === filename ? { ...book, coverSource } : book
+      ));
+    } catch (err) {
+      console.error('[Cover Upload] Failed to process and sync cover thumbnail:', err);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string, coverSource?: LibraryBook['coverSource']) => {
