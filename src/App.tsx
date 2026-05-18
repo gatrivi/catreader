@@ -267,7 +267,32 @@ export default function App() {
 
   useEffect(() => {
     resetUITimer();
-    return () => { if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // If cursor is near the top edge (top 60px), force UI visibility and reset manual hide
+      if (e.clientY < 60) {
+        setShowUI(true);
+        setIsManualHide(false);
+        if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
+      } else {
+        resetUITimer();
+      }
+    };
+
+    const handleTouchStart = () => {
+      resetUITimer();
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('touchstart', handleTouchStart);
+    window.addEventListener('touchmove', handleTouchStart);
+
+    return () => {
+      if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchStart);
+    };
   }, [resetUITimer]);
 
   useEffect(() => {
