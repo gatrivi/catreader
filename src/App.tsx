@@ -127,7 +127,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.8.0';
+  const APP_VERSION = 'v2.8.1';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -146,7 +146,9 @@ export default function App() {
     handleCoverUpload,
     fetchEnhancedCover,
     bulkMagic,
-    enrichBookWithGemini
+    enrichBookWithGemini,
+    savedBookCovers,
+    markCoverAsSaved
   } = useLibrary({
     showToast: (msg) => showToast(msg),
     setIsSyncing,
@@ -982,6 +984,7 @@ export default function App() {
             identifyingBookId={identifyingBookId} 
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 
+            savedBookCovers={savedBookCovers}
             onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
         ) : (
           <ReaderView 
@@ -1062,6 +1065,7 @@ export default function App() {
                 const { thumbnail, thumbHash } = await createThumbnail(base64);
                 await coverDB.saveCover(fileName, thumbnail);
                 setCovers(prev => ({ ...prev, [fileName]: thumbnail }));
+                markCoverAsSaved(fileName);
                 showToast('Portada actualizada');
 
                 // Upload to Firebase Storage in the background for cross-device sync

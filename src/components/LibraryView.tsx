@@ -57,6 +57,7 @@ interface LibraryViewProps {
   onDismissHighlight?: () => void;
   onConsolidate?: () => void;
   onGetProgress?: (bookId: string) => number;
+  savedBookCovers?: Record<string, boolean>;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -89,7 +90,8 @@ export const LibraryView = ({
   dailyHighlight,
   onDismissHighlight,
   onConsolidate,
-  onGetProgress
+  onGetProgress,
+  savedBookCovers
   }: LibraryViewProps) => {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -552,6 +554,7 @@ export const LibraryView = ({
                           readingProgress={onGetProgress?.(book.filename)}
                           isSimplified={isSimplified}
                           isIdentifying={identifyingBookId === book.id}
+                          isSavedInDb={savedBookCovers?.[book.filename]}
                         />
                         {!isSimplified && <ShelfLedge />}
                     </div>
@@ -642,6 +645,7 @@ export const LibraryView = ({
                                 readingProgress={onGetProgress?.(book.filename)}
                                 isSimplified={isSimplified}
                                 isIdentifying={identifyingBookId === book.id}
+                                isSavedInDb={savedBookCovers?.[book.filename]}
                               />
                               {!isSimplified && <ShelfLedge />}
 

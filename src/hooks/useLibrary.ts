@@ -49,6 +49,14 @@ export function useLibrary({
   const [autoCoverIndex, setAutoCoverIndex] = useState(0);
   const [coverScanKey, setCoverScanKey] = useState(0);
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number; filename?: string } | null>(null);
+  const [savedBookCovers, setSavedBookCovers] = useState<Record<string, boolean>>({});
+
+  const markCoverAsSaved = useCallback((filename: string) => {
+    setSavedBookCovers(prev => ({ ...prev, [filename]: true }));
+    setTimeout(() => {
+      setSavedBookCovers(prev => ({ ...prev, [filename]: false }));
+    }, 3000);
+  }, []);
 
   const enrichedMetadataRef = useRef(enrichedMetadata);
   enrichedMetadataRef.current = enrichedMetadata;
@@ -458,6 +466,7 @@ export function useLibrary({
       const { thumbnail, thumbHash } = await createThumbnail(file);
       await coverDB.saveCover(filename, thumbnail);
       setCovers(prev => ({ ...prev, [filename]: thumbnail }));
+      markCoverAsSaved(filename);
 
       // Upload to Firebase Storage in the background for cross-device rehydration
       const downloadUrl = await syncService.uploadCoverBlob(filename, thumbnail);
@@ -467,9 +476,9 @@ export function useLibrary({
         thumbHash,
         updatedAt: Date.now()
       };
-      const currentMeta = enrichedMetadata[filename] || { title: filename.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
+      const currentMeta = enrichedMetadataRef.current[filename] || { title: filename.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
       const enrichedItem = { ...currentMeta, coverSource };
-      const newMetadata = { ...enrichedMetadata, [filename]: enrichedItem };
+      const newMetadata = { ...enrichedMetadataRef.current, [filename]: enrichedItem };
       setEnrichedMetadata(newMetadata);
       localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
       await coverDB.saveBookMetadata(filename, enrichedItem);
@@ -485,15 +494,15 @@ export function useLibrary({
   };
 
   const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string, coverSource?: LibraryBook['coverSource']) => {
-    const existingSource = coverSource || enrichedMetadata[filename]?.coverSource;
+    const existingSource = coverSource || enrichedMetadataRef.current[filename]?.coverSource;
     const enrichedItem = { 
       title, 
       author, 
-      svg: svg || enrichedMetadata[filename]?.svg,
+      svg: svg || enrichedMetadataRef.current[filename]?.svg,
       coverSource: existingSource
     };
     const newMetadata = { 
-      ...enrichedMetadata, 
+      ...enrichedMetadataRef.current, 
       [filename]: enrichedItem 
     };
     setEnrichedMetadata(newMetadata);
@@ -635,6 +644,8 @@ export function useLibrary({
     bulkMagic,
     enrichWithOpenLibrary,
     setAutoCoverIndex,
-    setCoverScanKey
+    setCoverScanKey,
+    savedBookCovers,
+    markCoverAsSaved
   };
 }
