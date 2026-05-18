@@ -244,6 +244,25 @@ export const LibraryView = ({
 
   const handleWheel = (e: React.WheelEvent) => {
     if (searchQuery) return;
+
+    // Find the scrollable container containing the active shelf grid
+    const scrollContainer = e.currentTarget.querySelector('.overflow-y-auto');
+    if (scrollContainer) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+      
+      // If there is vertical scrollable content, let it scroll naturally
+      if (scrollHeight > clientHeight) {
+        // Scrolling down: only flip to next shelf if we've reached the very bottom (with a 5px buffer)
+        if (e.deltaY > 0 && scrollTop + clientHeight < scrollHeight - 5) {
+          return;
+        }
+        // Scrolling up: only flip to previous shelf if we've reached the very top (with a 5px buffer)
+        if (e.deltaY < 0 && scrollTop > 5) {
+          return;
+        }
+      }
+    }
+
     const now = Date.now();
     if (now - lastWheelTime.current < 800) return; // Cooldown to prevent rapid flipping
     

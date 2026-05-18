@@ -130,6 +130,7 @@ export default function App() {
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
+  const hasResumedRef = useRef(false);
 
   // --- Hooks Integration ---
   
@@ -637,16 +638,22 @@ export default function App() {
   }, [library]);
 
   useEffect(() => {
-    if (library.length > 0 && !fileUrl) {
+    if (library.length > 0 && !fileUrl && !hasResumedRef.current) {
       const parsed = parseBookPath(window.location.pathname);
       if (parsed) {
         const book = matchBookBySlug(library, parsed.bookSlug);
-        if (book) openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
+        if (book) {
+          hasResumedRef.current = true;
+          openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
+        }
       } else {
         const lastBookId = localStorage.getItem('catreader_last_book');
         if (lastBookId) {
           const book = library.find(b => b.filename === lastBookId);
-          if (book) openFromLibrary(book, undefined, undefined, true);
+          if (book) {
+            hasResumedRef.current = true;
+            openFromLibrary(book, undefined, undefined, true);
+          }
         }
       }
     }
