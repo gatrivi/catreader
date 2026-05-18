@@ -14,7 +14,7 @@ function cn(...inputs: ClassValue[]) {
 interface ReaderViewProps {
   fileUrl: string;
   fileType: string;
-  textContent: string | null;
+  textContent: string[] | null;
   numPages: number;
   pageNumber: number;
   zoom: number;
@@ -36,6 +36,7 @@ interface ReaderViewProps {
   pdfFilter: Record<string, string>;
   isSimplified: boolean;
   isReaderMode?: boolean;
+  onToggleReaderMode?: () => void;
 }
 
 interface PageItemProps {
@@ -273,6 +274,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   pageNumber,
   zoom,
   theme,
+  scrollRatio,
+  isRestoring,
   pageRatios,
   isFocusMode,
   isCaptureMode,
@@ -288,6 +291,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   pdfFilter,
   isSimplified,
   isReaderMode,
+  onToggleReaderMode,
 }) => {
   const [docError, setDocError] = useState<string | null>(null);
 
@@ -344,12 +348,66 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       {isReaderMode || fileType === 'txt' ? (
         <div
           className={cn(
-            'max-w-2xl w-full p-6 sm:p-12 font-serif whitespace-pre-wrap leading-relaxed shadow-xl rounded-2xl min-h-[80vh] selection:bg-amber-200 selection:text-amber-900 transition-all duration-300',
+            'max-w-2xl w-full p-6 sm:p-12 font-serif leading-relaxed shadow-xl rounded-2xl min-h-[80vh] selection:bg-amber-200 selection:text-amber-900 transition-all duration-300 flex flex-col gap-2',
             themeStyles[theme]
           )}
           style={{ fontSize: `${(typeof zoom === 'number' ? zoom : 1) * 1.25}rem` }}
         >
-          {textContent || (
+          {textContent ? (
+            textContent.map((pageHtml, idx) => {
+              const pNum = idx + 1;
+              const isVisible = Math.abs(pNum - pageNumber) <= 6;
+
+              if (!isVisible) {
+                return (
+                  <div
+                    key={`text-page-item-${pNum}`}
+                    id={`text-page-${pNum}`}
+                    data-page={pNum}
+                    className="text-page-wrapper text-page-placeholder py-12 border-b border-stone-200/20 dark:border-stone-800/20 flex items-center justify-center"
+                    style={{ minHeight: '300px' }}
+                  >
+                    <div className="text-stone-300 dark:text-stone-700 font-mono text-[10px] tracking-widest uppercase">
+                      Página {pNum} (Virtualizada)
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={`text-page-item-${pNum}`}
+                  id={`text-page-${pNum}`}
+                  data-page={pNum}
+                  className="text-page-wrapper py-6 border-b border-stone-200/20 dark:border-stone-800/20 last:border-b-0 flex flex-col gap-3"
+                >
+                  <div className="flex items-center justify-between border-b border-stone-200/30 dark:border-stone-800/30 pb-2 mb-4 font-mono text-[9px] text-stone-400 dark:text-stone-500 select-none">
+                    <span className="tracking-widest uppercase font-bold text-amber-600/70 dark:text-amber-500/60">PÁGINA {pNum}</span>
+                    {fileType === 'pdf' && onToggleReaderMode && (
+                      <button
+                        onClick={onToggleReaderMode}
+                        className="hover:text-amber-500 transition-colors uppercase tracking-wider flex items-center gap-1 cursor-pointer font-bold"
+                      >
+                        Ver original PDF ↗
+                      </button>
+                    )}
+                  </div>
+
+                  {pageHtml ? (
+                    <div 
+                      className="semantic-page-content leading-relaxed text-justify space-y-4"
+                      dangerouslySetInnerHTML={{ __html: pageHtml }}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center py-10 text-stone-400 dark:text-stone-600 gap-2">
+                      <Loader2 className="animate-spin" size={16} />
+                      <span className="font-mono text-[10px] tracking-wider uppercase">Procesando página {pNum}...</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
             <div className="flex flex-col items-center justify-center py-20 text-stone-400 gap-4">
               <Loader2 className="animate-spin" size={32} />
               <p className="font-mono text-xs uppercase tracking-widest">Extracting text for reader mode...</p>

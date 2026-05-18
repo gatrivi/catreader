@@ -46,6 +46,7 @@ import { useLibrary, LibraryBook } from './hooks/useLibrary';
 import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
 import { buildBookPath, parseBookPath, matchBookBySlug } from './utils/routing';
+import { parsePdfPageSemantically } from './utils/pdfParser';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -63,7 +64,7 @@ export default function App() {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [fileType, setFileType] = useState<string>('pdf');
-  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string[] | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [showUI, setShowUI] = useState<boolean>(true);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
@@ -76,6 +77,24 @@ export default function App() {
   const [isReaderMode, setIsReaderMode] = useState(false);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
   
+  const loadGhostTextToState = useCallback((storedText: string) => {
+    if (storedText.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(storedText);
+        if (Array.isArray(parsed)) {
+          setTextContent(parsed);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+    }
+    if (storedText.includes('[Page ')) {
+      const pages = storedText.split(/\[Page \d+\]\n/).filter(Boolean);
+      setTextContent(pages);
+    } else {
+      setTextContent([storedText]);
+    }
+  }, []);
+
   const toggleReaderMode = async () => {
     const nextMode = !isReaderMode;
     setIsReaderMode(nextMode);
@@ -83,7 +102,7 @@ export default function App() {
     if (nextMode && fileType === 'pdf' && !textContent) {
       const text = await coverDB.getGhostText(fileName);
       if (text) {
-        setTextContent(text);
+        loadGhostTextToState(text);
       } else {
         showToast('Extracting text...');
         // Text extraction is already running in background or should have run
@@ -107,7 +126,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.7.5';
+  const APP_VERSION = 'v2.7.6';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -357,7 +376,7 @@ export default function App() {
       
       if (ext === 'txt') {
         const text = await file.text();
-        setTextContent(text);
+        setTextContent([text]);
         setNumPages(1);
         await coverDB.saveGhostText(file.name, text);
         await syncService.saveGhostText(file.name, text);
@@ -405,24 +424,44 @@ export default function App() {
   const extractGhostText = async (fileOrBlob: File | Blob, filename: string) => {
     try {
       const existing = await coverDB.getGhostText(filename);
-      if (existing) return;
+      if (existing) {
+        loadGhostTextToState(existing);
+        return;
+      }
       const remote = await syncService.loadGhostText(filename);
       if (remote) {
         await coverDB.saveGhostText(filename, remote);
+        loadGhostTextToState(remote);
         return;
       }
-      console.log(`[Ghost] Extracting text for: ${filename}`);
+      console.log(`[Ghost] Progressive extraction started for: ${filename}`);
       const data = new Uint8Array(await fileOrBlob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
-      let fullText = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
+      
+      const totalPages = pdf.numPages;
+      const pagesArray = new Array(totalPages).fill('');
+      setTextContent(pagesArray);
+
+      for (let i = 1; i <= totalPages; i++) {
         const page = await pdf.getPage(i);
         const tc = await page.getTextContent();
-        fullText += `[Page ${i}]\n${tc.items.map((item: any) => item.str).join(' ')}\n\n`;
+        const pageHtml = await parsePdfPageSemantically(page, tc);
+        pagesArray[i - 1] = pageHtml;
+
+        setTextContent(prev => {
+          const next = prev ? [...prev] : new Array(totalPages).fill('');
+          next[i - 1] = pageHtml;
+          return next;
+        });
+
+        // Yield execution to main thread to keep UI extremely smooth
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
-      await coverDB.saveGhostText(filename, fullText);
-      await syncService.saveGhostText(filename, fullText);
+      const serialized = JSON.stringify(pagesArray);
+      await coverDB.saveGhostText(filename, serialized);
+      await syncService.saveGhostText(filename, serialized);
+      console.log(`[Ghost] Text extraction finished and cached for: ${filename}`);
     } catch (err) {
       console.error('Ghost Text Extraction Error:', err);
     }
@@ -500,7 +539,7 @@ export default function App() {
       setFileUrl(url);
       if (book.type === 'txt') {
         const text = await blob.text();
-        setTextContent(text);
+        setTextContent([text]);
         setNumPages(1);
         await coverDB.saveGhostText(filename, text);
         await syncService.saveGhostText(filename, text);
@@ -508,7 +547,12 @@ export default function App() {
         setTextContent(null);
       } else {
         setTextContent(null);
-        extractGhostText(blob, filename);
+        const existing = await coverDB.getGhostText(filename);
+        if (existing) {
+          loadGhostTextToState(existing);
+        } else {
+          extractGhostText(blob, filename);
+        }
       }
       if (forcePage) {
         setPageNumber(forcePage);
@@ -604,7 +648,8 @@ export default function App() {
   }, [fileType, isLoaded, scrollRatio]);
 
   const scrollToPage = (targetPage: number) => {
-    const el = document.getElementById(`page-${targetPage}`);
+    const prefix = isReaderMode ? 'text-page-' : 'page-';
+    const el = document.getElementById(`${prefix}${targetPage}`);
     if (el && containerRef.current) {
       el.scrollIntoView({ behavior: 'smooth' });
       setPageNumber(targetPage);
@@ -639,7 +684,7 @@ export default function App() {
       if (bestRatio >= 0) setPageNumber(bestPage);
     }, { threshold: [0, 0.25, 0.5, 0.75, 1], root: container });
 
-    const updateObserver = () => container.querySelectorAll('.page-wrapper').forEach((p) => observer.observe(p));
+    const updateObserver = () => container.querySelectorAll('.page-wrapper, .text-page-wrapper').forEach((p) => observer.observe(p));
     const mutationObserver = new MutationObserver(updateObserver);
     mutationObserver.observe(container, { childList: true, subtree: true });
     updateObserver();
@@ -962,7 +1007,8 @@ export default function App() {
             isSimplified={isSimplified} 
             isFocusMode={isFocusMode}
             isCaptureMode={isCaptureMode}
-    onCapture={async (base64) => {
+            onToggleReaderMode={toggleReaderMode}
+            onCapture={async (base64) => {
               setIsCaptureMode(false);
               showToast('Portada capturada, guardando...');
               try {

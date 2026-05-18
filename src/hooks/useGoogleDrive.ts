@@ -13,7 +13,7 @@ interface UseGoogleDriveProps {
   setFileUrl: (val: string | null) => void;
   setFileName: (val: string) => void;
   setFileType: (val: string) => void;
-  setTextContent: (val: string | null) => void;
+  setTextContent: (val: string[] | null) => void;
   setNumPages: (val: number) => void;
   setIsLoaded: (val: boolean) => void;
   loadProgress: (id: string) => Promise<any>;
@@ -114,7 +114,7 @@ export function useGoogleDrive({
               
               if (ext === 'txt') {
                 const text = await blob.text();
-                setTextContent(text);
+                setTextContent([text]);
                 setNumPages(1);
               } else {
                 setTextContent(null);
