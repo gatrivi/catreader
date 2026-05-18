@@ -437,6 +437,9 @@ export default function App() {
               setLibrary(prev => prev.map(b => b.filename === file.name ? { ...b, ...enriched } : b));
               const newMeta = { ...enrichedMetadata, [file.name]: enriched };
               localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMeta));
+              try {
+                await coverDB.saveBookMetadata(file.name, enriched);
+              } catch (dbErr) {}
               await syncService.saveMetadata(newMeta);
             }
           }, 1000);

@@ -9,10 +9,11 @@ export const coverDB = {
   contentStore: 'content',
   ghostStore: 'ghostText',
   highlightsStore: 'highlights',
+  metadataStore: 'bookMetadata',
   
   async init(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 4); // Bumped version for highlights store
+      const request = indexedDB.open(this.dbName, 5); // Bumped version for bookMetadata store
       request.onupgradeneeded = (e: any) => {
         const db = request.result;
         if (!db.objectStoreNames.contains(this.storeName)) {
@@ -26,6 +27,9 @@ export const coverDB = {
         }
         if (!db.objectStoreNames.contains(this.highlightsStore)) {
           db.createObjectStore(this.highlightsStore);
+        }
+        if (!db.objectStoreNames.contains(this.metadataStore)) {
+          db.createObjectStore(this.metadataStore);
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -128,6 +132,46 @@ export const coverDB = {
       const tx = db.transaction(this.highlightsStore, 'readonly');
       const request = tx.objectStore(this.highlightsStore).get('all');
       request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async saveBookMetadata(filename: string, meta: { title: string; author: string; svg?: string }): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.metadataStore, 'readwrite');
+      tx.objectStore(this.metadataStore).put(meta, filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async getBookMetadata(filename: string): Promise<{ title: string; author: string; svg?: string } | null> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.metadataStore, 'readonly');
+      const request = tx.objectStore(this.metadataStore).get(filename);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async getAllBookMetadata(): Promise<Record<string, { title: string; author: string; svg?: string }>> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.metadataStore, 'readonly');
+      const store = tx.objectStore(this.metadataStore);
+      const request = store.openCursor();
+      const result: Record<string, any> = {};
+      request.onsuccess = (e: any) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          result[cursor.key] = cursor.value;
+          cursor.continue();
+        } else {
+          resolve(result);
+        }
+      };
       request.onerror = () => reject(request.error);
     });
   }

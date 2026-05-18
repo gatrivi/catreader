@@ -73,18 +73,44 @@ export function useLibrary({
       (async () => {
         try {
           let metadata: Record<string, { title: string; author: string; svg?: string }> = {};
-          const cloudMetadata = await syncService.loadMetadata();
-          const localStored = localStorage.getItem('catreader_enriched_metadata');
-
-          if (cloudMetadata) {
-            metadata = cloudMetadata;
-          } else if (localStored) {
-            metadata = JSON.parse(localStored);
+          
+          // 1. Load from local IndexedDB (robust, persistent cache)
+          try {
+            const localDbMetadata = await coverDB.getAllBookMetadata();
+            if (localDbMetadata && Object.keys(localDbMetadata).length > 0) {
+              metadata = { ...localDbMetadata };
+            }
+          } catch (dbErr) {
+            console.error('Failed to load local DB metadata:', dbErr);
           }
+
+          // 2. Merge with LocalStorage (legacy fallback)
+          const localStored = localStorage.getItem('catreader_enriched_metadata');
+          if (localStored) {
+            try {
+              const parsed = JSON.parse(localStored);
+              metadata = { ...parsed, ...metadata };
+            } catch (e) {}
+          }
+
+          // 3. Merge with Cloud Metadata (authoritative sync)
+          try {
+            const cloudMetadata = await syncService.loadMetadata();
+            if (cloudMetadata) {
+              metadata = { ...metadata, ...cloudMetadata };
+            }
+          } catch (cloudErr) {}
 
           if (Object.keys(metadata).length > 0) {
             setEnrichedMetadata(metadata);
             localStorage.setItem('catreader_enriched_metadata', JSON.stringify(metadata));
+
+            // Back-fill metadata to IndexedDB to ensure robust offline persistence
+            try {
+              for (const [fname, meta] of Object.entries(metadata)) {
+                await coverDB.saveBookMetadata(fname, meta);
+              }
+            } catch (fillErr) {}
 
             const enriched = data.map((book: LibraryBook) => ({
               ...book,
@@ -335,10 +361,13 @@ export function useLibrary({
         if (enriched && enriched.svg) {
            await coverDB.saveCover(book.filename, enriched.svg);
            setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
-           const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enriched };
-           setEnrichedMetadata(newMetadata);
-           localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
-           return;
+            const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enriched };
+            setEnrichedMetadata(newMetadata);
+            localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+            try {
+              await coverDB.saveBookMetadata(book.filename, enriched);
+            } catch (dbErr) {}
+            return;
         }
       }
 
@@ -361,12 +390,16 @@ export function useLibrary({
   };
 
   const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string) => {
+    const enrichedItem = { title, author, svg: svg || enrichedMetadata[filename]?.svg };
     const newMetadata = { 
       ...enrichedMetadata, 
-      [filename]: { ...enrichedMetadata[filename], title, author, svg: svg || enrichedMetadata[filename]?.svg } 
+      [filename]: enrichedItem 
     };
     setEnrichedMetadata(newMetadata);
     localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+    try {
+      await coverDB.saveBookMetadata(filename, enrichedItem);
+    } catch (dbErr) {}
     await syncService.saveMetadata(newMetadata);
     setLibrary(prev => prev.map(book => 
       book.filename === filename ? { ...book, title, author, svg: svg || book.svg } : book
@@ -397,6 +430,11 @@ export function useLibrary({
     if (changed) {
       setEnrichedMetadata(newMetadata);
       localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+      try {
+        for (const [fname, meta] of Object.entries(newMetadata)) {
+          await coverDB.saveBookMetadata(fname, meta);
+        }
+      } catch (dbErr) {}
       setLibrary(prev => prev.map(book => ({
         ...book,
         title: newMetadata[book.filename]?.title || book.title,
@@ -439,6 +477,9 @@ export function useLibrary({
           const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enriched };
           setEnrichedMetadata(newMetadata);
           localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+          try {
+            await coverDB.saveBookMetadata(book.filename, enriched);
+          } catch (dbErr) {}
           await syncService.saveMetadata(newMetadata);
           setLibrary(prev => prev.map(b => b.filename === book.filename ? { ...b, ...enriched } : b));
           if (enriched.svg) {
