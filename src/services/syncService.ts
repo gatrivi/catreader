@@ -39,9 +39,14 @@ export const syncService = {
     const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
     const docRef = doc(db, 'users', uid, 'progress', bookKey);
     
+    // Strip undefined values — Firestore rejects them
+    const cleanProgress = Object.fromEntries(
+      Object.entries(progress).filter(([, v]) => v !== undefined)
+    );
+    
     try {
       await setDoc(docRef, {
-        ...progress,
+        ...cleanProgress,
         updatedAt: serverTimestamp()
       });
       return true;
