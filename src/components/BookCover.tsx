@@ -122,7 +122,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
         layoutId={`book-container-${book.id}`}
         title="Arrastra para mover el libro"
         className={cn(
-          "relative w-full aspect-[2/3] sm:w-40 sm:h-56 md:w-44 md:h-64 bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-8 border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
+          "relative w-full aspect-[2/3] bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
           isSimplified 
             ? "shadow-none border-stone-700 bg-stone-800" 
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]",

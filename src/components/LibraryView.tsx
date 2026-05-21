@@ -586,7 +586,7 @@ export const LibraryView = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-start px-4 sm:px-12 pt-40 pb-20 overflow-y-auto scrollbar-none"
+                  className="absolute inset-0 flex flex-col items-center justify-start px-3 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-12 overflow-y-auto scrollbar-none"
                 >
                   <AnimatePresence>
                     {dragState && (
@@ -609,7 +609,7 @@ export const LibraryView = ({
                   </div>
 
                   {/* Flow Grid (replaces strict 4x4 for better responsiveness) */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-12 sm:gap-x-12 sm:gap-y-16 w-full max-w-6xl items-start justify-items-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-x-3 gap-y-6 sm:gap-x-4 sm:gap-y-8 lg:gap-x-6 lg:gap-y-10 w-full items-start justify-items-center">
                     {Array.from({ length: 16 }).map((_, idx) => {
                       const bookId = shelves[currentRack].bookIds[idx];
                       const book = bookId ? getBook(bookId) : null;
@@ -631,7 +631,7 @@ export const LibraryView = ({
                               onDragStart={(e) => handleDragStart(e, book.id, shelves[currentRack].id, idx)}
                               onDragEnd={handleDragEnd}
                               className={cn(
-                                "w-full max-w-[150px] transition-all cursor-grab active:cursor-grabbing",
+                                "w-full transition-all cursor-grab active:cursor-grabbing",
                                 dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
                             >
@@ -808,13 +808,13 @@ export const LibraryView = ({
 
 function ShelfLedge() {
   return (
-    <div className="relative h-6 w-full mt-[-8px] z-0 pointer-events-none">
+    <div className="relative h-5 w-full mt-[-6px] z-0 pointer-events-none">
       {/* The main plank top surface */}
-      <div className="absolute inset-x-[-12px] top-0 h-4 bg-gradient-to-b from-[#3d2b1f] to-[#2a1d13] rounded-sm shadow-xl border-t border-white/10" />
+      <div className="absolute inset-x-[-4px] top-0 h-3 bg-gradient-to-b from-[#3d2b1f] to-[#2a1d13] rounded-sm shadow-xl border-t border-white/10" />
       {/* The plank front edge (depth) */}
-      <div className="absolute inset-x-[-12px] top-4 h-3 bg-[#1a110b] rounded-b-md shadow-2xl border-t border-black/40" />
+      <div className="absolute inset-x-[-4px] top-3 h-2 bg-[#1a110b] rounded-b-md shadow-2xl border-t border-black/40" />
       {/* Decorative shadow under the ledge */}
-      <div className="absolute inset-x-[-20px] top-7 h-8 bg-black/40 blur-xl rounded-full" />
+      <div className="absolute inset-x-[-6px] top-5 h-6 bg-black/40 blur-lg rounded-full" />
     </div>
   );
 }
