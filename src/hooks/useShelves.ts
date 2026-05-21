@@ -136,6 +136,32 @@ export function useShelves(library: Array<{ id: string }>) {
     });
   }, []);
 
+  const addShelf = useCallback(() => {
+    setShelves(prev => [
+      ...prev,
+      { id: `shelf-${Date.now()}`, title: `Shelf ${prev.length + 1}`, bookIds: [] }
+    ]);
+  }, []);
+
+  const removeShelf = useCallback((shelfId: string) => {
+    setShelves(prev => {
+      const target = prev.find(s => s.id === shelfId);
+      if (!target) return prev;
+      if (target.bookIds.length > 0) {
+        // Move books to the first shelf
+        const next = prev.map(s => ({ ...s, bookIds: [...s.bookIds] }));
+        const first = next.find(s => s.id === prev[0].id);
+        if (first) {
+          target.bookIds.forEach(id => {
+            if (!first.bookIds.includes(id)) first.bookIds.push(id);
+          });
+        }
+        return next.filter(s => s.id !== shelfId);
+      }
+      return prev.filter(s => s.id !== shelfId);
+    });
+  }, []);
+
   const consolidateShelves = useCallback(() => {
     setShelves(prev => {
       const allBooks = prev.flatMap(s => s.bookIds);
@@ -157,5 +183,5 @@ export function useShelves(library: Array<{ id: string }>) {
     });
   }, []);
 
-  return { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves };
+  return { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves, addShelf, removeShelf };
 }

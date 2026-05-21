@@ -58,6 +58,10 @@ interface LibraryViewProps {
   onConsolidate?: () => void;
   onGetProgress?: (bookId: string) => number;
   savedBookCovers?: Record<string, boolean>;
+  showCoverLabels?: boolean;
+  onToggleCoverLabels?: () => void;
+  onAddShelf?: () => void;
+  onRemoveShelf?: (shelfId: string) => void;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -91,7 +95,11 @@ export const LibraryView = ({
   onDismissHighlight,
   onConsolidate,
   onGetProgress,
-  savedBookCovers
+  savedBookCovers,
+  showCoverLabels,
+  onToggleCoverLabels,
+  onAddShelf,
+  onRemoveShelf
   }: LibraryViewProps) => {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -435,7 +443,7 @@ export const LibraryView = ({
                       </div>
 
                       {/* View Options */}
-                      <div className="pt-2 border-t border-white/5">
+                      <div className="pt-2 border-t border-white/5 space-y-2">
                         <button 
                           onClick={onToggleSimplified}
                           className="w-full flex items-center justify-between group"
@@ -445,6 +453,17 @@ export const LibraryView = ({
                             <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", isSimplified ? "left-4.5" : "left-0.5")} />
                           </div>
                         </button>
+                        {onToggleCoverLabels && (
+                          <button 
+                            onClick={onToggleCoverLabels}
+                            className="w-full flex items-center justify-between group"
+                          >
+                            <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Mostrar Etiquetas</span>
+                            <div className={cn("w-8 h-4 rounded-full border border-white/10 transition-all relative", showCoverLabels ? "bg-amber-600" : "bg-stone-900")}>
+                              <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", showCoverLabels ? "left-4.5" : "left-0.5")} />
+                            </div>
+                          </button>
+                        )}
                       </div>
 
                       {/* AI Actions */}
@@ -646,6 +665,7 @@ export const LibraryView = ({
                                 isSimplified={isSimplified}
                                 isIdentifying={identifyingBookId === book.id}
                                 isSavedInDb={savedBookCovers?.[book.filename]}
+                                showLabels={showCoverLabels}
                               />
                               {!isSimplified && <ShelfLedge />}
 
@@ -721,6 +741,24 @@ export const LibraryView = ({
                         )} />
                       </button>
                     ))}
+                    {onAddShelf && (
+                      <button
+                        onClick={() => { onAddShelf(); setCurrentRack(shelves.length); }}
+                        className="w-4 h-4 flex items-center justify-center text-stone-500 hover:text-amber-500 transition-all"
+                        title="Añadir estante"
+                      >
+                        <span className="text-[10px] font-bold leading-none">+</span>
+                      </button>
+                    )}
+                    {onRemoveShelf && shelves.length > 1 && (
+                      <button
+                        onClick={() => { onRemoveShelf(shelves[currentRack].id); setCurrentRack(Math.max(0, currentRack - 1)); }}
+                        className="w-4 h-4 flex items-center justify-center text-stone-500 hover:text-red-500 transition-all"
+                        title="Eliminar estante actual"
+                      >
+                        <span className="text-[10px] font-bold leading-none">−</span>
+                      </button>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

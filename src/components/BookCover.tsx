@@ -29,6 +29,7 @@ interface BookCoverProps {
   isSimplified?: boolean;
   isIdentifying?: boolean;
   isSavedInDb?: boolean;
+  showLabels?: boolean;
 }
 
 export const BookCover: React.FC<BookCoverProps> = ({ 
@@ -41,7 +42,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
   onHover,
   isSimplified,
   isIdentifying,
-  isSavedInDb
+  isSavedInDb,
+  showLabels
 }) => {
   const displayCover = React.useMemo(() => {
     if (!cover) return null;
@@ -93,6 +95,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
     if (onHover) onHover(null);
   };
 
+  const hasMetadata = book.title !== book.filename && !!book.author;
+
   return (
     <div 
       className="group relative flex flex-col items-center w-full"
@@ -127,9 +131,14 @@ export const BookCover: React.FC<BookCoverProps> = ({
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]",
           isIdentifying && "ring-4 ring-amber-500 ring-offset-2 ring-offset-stone-900 animate-pulse",
           isSavedInDb && "ring-4 ring-emerald-500/80 ring-offset-2 ring-offset-stone-900 shadow-[0_0_20px_rgba(16,185,129,0.6)] animate-pulse",
-          !isSupported && "cursor-not-allowed filter grayscale contrast-75 brightness-75"
+          !isSupported && "cursor-not-allowed filter grayscale contrast-75 brightness-75",
+          !hasMetadata && !isSimplified && "ring-1 ring-dashed ring-amber-500/40"
         )}
       >
+        {!hasMetadata && !isSimplified && (
+          <div className="absolute top-1 left-1 z-30 w-2 h-2 bg-amber-500 rounded-full animate-pulse" title="Falta título o autor" />
+        )}
+
         <AnimatePresence mode="wait">
           {isIdentifying ? (
             <motion.div
@@ -215,6 +224,16 @@ export const BookCover: React.FC<BookCoverProps> = ({
             <div className="absolute left-0 top-0 bottom-0 w-1 bg-black/10" />
             <div className="absolute left-1 top-0 bottom-0 w-px bg-white/30" />
           </>
+        )}
+
+        {/* Title/Author Label Overlay */}
+        {showLabels && (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 z-30 pointer-events-none">
+            <p className="text-white text-[9px] font-bold truncate leading-tight">{book.title}</p>
+            {book.author && book.author !== 'Desconocido' && (
+              <p className="text-white/70 text-[7px] truncate leading-tight">{book.author}</p>
+            )}
+          </div>
         )}
 
         {/* Action buttons - discreet bottom-right pill */}

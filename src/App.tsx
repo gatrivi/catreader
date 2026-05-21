@@ -79,6 +79,7 @@ export default function App() {
   const [isCaptureMode, setIsCaptureMode] = useState(false);
   const [isTextSelectMode, setIsTextSelectMode] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
+  const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
   const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
@@ -131,7 +132,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.8.4';
+  const APP_VERSION = 'v2.8.5';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -194,7 +195,7 @@ export default function App() {
     loadProgress
   });
 
-  const { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves } = useShelves(library);
+  const { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves, addShelf, removeShelf } = useShelves(library);
 
   // Helper to get reading progress for Aura effect
   const getReadingProgress = useCallback((filename: string) => {
@@ -261,6 +262,14 @@ export default function App() {
       const newVal = !prev;
       localStorage.setItem('catreader_simplified', String(newVal));
       syncService.saveSettings({ isSimplified: newVal });
+      return newVal;
+    });
+  }, []);
+
+  const handleToggleCoverLabels = useCallback(() => {
+    setShowCoverLabels(prev => {
+      const newVal = !prev;
+      localStorage.setItem('catreader_cover_labels', String(newVal));
       return newVal;
     });
   }, []);
@@ -1011,7 +1020,7 @@ export default function App() {
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 
             savedBookCovers={savedBookCovers}
-            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} />
+            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={removeShelf} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 
@@ -1134,7 +1143,7 @@ export default function App() {
       {fileUrl && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/70 text-stone-300 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border border-white/5">
           <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronLeft size={16}/></button>
-          <span className="text-[10px] font-mono tabular-nums min-w-[48px] text-center">{pageNumber} / {numPages}</span>
+          <PageInput pageNumber={pageNumber} numPages={numPages} onGoToPage={scrollToPage} />
           <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronRight size={16}/></button>
           {isSyncing && <Loader2 size={10} className="animate-spin absolute -right-5 text-indigo-400" />}
         </div>
@@ -1145,5 +1154,54 @@ export default function App() {
       <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} isSyncing={isSyncing} />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
     </div>
+  );
+}
+
+function PageInput({ pageNumber, numPages, onGoToPage }: { pageNumber: number; numPages: number; onGoToPage: (p: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(pageNumber));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setValue(String(pageNumber));
+  }, [pageNumber]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))}
+        onBlur={() => {
+          const p = parseInt(value, 10);
+          if (!isNaN(p) && p >= 1 && p <= numPages) onGoToPage(p);
+          setEditing(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            const p = parseInt(value, 10);
+            if (!isNaN(p) && p >= 1 && p <= numPages) onGoToPage(p);
+            setEditing(false);
+          }
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        className="w-10 bg-transparent text-center text-[10px] font-mono text-stone-300 outline-none border-b border-white/20 focus:border-amber-500"
+      />
+    );
+  }
+
+  return (
+    <button onClick={() => setEditing(true)} className="text-[10px] font-mono tabular-nums min-w-[48px] text-center hover:text-white transition-colors">
+      {pageNumber} / {numPages}
+    </button>
   );
 }

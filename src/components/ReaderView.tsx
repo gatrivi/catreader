@@ -249,7 +249,7 @@ const PageItem: React.FC<PageItemProps> = ({
               }}
             >
               {!isDragging && (
-                <div className="flex gap-1 p-1 bg-amber-500 rounded-bl-lg shadow-lg">
+                <div className="flex gap-1 p-1 bg-amber-500 rounded-bl-lg shadow-lg" onMouseDown={(e) => e.stopPropagation()}>
                   <button onClick={confirmCapture} className="text-white hover:bg-white/20 p-0.5 rounded transition-colors"><Check size={16} /></button>
                   <button onClick={() => setSelection(null)} className="text-white hover:bg-white/20 p-0.5 rounded transition-colors"><X size={16} /></button>
                 </div>
