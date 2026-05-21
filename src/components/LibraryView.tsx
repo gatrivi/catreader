@@ -586,7 +586,7 @@ export const LibraryView = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-start px-3 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-12 overflow-y-auto scrollbar-none"
+                  className="absolute inset-0 flex flex-col items-center justify-start px-2 sm:px-4 pt-4 sm:pt-6 pb-4 overflow-y-auto scrollbar-none"
                 >
                   <AnimatePresence>
                     {dragState && (
@@ -609,7 +609,7 @@ export const LibraryView = ({
                   </div>
 
                   {/* Flow Grid (replaces strict 4x4 for better responsiveness) */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-x-3 gap-y-6 sm:gap-x-4 sm:gap-y-8 lg:gap-x-6 lg:gap-y-10 w-full items-start justify-items-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3 sm:gap-y-4 w-full items-start justify-items-center">
                     {Array.from({ length: 16 }).map((_, idx) => {
                       const bookId = shelves[currentRack].bookIds[idx];
                       const book = bookId ? getBook(bookId) : null;

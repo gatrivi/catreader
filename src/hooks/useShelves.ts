@@ -74,11 +74,13 @@ export function useShelves(library: Array<{ id: string }>) {
       setShelves(prev => {
         const next = prev.map(s => ({ ...s, bookIds: [...s.bookIds] }));
         
-        // Prepend new books to the first shelf (Main Rack)
-        const mainRack = next[0];
-        unassigned.reverse().forEach(book => {
-          if (!mainRack.bookIds.includes(book.id)) {
-            mainRack.bookIds.unshift(book.id);
+        // Append new books to the emptiest shelves to avoid shifting existing books
+        unassigned.forEach(book => {
+          const emptiest = next.reduce((a, b) =>
+            a.bookIds.length <= b.bookIds.length ? a : b
+          );
+          if (!emptiest.bookIds.includes(book.id)) {
+            emptiest.bookIds.push(book.id);
           }
         });
         

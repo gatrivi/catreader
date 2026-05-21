@@ -37,6 +37,7 @@ interface ReaderViewProps {
   isSimplified: boolean;
   isReaderMode?: boolean;
   onToggleReaderMode?: () => void;
+  isTextSelectMode?: boolean;
 }
 
 interface PageItemProps {
@@ -147,6 +148,12 @@ const PageItem: React.FC<PageItemProps> = ({
 
     if (width < 10 || height < 10) return;
 
+    // Account for canvas being centered inside containerRef when zoomed
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const canvasRect = (canvas as HTMLCanvasElement).getBoundingClientRect();
+    const offsetX = containerRect ? canvasRect.left - containerRect.left : 0;
+    const offsetY = containerRect ? canvasRect.top - containerRect.top : 0;
+
     const scale = canvas.width / canvas.clientWidth;
     const captureCanvas = document.createElement('canvas');
     captureCanvas.width = width * scale;
@@ -156,7 +163,7 @@ const PageItem: React.FC<PageItemProps> = ({
 
     ctx.drawImage(
       canvas,
-      x * scale, y * scale, width * scale, height * scale,
+      (x - offsetX) * scale, (y - offsetY) * scale, width * scale, height * scale,
       0, 0, width * scale, height * scale
     );
 
@@ -279,6 +286,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   pageRatios,
   isFocusMode,
   isCaptureMode,
+  isTextSelectMode,
   onCapture,
   onLoadSuccess,
   onLoadError,
@@ -314,13 +322,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const handleMouseUp = useCallback(() => {
     if (fileType !== 'pdf' && fileType !== 'txt') return;
     if (isCaptureMode) return;
+    if (!isTextSelectMode) return;
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0 && onTextSelection) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       onTextSelection(selection.toString().trim(), rect.left + rect.width / 2, rect.top);
     }
-  }, [onTextSelection, fileType, isCaptureMode]);
+  }, [onTextSelection, fileType, isCaptureMode, isTextSelectMode]);
 
   return (
     <div

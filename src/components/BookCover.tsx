@@ -119,7 +119,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
       <motion.div 
         onClick={isSupported ? onClick : undefined}
-        layoutId={`book-container-${book.id}`}
         title="Arrastra para mover el libro"
         className={cn(
           "relative w-full aspect-[2/3] bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",

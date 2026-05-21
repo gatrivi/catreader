@@ -77,6 +77,10 @@ export default function App() {
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isReaderMode, setIsReaderMode] = useState(false);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
+  const [isTextSelectMode, setIsTextSelectMode] = useState(false);
+  const [showLoading, setShowLoading] = useState(false);
+  const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
     if (storedText.startsWith('[')) {
@@ -127,7 +131,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.8.3';
+  const APP_VERSION = 'v2.8.4';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -206,6 +210,17 @@ export default function App() {
   }, [fileName, pageNumber, numPages]);
 
   // --- Persistence & Settings ---
+  useEffect(() => {
+    if (fileUrl && (!isLoaded || isRestoring)) {
+      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 400);
+    } else {
+      setShowLoading(false);
+    }
+    return () => {
+      if (loadingDelayRef.current) clearTimeout(loadingDelayRef.current);
+    };
+  }, [fileUrl, isLoaded, isRestoring]);
+
   useEffect(() => {
     const loadSettings = async () => {
       const cloudSettings = await syncService.loadSettings();
@@ -517,12 +532,18 @@ export default function App() {
     if (fileUrl && fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
+    if (loadingDelayRef.current) clearTimeout(loadingDelayRef.current);
     setFileUrl(null);
     setFileName('');
     setNumPages(0);
     setIsLoaded(false);
+    setIsRestoring(false);
+    setShowLoading(false);
     setTextContent(null);
     setIsReaderMode(false);
+    setIsTextSelectMode(false);
     setQuadrant(1);
     localStorage.removeItem('catreader_last_book');
     if (!skipHistory) {
@@ -558,6 +579,8 @@ export default function App() {
     
     // Clear previous timeouts
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
+    if (loadingDelayRef.current) clearTimeout(loadingDelayRef.current);
 
     const shelf = shelves.find(s => s.bookIds.includes(book.id));
     const shelfTitle = shelf?.title || 'library';
@@ -609,7 +632,7 @@ export default function App() {
       }
       
       // Safety timeout for the "Restoring position" overlay
-      setTimeout(() => setIsRestoring(false), 5000);
+      restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), 5000);
     } catch (err: any) {
       console.error('[Reader] Failed to open book:', err);
       setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
@@ -912,7 +935,7 @@ export default function App() {
       )}
 
       <AnimatePresence>
-        {fileUrl && (!isLoaded || isRestoring) && (
+        {showLoading && fileUrl && (!isLoaded || isRestoring) && (
           <motion.div
             key="reader-loading"
             initial={{ opacity: 0 }}
@@ -1052,7 +1075,8 @@ export default function App() {
               setRenderErrors((prev) => new Set(prev).add(_p));
               if (_p === pageNumber) setIsRestoring(false);
             }} 
-            onTextSelection={(text, x, y) => setSelectedTextMenu({ text, x, y })} 
+            onTextSelection={(text, x, y) => isTextSelectMode && setSelectedTextMenu({ text, x, y })} 
+            isTextSelectMode={isTextSelectMode} 
             onEpubLocationChange={setEpubCfi} 
             epubCfi={epubCfi} 
             themeStyles={themeStyles} 
