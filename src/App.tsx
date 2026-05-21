@@ -215,9 +215,19 @@ export default function App() {
   }, [fileName, pageNumber, numPages]);
 
   // --- Persistence & Settings ---
+  // Safety net: clamp pageNumber whenever numPages becomes known or changes
+  useEffect(() => {
+    if (numPages > 0 && pageNumber > numPages) {
+      console.warn(`[Reader] pageNumber ${pageNumber} clamped to ${numPages}`);
+      setPageNumber(numPages);
+      setIsRestoring(false);
+    }
+  }, [numPages, pageNumber]);
+
   useEffect(() => {
     if (fileUrl && (!isLoaded || isRestoring)) {
-      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 400);
+      // Delay increased to 1200ms so cached/fast loads never flash the overlay
+      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 1200);
     } else {
       setShowLoading(false);
     }
@@ -640,9 +650,12 @@ export default function App() {
     try {
       const cached = await coverDB.getBookContent(filename);
       let blob: Blob;
-      if (cached) {
+      if (cached && cached.size > 0) {
         blob = cached;
       } else {
+        if (cached && cached.size === 0) {
+          console.warn(`[Reader] Cached blob for ${filename} is empty, refetching...`);
+        }
         const baseUrl = import.meta.env.BASE_URL || '/';
         const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
         const res = await fetch(`${booksDirPath}${filename}`);
@@ -1072,11 +1085,18 @@ export default function App() {
               try {
                 setNumPages(pdf.numPages);
 
+                // Clamp pageNumber so the visibility window never excludes all pages
+                const clampedPage = Math.min(Math.max(1, pageNumber), pdf.numPages);
+                if (clampedPage !== pageNumber) {
+                  console.warn(`[Reader] Clamping restored page ${pageNumber} → ${clampedPage}`);
+                  setPageNumber(clampedPage);
+                }
+
                 // Fetch current page ratio first so target page renders accurately
                 try {
-                  const page = await pdf.getPage(Math.min(pageNumber, pdf.numPages));
+                  const page = await pdf.getPage(clampedPage);
                   const viewport = page.getViewport({ scale: 1 });
-                  ratios[pageNumber - 1] = viewport.width / viewport.height;
+                  ratios[clampedPage - 1] = viewport.width / viewport.height;
                 } catch (e) { /* ignore */ }
 
                 setPageRatios(ratios);
@@ -1114,6 +1134,7 @@ export default function App() {
             onLoadError={(err) => {
               console.error('PDF Load Error:', err);
               setIsLoaded(true); // Dismiss overlay so error message in ReaderView is visible
+              setIsRestoring(false); // Also clear restoring so overlay doesn't hang
               showToast('Error al cargar PDF');
             }}
             onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); if (quadrant > 1) { const offset = ((quadrant - 1) / 4) * el.clientHeight; containerRef.current.scrollBy({ top: offset, behavior: 'instant' }); } } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
