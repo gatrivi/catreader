@@ -169,12 +169,15 @@ export function useLibrary({
           setLibrary(allBooks);
 
           // Load covers from IndexedDB for ALL books (both static and custom)
+          console.log(`[Covers] Loading covers for ${allBooks.length} books from IndexedDB...`);
           const loadedCovers: Record<string, string> = {};
           for (const book of allBooks) {
             const cover = await coverDB.getCover(book.filename);
             if (cover) {
+              console.log(`[Covers] Loaded cover for ${book.title} (${book.filename})`);
               loadedCovers[book.filename] = cover;
             } else if (book.coverSource?.type === 'user-custom' && book.coverSource?.url) {
+              console.log(`[Covers] Missing local cover for ${book.title}, starting lazy rehydration from cloud`);
               // LAZY REHYDRATION: Fetch custom cover from Firebase Storage in background
               console.log(`[Cover Sync] Lazy downloading cover for: ${book.title}`);
               (async (bUrl, bFilename) => {
@@ -390,6 +393,7 @@ export function useLibrary({
    * Fetches enhanced covers from various APIs.
    */
   const fetchEnhancedCover = useCallback(async (book: LibraryBook, forceAI = false) => {
+    console.log(`[Cover] fetchEnhancedCover called for ${book.title}, forceAI=${forceAI}`);
     // Check if there is already a custom user-captured/uploaded cover
     try {
       const existingCover = await coverDB.getCover(book.filename);
@@ -402,6 +406,7 @@ export function useLibrary({
         console.log(`[Cover] Preserving custom/captured cover for: ${book.title}`);
         return;
       }
+      console.log(`[Cover] No custom cover found for ${book.title}, fetching enhanced...`);
     } catch (e) {
       console.warn('[Cover] Error checking existing cover:', e);
     }
@@ -473,15 +478,20 @@ export function useLibrary({
   }, [enrichBookWithGemini, setIdentifyingBookId]);
 
   const handleCoverUpload = async (filename: string, file: File) => {
+    console.log(`[CoverUpload] Starting upload for ${filename}`);
     setIsSyncing(true);
     try {
       const { thumbnail, thumbHash } = await createThumbnail(file);
+      console.log(`[CoverUpload] Thumbnail created, size: ${thumbnail.length}`);
       await coverDB.saveCover(filename, thumbnail);
+      console.log(`[CoverUpload] Saved to IndexedDB`);
       setCovers(prev => ({ ...prev, [filename]: thumbnail }));
       markCoverAsSaved(filename);
 
       // Upload to Firebase Storage in the background for cross-device rehydration
+      console.log(`[CoverUpload] Uploading to Firebase Storage...`);
       const downloadUrl = await syncService.uploadCoverBlob(filename, thumbnail);
+      console.log(`[CoverUpload] Firebase upload complete: ${downloadUrl ? 'success' : 'failed'}`);
       const coverSource = {
         type: 'user-custom' as const,
         url: downloadUrl || '',
@@ -506,6 +516,7 @@ export function useLibrary({
   };
 
   const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string, coverSource?: LibraryBook['coverSource']) => {
+    console.log(`[Metadata] Updating ${filename}: title="${title}" author="${author}" hasCoverSource=${!!coverSource}`);
     const existingSource = coverSource || enrichedMetadataRef.current[filename]?.coverSource;
     const enrichedItem = { 
       title, 

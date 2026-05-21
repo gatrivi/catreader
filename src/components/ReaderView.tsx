@@ -37,7 +37,6 @@ interface ReaderViewProps {
   isSimplified: boolean;
   isReaderMode?: boolean;
   onToggleReaderMode?: () => void;
-  isTextSelectMode?: boolean;
 }
 
 interface PageItemProps {
@@ -286,7 +285,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   pageRatios,
   isFocusMode,
   isCaptureMode,
-  isTextSelectMode,
   onCapture,
   onLoadSuccess,
   onLoadError,
@@ -322,14 +320,13 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const handleMouseUp = useCallback(() => {
     if (fileType !== 'pdf' && fileType !== 'txt') return;
     if (isCaptureMode) return;
-    if (!isTextSelectMode) return;
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0 && onTextSelection) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       onTextSelection(selection.toString().trim(), rect.left + rect.width / 2, rect.top);
     }
-  }, [onTextSelection, fileType, isCaptureMode, isTextSelectMode]);
+  }, [onTextSelection, fileType, isCaptureMode]);
 
   return (
     <div

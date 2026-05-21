@@ -45,6 +45,9 @@ export const BookCover: React.FC<BookCoverProps> = ({
   isSavedInDb,
   showLabels
 }) => {
+  React.useEffect(() => {
+    console.log(`[BookCover] Mount/update ${book.filename}: cover=${!!cover} source=${cover?.startsWith('data:') ? 'dataURL' : cover?.startsWith('http') ? 'url' : cover ? 'svg/other' : 'none'}`);
+  }, [book.filename, cover]);
   const displayCover = React.useMemo(() => {
     if (!cover) return null;
     // If it's already a URL or Data URL, return it

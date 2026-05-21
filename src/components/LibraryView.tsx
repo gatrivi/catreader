@@ -190,6 +190,17 @@ export const LibraryView = ({
     dragCounter.current = 0;
   };
 
+  const [rackDirection, setRackDirection] = useState<'next' | 'prev'>('next');
+
+  const flipRack = (dir: 'next' | 'prev') => {
+    setRackDirection(dir);
+    if (dir === 'next' && currentRack < shelves.length - 1) {
+      setCurrentRack(prev => prev + 1);
+    } else if (dir === 'prev' && currentRack > 0) {
+      setCurrentRack(prev => prev - 1);
+    }
+  };
+
   const [dragOverBook, setDragOverBook] = useState<{ shelfId: string; index: number } | null>(null);
 
   const handleBookDragOver = (e: React.DragEvent, shelfId: string, index: number) => {
@@ -244,14 +255,6 @@ export const LibraryView = ({
   const lastWheelTime = useRef(0);
   const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flipRack = (dir: 'next' | 'prev') => {
-    if (dir === 'next' && currentRack < shelves.length - 1) {
-      setCurrentRack(prev => prev + 1);
-    } else if (dir === 'prev' && currentRack > 0) {
-      setCurrentRack(prev => prev - 1);
-    }
-  };
-
   const handleWheel = (e: React.WheelEvent) => {
     if (searchQuery) return;
 
@@ -276,7 +279,7 @@ export const LibraryView = ({
     const now = Date.now();
     if (now - lastWheelTime.current < 800) return; // Cooldown to prevent rapid flipping
     
-    if (Math.abs(e.deltaY) > 30) {
+    if (Math.abs(e.deltaY) > 80) {
       if (e.deltaY > 0) flipRack('next');
       else flipRack('prev');
       lastWheelTime.current = now;
@@ -601,9 +604,9 @@ export const LibraryView = ({
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={currentRack}
-                  initial={{ x: 300, opacity: 0 }}
+                  initial={{ x: rackDirection === 'next' ? 300 : -300, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: -300, opacity: 0 }}
+                  exit={{ x: rackDirection === 'next' ? -300 : 300, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                   className="absolute inset-0 flex flex-col items-center justify-start px-2 sm:px-4 pt-4 sm:pt-6 pb-4 overflow-y-auto scrollbar-none"
                 >
@@ -650,7 +653,7 @@ export const LibraryView = ({
                               onDragStart={(e) => handleDragStart(e, book.id, shelves[currentRack].id, idx)}
                               onDragEnd={handleDragEnd}
                               className={cn(
-                                "w-full transition-all cursor-grab active:cursor-grabbing",
+                                "w-full max-w-[100px] sm:max-w-[120px] lg:max-w-[140px] transition-all cursor-grab active:cursor-grabbing",
                                 dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
                             >

@@ -77,7 +77,6 @@ export default function App() {
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isReaderMode, setIsReaderMode] = useState(false);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
-  const [isTextSelectMode, setIsTextSelectMode] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
   const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,9 +108,14 @@ export default function App() {
       const text = await coverDB.getGhostText(fileName);
       if (text) {
         loadGhostTextToState(text);
-      } else {
+      } else if (fileUrl) {
         showToast('Extracting text...');
-        // Text extraction is already running in background or should have run
+        try {
+          const blob = await coverDB.getBookContent(fileName) || await fetch(fileUrl).then(r => r.blob());
+          extractGhostTextLazy(blob, fileName);
+        } catch (e) {
+          console.error('[ReaderMode] Failed to start lazy extraction:', e);
+        }
       }
     }
   };
@@ -505,6 +509,15 @@ export default function App() {
         return;
       }
       console.log(`[Ghost] Progressive extraction started for: ${filename}`);
+      extractGhostTextLazy(fileOrBlob, filename);
+    } catch (err) {
+      console.error('Ghost Text Extraction Error:', err);
+    }
+  };
+
+  const extractGhostTextLazy = async (fileOrBlob: File | Blob, filename: string) => {
+    try {
+      console.log(`[Ghost] Lazy extraction for: ${filename}`);
       const data = new Uint8Array(await fileOrBlob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
@@ -513,27 +526,52 @@ export default function App() {
       const pagesArray = new Array(totalPages).fill('');
       setTextContent(pagesArray);
 
-      for (let i = 1; i <= totalPages; i++) {
+      // Extract first 20 pages immediately for responsiveness
+      const immediatePages = Math.min(20, totalPages);
+      for (let i = 1; i <= immediatePages; i++) {
         const page = await pdf.getPage(i);
         const tc = await page.getTextContent();
         const pageHtml = await parsePdfPageSemantically(page, tc);
         pagesArray[i - 1] = pageHtml;
-
         setTextContent(prev => {
           const next = prev ? [...prev] : new Array(totalPages).fill('');
           next[i - 1] = pageHtml;
           return next;
         });
-
-        // Yield execution to main thread to keep UI extremely smooth
         await new Promise(resolve => setTimeout(resolve, 0));
       }
-      const serialized = JSON.stringify(pagesArray);
-      await coverDB.saveGhostText(filename, serialized);
-      await syncService.saveGhostText(filename, serialized);
-      console.log(`[Ghost] Text extraction finished and cached for: ${filename}`);
+      console.log(`[Ghost] First ${immediatePages} pages extracted for: ${filename}`);
+
+      // Continue remaining pages in background
+      (async () => {
+        for (let i = immediatePages + 1; i <= totalPages; i++) {
+          try {
+            const page = await pdf.getPage(i);
+            const tc = await page.getTextContent();
+            const pageHtml = await parsePdfPageSemantically(page, tc);
+            pagesArray[i - 1] = pageHtml;
+            setTextContent(prev => {
+              if (!prev) return new Array(totalPages).fill('');
+              const next = [...prev];
+              next[i - 1] = pageHtml;
+              return next;
+            });
+            await new Promise(resolve => setTimeout(resolve, 0));
+          } catch (e) {
+            console.warn(`[Ghost] Failed to extract page ${i}:`, e);
+          }
+        }
+        try {
+          const serialized = JSON.stringify(pagesArray);
+          await coverDB.saveGhostText(filename, serialized);
+          await syncService.saveGhostText(filename, serialized);
+          console.log(`[Ghost] Full extraction complete for: ${filename}`);
+        } catch (e) {
+          console.error('[Ghost] Failed to cache extracted text:', e);
+        }
+      })();
     } catch (err) {
-      console.error('Ghost Text Extraction Error:', err);
+      console.error('[Ghost] Lazy extraction error:', err);
     }
   };
 
@@ -552,7 +590,6 @@ export default function App() {
     setShowLoading(false);
     setTextContent(null);
     setIsReaderMode(false);
-    setIsTextSelectMode(false);
     setQuadrant(1);
     localStorage.removeItem('catreader_last_book');
     if (!skipHistory) {
@@ -625,12 +662,7 @@ export default function App() {
         setTextContent(null);
       } else {
         setTextContent(null);
-        const existing = await coverDB.getGhostText(filename);
-        if (existing) {
-          loadGhostTextToState(existing);
-        } else {
-          extractGhostText(blob, filename);
-        }
+        // Ghost text is now extracted on-demand when reader mode is toggled
       }
       if (forcePage) {
         setPageNumber(forcePage);
@@ -650,11 +682,11 @@ export default function App() {
     if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
     else {
       setIsLoaded(false);
-      // Safety timeout for "Preparando páginas" (10s for heavy PDFs)
+      // Safety timeout for "Preparando páginas" (5s for heavy PDFs)
       loadingTimeoutRef.current = setTimeout(() => {
         console.warn('[Reader] Loading timeout reached for:', filename);
         setIsLoaded(true);
-      }, 10000);
+      }, 5000);
     }
   };
 
@@ -1035,19 +1067,24 @@ export default function App() {
             isReaderMode={isReaderMode}
             pageRatios={pageRatios} 
             onLoadSuccess={async (pdf) => {
-              setNumPages(pdf.numPages);
               const fallback = 595 / 842;
               const ratios = Array(pdf.numPages).fill(fallback);
-
-              // Fetch current page ratio first so target page renders accurately
               try {
-                const page = await pdf.getPage(Math.min(pageNumber, pdf.numPages));
-                const viewport = page.getViewport({ scale: 1 });
-                ratios[pageNumber - 1] = viewport.width / viewport.height;
-              } catch (e) { /* ignore */ }
+                setNumPages(pdf.numPages);
 
-              setPageRatios(ratios);
-              setIsLoaded(true);
+                // Fetch current page ratio first so target page renders accurately
+                try {
+                  const page = await pdf.getPage(Math.min(pageNumber, pdf.numPages));
+                  const viewport = page.getViewport({ scale: 1 });
+                  ratios[pageNumber - 1] = viewport.width / viewport.height;
+                } catch (e) { /* ignore */ }
+
+                setPageRatios(ratios);
+                setIsLoaded(true);
+              } catch (e) {
+                console.error('[Reader] onLoadSuccess error:', e);
+                setIsLoaded(true);
+              }
 
               // Fill remaining ratios in background batches
               (async () => {
@@ -1084,8 +1121,7 @@ export default function App() {
               setRenderErrors((prev) => new Set(prev).add(_p));
               if (_p === pageNumber) setIsRestoring(false);
             }} 
-            onTextSelection={(text, x, y) => isTextSelectMode && setSelectedTextMenu({ text, x, y })} 
-            isTextSelectMode={isTextSelectMode} 
+            onTextSelection={(text, x, y) => setSelectedTextMenu({ text, x, y })} 
             onEpubLocationChange={setEpubCfi} 
             epubCfi={epubCfi} 
             themeStyles={themeStyles} 
@@ -1095,12 +1131,17 @@ export default function App() {
             isCaptureMode={isCaptureMode}
             onToggleReaderMode={toggleReaderMode}
             onCapture={async (base64) => {
+              console.log(`[Capture] onCapture triggered for ${fileName}`);
               setIsCaptureMode(false);
               showToast('Portada capturada, guardando...');
               try {
+                console.log(`[Capture] Creating thumbnail...`);
                 const { thumbnail, thumbHash } = await createThumbnail(base64);
+                console.log(`[Capture] Thumbnail created, length=${thumbnail.length}`);
                 await coverDB.saveCover(fileName, thumbnail);
+                console.log(`[Capture] Saved to coverDB`);
                 setCovers(prev => ({ ...prev, [fileName]: thumbnail }));
+                console.log(`[Capture] Updated covers state`);
                 markCoverAsSaved(fileName);
                 showToast('Portada actualizada');
 
@@ -1116,13 +1157,14 @@ export default function App() {
                   };
                   const currentMeta = enrichedMetadata[fileName] || { title: fileName.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
                   await updateBookMetadata(fileName, currentMeta.title, currentMeta.author, currentMeta.svg, coverSource);
+                  console.log(`[Capture] Metadata updated with coverSource`);
                 } catch (syncErr) {
                   console.error('[Capture Sync] Failed to sync captured cover thumbnail to cloud:', syncErr);
                 } finally {
                   setIsSyncing(false);
                 }
               } catch (e) {
-                console.error('Capture save error:', e);
+                console.error('[Capture] save error:', e);
                 showToast('Error al guardar portada');
               }
             }}
