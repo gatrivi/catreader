@@ -157,13 +157,19 @@ export function useLibrary({
             }
           }
 
-          const enriched = data.map((book: LibraryBook) => ({
-            ...book,
-            title: metadata[book.filename]?.title || book.title,
-            author: metadata[book.filename]?.author || '',
-            svg: metadata[book.filename]?.svg ?? book.svg,
-            coverSource: metadata[book.filename]?.coverSource || undefined
-          }));
+          const enriched = data.map((book: LibraryBook) => {
+            const meta = metadata[book.filename];
+            // If user has a custom cover source, suppress the old SVG so it doesn't flash
+            // before the real cover loads from IndexedDB.
+            const hasCustomCover = meta?.coverSource?.type === 'user-custom';
+            return {
+              ...book,
+              title: meta?.title || book.title,
+              author: meta?.author || '',
+              svg: hasCustomCover ? undefined : (meta?.svg ?? book.svg),
+              coverSource: meta?.coverSource || undefined
+            };
+          });
 
           const allBooks = [...enriched, ...customBooks];
           setLibrary(allBooks);

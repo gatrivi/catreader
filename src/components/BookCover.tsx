@@ -19,6 +19,9 @@ interface BookCoverProps {
     filename: string;
     type: string;
     svg?: string;
+    coverSource?: {
+      type: 'user-custom' | 'ai-generated' | 'openlibrary';
+    };
   };
   cover?: string;
   readingProgress?: number; // 0 to 1
@@ -188,10 +191,10 @@ export const BookCover: React.FC<BookCoverProps> = ({
                 {book.type}
               </div>
 
-              {svgDataUrl ? (
-                <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
-              ) : displayCover ? (
+              {displayCover ? (
                 <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+              ) : svgDataUrl && !book.coverSource ? (
+                <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
               ) : (
                 <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
                   <div className={cn(

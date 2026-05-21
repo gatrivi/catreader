@@ -652,15 +652,25 @@ export default function App() {
       let blob: Blob;
       if (cached && cached.size > 0) {
         blob = cached;
+        console.log(`[Reader] Using cached blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
       } else {
         if (cached && cached.size === 0) {
           console.warn(`[Reader] Cached blob for ${filename} is empty, refetching...`);
         }
         const baseUrl = import.meta.env.BASE_URL || '/';
         const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
-        const res = await fetch(`${booksDirPath}${filename}`);
+        const fetchUrl = `${booksDirPath}${filename}`;
+        console.log(`[Reader] Fetching blob from: ${fetchUrl}`);
+        const res = await fetch(fetchUrl);
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         blob = await res.blob();
+        console.log(`[Reader] Fetched blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
+        if (blob.size === 0) {
+          throw new Error('Fetched blob is empty (0 bytes)');
+        }
+        if (book.type === 'pdf' && !blob.type.includes('pdf')) {
+          console.warn(`[Reader] Fetched blob has unexpected type for PDF: ${blob.type}. This may be an HTML fallback.`);
+        }
         await coverDB.saveBookContent(filename, blob);
       }
       const url = URL.createObjectURL(blob);
@@ -682,7 +692,13 @@ export default function App() {
         setScrollRatio(0);
         if (forceQuadrant) setQuadrant(forceQuadrant);
       } else {
-        await loadProgress(filename);
+        const progress = await loadProgress(filename);
+        if (!progress) {
+          // Firestore/localStorage miss: reset to page 1 to avoid carrying over
+          // the pageNumber from a previously-read book.
+          setPageNumber(1);
+          setScrollRatio(0);
+        }
       }
       
       // Safety timeout for the "Restoring position" overlay
