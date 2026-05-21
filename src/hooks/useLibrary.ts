@@ -112,7 +112,19 @@ export function useLibrary({
           try {
             const cloudMetadata = await syncService.loadMetadata();
             if (cloudMetadata) {
-              metadata = { ...metadata, ...cloudMetadata };
+              for (const [key, cloudBookMeta] of Object.entries(cloudMetadata)) {
+                const localBookMeta = metadata[key];
+                if (localBookMeta) {
+                  metadata[key] = {
+                    ...localBookMeta,
+                    ...cloudBookMeta,
+                    coverSource: cloudBookMeta.coverSource || localBookMeta.coverSource,
+                    svg: cloudBookMeta.svg || localBookMeta.svg
+                  };
+                } else {
+                  metadata[key] = cloudBookMeta;
+                }
+              }
             }
           } catch (cloudErr) {}
 
@@ -149,7 +161,7 @@ export function useLibrary({
             ...book,
             title: metadata[book.filename]?.title || book.title,
             author: metadata[book.filename]?.author || '',
-            svg: metadata[book.filename]?.svg,
+            svg: metadata[book.filename]?.svg ?? book.svg,
             coverSource: metadata[book.filename]?.coverSource || undefined
           }));
 
@@ -309,7 +321,7 @@ export function useLibrary({
     let updatedCount = 0;
     
     try {
-      const newMetadata = { ...enrichedMetadata };
+      const newMetadata = { ...enrichedMetadataRef.current };
       for (const book of library) {
         // Skip if already has clear title/author
         if (newMetadata[book.filename]?.title && newMetadata[book.filename]?.author && 
@@ -317,7 +329,7 @@ export function useLibrary({
 
         const enriched = await enrichBookWithGemini(book);
         if (enriched) {
-          newMetadata[book.filename] = enriched;
+          newMetadata[book.filename] = { ...newMetadata[book.filename], ...enriched };
           updatedCount++;
         }
       }
@@ -519,7 +531,7 @@ export function useLibrary({
   const enrichWithOpenLibrary = async () => {
     if (library.length === 0) return;
     setIsSyncing(true);
-    const newMetadata = { ...enrichedMetadata };
+    const newMetadata = { ...enrichedMetadataRef.current };
     let changed = false;
 
     for (const book of library) {
@@ -531,7 +543,7 @@ export function useLibrary({
         const data = await res.json();
         if (data.docs?.[0]) {
           const doc = data.docs[0];
-          newMetadata[book.filename] = { title: doc.title || book.title, author: doc.author_name?.[0] || book.author || '' };
+          newMetadata[book.filename] = { ...newMetadata[book.filename], title: doc.title || book.title, author: doc.author_name?.[0] || book.author || '' };
           changed = true;
         }
       } catch (err) {}
@@ -633,6 +645,7 @@ export function useLibrary({
   return {
     library, setLibrary,
     enrichedMetadata,
+    enrichedMetadataRef,
     covers, setCovers,
     isLoadingLibrary,
     enrichmentProgress,

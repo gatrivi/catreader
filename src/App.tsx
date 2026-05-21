@@ -127,7 +127,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.8.1';
+  const APP_VERSION = 'v2.8.2';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -138,6 +138,7 @@ export default function App() {
   const {
     library, setLibrary,
     enrichedMetadata,
+    enrichedMetadataRef,
     covers, setCovers,
     isLoadingLibrary,
     enrichmentProgress,
@@ -450,10 +451,12 @@ export default function App() {
             const enriched = await enrichBookWithGemini(newBook);
             if (enriched) {
               setLibrary(prev => prev.map(b => b.filename === file.name ? { ...b, ...enriched } : b));
-              const newMeta = { ...enrichedMetadata, [file.name]: enriched };
+              const currentMeta = enrichedMetadataRef.current[file.name] || {};
+              const merged = { ...currentMeta, ...enriched };
+              const newMeta = { ...enrichedMetadataRef.current, [file.name]: merged };
               localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMeta));
               try {
-                await coverDB.saveBookMetadata(file.name, enriched);
+                await coverDB.saveBookMetadata(file.name, merged);
               } catch (dbErr) {}
               await syncService.saveMetadata(newMeta);
             }
