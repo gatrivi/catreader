@@ -4,7 +4,7 @@
  */
 
 import { db, ensureAuth, storage } from '../firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, writeBatch, deleteDoc } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { authService } from './authService';
 
@@ -74,6 +74,22 @@ export const syncService = {
     } catch (err) {
       console.error('Firestore Load Error:', err);
       return null;
+    }
+  },
+
+  async deleteBook(bookId: string) {
+    const uid = await getUserId();
+    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'users', uid, 'progress', bookKey));
+      // Note: we don't delete the cover blob from Storage to avoid accidental data loss
+      // and because Storage blobs are cheap. Metadata doc is cleaned up.
+      await batch.commit();
+      return true;
+    } catch (err) {
+      console.error('Firestore Delete Error:', err);
+      return false;
     }
   },
 

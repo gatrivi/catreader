@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, RefreshCw, Search } from 'lucide-react';
+import { X, Upload, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -19,6 +19,7 @@ interface EditModalProps {
   onSave: (title: string, author: string) => void;
   onUploadCover: (file: File) => void;
   onRegenerateCover: (title: string, author: string, forceAI?: boolean) => void;
+  onDelete?: () => void;
   isSyncing: boolean;
 }
 
@@ -28,6 +29,7 @@ export const EditModal: React.FC<EditModalProps> = ({
   onSave, 
   onUploadCover, 
   onRegenerateCover,
+  onDelete,
   isSyncing 
 }) => {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -136,6 +138,20 @@ export const EditModal: React.FC<EditModalProps> = ({
           >
             Guardar Cambios
           </button>
+
+          {onDelete && (
+            <button 
+              onClick={() => {
+                if (confirm('¿Eliminar este libro de tu biblioteca?')) {
+                  onDelete();
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-transparent hover:bg-red-500/10 text-red-500 hover:text-red-400 font-bold py-3 rounded-xl border border-red-500/20 transition-all mt-3"
+            >
+              <Trash2 size={16} />
+              Eliminar Libro
+            </button>
+          )}
         </div>
       </div>
     </div>

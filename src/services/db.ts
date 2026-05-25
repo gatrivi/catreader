@@ -186,6 +186,55 @@ export const coverDB = {
       };
       request.onerror = () => reject(request.error);
     });
+  },
+
+  async deleteCover(filename: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.storeName, 'readwrite');
+      tx.objectStore(this.storeName).delete(filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async deleteBookContent(filename: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.contentStore, 'readwrite');
+      tx.objectStore(this.contentStore).delete(filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async deleteGhostText(filename: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.ghostStore, 'readwrite');
+      tx.objectStore(this.ghostStore).delete(filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async deleteBookMetadata(filename: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.metadataStore, 'readwrite');
+      tx.objectStore(this.metadataStore).delete(filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async deleteBook(filename: string): Promise<void> {
+    await Promise.all([
+      this.deleteCover(filename).catch(() => {}),
+      this.deleteBookContent(filename).catch(() => {}),
+      this.deleteGhostText(filename).catch(() => {}),
+      this.deleteBookMetadata(filename).catch(() => {})
+    ]);
   }
 };
 

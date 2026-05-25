@@ -80,7 +80,13 @@ export function useLibrary({
       if (!res.ok) throw new Error(`books.json not found (${res.status})`);
 
       const data = await res.json();
-      setLibrary(data);
+      
+      // Filter out user-deleted books (static books they chose to hide)
+      const deletedRaw = localStorage.getItem('catreader_deleted_books');
+      const deletedSet = new Set(deletedRaw ? JSON.parse(deletedRaw) : []);
+      const visibleData = data.filter((b: LibraryBook) => !deletedSet.has(b.filename));
+      
+      setLibrary(visibleData);
       setIsLoadingLibrary(false);
       setGlobalStatus(null);
 
@@ -521,6 +527,55 @@ export function useLibrary({
     }
   };
 
+  const removeBook = useCallback(async (filename: string) => {
+    console.log(`[Library] Removing book: ${filename}`);
+    
+    // 1. Remove from local state immediately
+    setLibrary(prev => prev.filter(b => b.filename !== filename));
+    
+    // 2. Track deletion so static books don't reappear on refresh
+    const deletedRaw = localStorage.getItem('catreader_deleted_books');
+    const deletedSet = new Set(deletedRaw ? JSON.parse(deletedRaw) : []);
+    deletedSet.add(filename);
+    localStorage.setItem('catreader_deleted_books', JSON.stringify([...deletedSet]));
+    
+    // 3. Clear localStorage metadata and progress
+    const metaKey = 'catreader_enriched_metadata';
+    const storedMeta = localStorage.getItem(metaKey);
+    if (storedMeta) {
+      try {
+        const parsed = JSON.parse(storedMeta);
+        delete parsed[filename];
+        localStorage.setItem(metaKey, JSON.stringify(parsed));
+      } catch (e) {}
+    }
+    localStorage.removeItem(`catreader_progress_${filename}`);
+    
+    // 4. Remove from IndexedDB
+    try {
+      await coverDB.deleteBook(filename);
+      setCovers(prev => {
+        const next = { ...prev };
+        delete next[filename];
+        return next;
+      });
+      setEnrichedMetadata(prev => {
+        const next = { ...prev };
+        delete next[filename];
+        return next;
+      });
+    } catch (e) {
+      console.error('[Library] Failed to delete from IndexedDB:', e);
+    }
+    
+    // 5. Remove from cloud (best effort)
+    try {
+      await syncService.deleteBook(filename);
+    } catch (e) {}
+    
+    showToast('Libro eliminado');
+  }, [showToast]);
+
   const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string, coverSource?: LibraryBook['coverSource']) => {
     console.log(`[Metadata] Updating ${filename}: title="${title}" author="${author}" hasCoverSource=${!!coverSource}`);
     const existingSource = coverSource || enrichedMetadataRef.current[filename]?.coverSource;
@@ -667,6 +722,7 @@ export function useLibrary({
     isLoadingLibrary,
     enrichmentProgress,
     fetchLibrary,
+    removeBook,
     enrichBookWithGemini,
     updateBookMetadata,
     handleCoverUpload,

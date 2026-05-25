@@ -67,12 +67,17 @@ export function useShelves(library: Array<{ id: string }>) {
   useEffect(() => {
     if (!initialized || library.length === 0 || shelves.length === 0) return;
 
+    const libraryIds = new Set(library.map(b => b.id));
     const assignedIds = new Set(shelves.flatMap(s => s.bookIds));
     const unassigned = library.filter(b => !assignedIds.has(b.id));
+    const hasStale = shelves.some(s => s.bookIds.some(id => !libraryIds.has(id)));
 
-    if (unassigned.length > 0) {
+    if (unassigned.length > 0 || hasStale) {
       setShelves(prev => {
-        const next = prev.map(s => ({ ...s, bookIds: [...s.bookIds] }));
+        const next = prev.map(s => ({
+          ...s,
+          bookIds: s.bookIds.filter(id => libraryIds.has(id))
+        }));
         
         // Append new books to the emptiest shelves to avoid shifting existing books
         unassigned.forEach(book => {
