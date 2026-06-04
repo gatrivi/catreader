@@ -19,7 +19,6 @@ import {
   Maximize2,
   Pencil,
   Crop,
-  Check,
   BookText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -81,6 +80,7 @@ export default function App() {
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
   const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userInitiatedOpenRef = useRef(false);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
     if (storedText.startsWith('[')) {
@@ -225,9 +225,9 @@ export default function App() {
   }, [numPages, pageNumber]);
 
   useEffect(() => {
-    if (fileUrl && (!isLoaded || isRestoring)) {
-      // Delay increased to 1200ms so cached/fast loads never flash the overlay
-      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 1200);
+    if (fileUrl && userInitiatedOpenRef.current && (!isLoaded || isRestoring)) {
+      // Only show blocking overlay for user-opened books that are still slow after 2.5s
+      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 2500);
     } else {
       setShowLoading(false);
     }
@@ -612,8 +612,15 @@ export default function App() {
 
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const openFromLibrary = async (book: LibraryBook, forcePage?: number, forceQuadrant?: number, skipHistory = false) => {
+  const openFromLibrary = async (
+    book: LibraryBook,
+    forcePage?: number,
+    forceQuadrant?: number,
+    skipHistory = false,
+    userInitiated = false
+  ) => {
     const filename = book.filename;
+    userInitiatedOpenRef.current = userInitiated;
     
     // If book is already open, just jump to page/quadrant if specified
     if (filename === fileName && fileUrl) {
@@ -1012,39 +1019,15 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 bg-stone-950 flex flex-col items-center justify-center gap-6"
+            className="fixed inset-0 z-50 bg-stone-950/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4"
           >
-            <Loader2 className="animate-spin text-amber-500" size={40} />
-            <div className="flex flex-col gap-2 text-xs font-mono text-stone-400">
-              <div className="flex items-center gap-2">
-                <Check size={14} className="text-emerald-500" />
-                <span className="text-stone-300">Libro descargado</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {isLoaded ? (
-                  <Check size={14} className="text-emerald-500" />
-                ) : (
-                  <Loader2 size={14} className="animate-spin text-amber-500" />
-                )}
-                <span className={isLoaded ? 'text-stone-300' : 'text-stone-200'}>
-                  {isLoaded ? 'Páginas listas' : 'Preparando páginas…'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {isRestoring ? (
-                  <Loader2 size={14} className="animate-spin text-amber-500" />
-                ) : (
-                  <Check size={14} className="text-emerald-500" />
-                )}
-                <span className={isRestoring ? 'text-stone-200' : 'text-stone-300'}>
-                  {isRestoring ? 'Restaurando posición…' : 'Posición restaurada'}
-                </span>
-              </div>
-            </div>
-            
+            <Loader2 className="animate-spin text-amber-500" size={36} />
+            <p className="text-sm text-stone-300 font-medium">
+              {isRestoring ? 'Restaurando tu lectura…' : 'Preparando páginas…'}
+            </p>
             <button 
               onClick={() => closeBook()}
-              className="mt-4 px-6 py-2 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-all"
+              className="mt-2 px-6 py-2 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-all"
             >
               Cancelar
             </button>
@@ -1058,7 +1041,7 @@ export default function App() {
             library={library} 
             covers={covers} 
             isLoading={isLoadingLibrary} 
-            onOpenBook={openFromLibrary} 
+            onOpenBook={(book) => openFromLibrary(book, undefined, undefined, false, true)} 
             onEditBook={setEditingBook} 
             onGoogleDrive={handleGoogleDrive} 
             onFileUpload={onFileChange} 
@@ -1230,7 +1213,7 @@ export default function App() {
 
       <AnimatePresence>{toast.visible && (<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-stone-900/90 backdrop-blur-md text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-white/10">{toast.message}</motion.div>)}</AnimatePresence>
 
-      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} isSyncing={isSyncing} />
+      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} onPasteError={(msg) => showToast(msg)} isSyncing={isSyncing} />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { X, Upload, RefreshCw, Search, Trash2, ClipboardPaste } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -21,6 +21,7 @@ interface EditModalProps {
   onRegenerateCover: (title: string, author: string, forceAI?: boolean) => void;
   onDelete?: () => void;
   isSyncing: boolean;
+  onPasteError?: (message: string) => void;
 }
 
 export const EditModal: React.FC<EditModalProps> = ({ 
@@ -30,7 +31,8 @@ export const EditModal: React.FC<EditModalProps> = ({
   onUploadCover, 
   onRegenerateCover,
   onDelete,
-  isSyncing 
+  isSyncing,
+  onPasteError
 }) => {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -50,6 +52,51 @@ export const EditModal: React.FC<EditModalProps> = ({
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = null;
     }
+  }, [book?.filename]);
+
+  const applyPastedImage = (file: File) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const url = URL.createObjectURL(file);
+    previewUrlRef.current = url;
+    setCoverPreview(url);
+    onUploadCover(file);
+  };
+
+  const pasteCoverFromClipboard = async () => {
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            applyPastedImage(new File([blob], 'portada.png', { type: imageType }));
+            return;
+          }
+        }
+      }
+      onPasteError?.('No hay imagen en el portapapeles');
+    } catch {
+      onPasteError?.('Permite acceso al portapapeles o usa Ctrl+V');
+    }
+  };
+
+  useEffect(() => {
+    if (!book) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (blob) applyPastedImage(blob);
+          return;
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
   }, [book?.filename]);
 
   if (!book) return null;
@@ -89,7 +136,11 @@ export const EditModal: React.FC<EditModalProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <p className="text-[10px] text-stone-500 leading-relaxed">
+            En el lector, selecciona texto para asignar título o autor. Pega una imagen con Ctrl+V o el botón Pegar.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <label className="flex flex-col items-center justify-center gap-2 p-3 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl cursor-pointer transition-all group relative overflow-hidden">
               {coverPreview ? (
                 <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
@@ -129,6 +180,15 @@ export const EditModal: React.FC<EditModalProps> = ({
             >
               <Search size={18} className={cn("text-stone-400 group-hover:text-emerald-400", isSyncing && "animate-spin")} />
               <span className="text-[9px] font-bold uppercase tracking-tighter text-stone-500">Buscar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={pasteCoverFromClipboard}
+              className="flex flex-col items-center justify-center gap-2 p-3 bg-stone-800 hover:bg-stone-700 border border-white/5 rounded-xl transition-all group"
+            >
+              <ClipboardPaste size={18} className="text-stone-400 group-hover:text-sky-400" />
+              <span className="text-[9px] font-bold uppercase tracking-tighter text-stone-500">Pegar</span>
             </button>
           </div>
 

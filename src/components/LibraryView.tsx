@@ -192,6 +192,12 @@ export const LibraryView = ({
 
   const [rackDirection, setRackDirection] = useState<'next' | 'prev'>('next');
 
+  const goToRack = (idx: number) => {
+    if (idx === currentRack || idx < 0 || idx >= shelves.length) return;
+    setRackDirection(idx > currentRack ? 'next' : 'prev');
+    setCurrentRack(idx);
+  };
+
   const flipRack = (dir: 'next' | 'prev') => {
     setRackDirection(dir);
     if (dir === 'next' && currentRack < shelves.length - 1) {
@@ -252,39 +258,7 @@ export const LibraryView = ({
     setDragState(null);
   };
 
-  const lastWheelTime = useRef(0);
   const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (searchQuery) return;
-
-    // Find the scrollable container containing the active shelf grid
-    const scrollContainer = e.currentTarget.querySelector('.overflow-y-auto');
-    if (scrollContainer) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-      
-      // If there is vertical scrollable content, let it scroll naturally
-      if (scrollHeight > clientHeight) {
-        // Scrolling down: only flip to next shelf if we've reached the very bottom (with a 5px buffer)
-        if (e.deltaY > 0 && scrollTop + clientHeight < scrollHeight - 5) {
-          return;
-        }
-        // Scrolling up: only flip to previous shelf if we've reached the very top (with a 5px buffer)
-        if (e.deltaY < 0 && scrollTop > 5) {
-          return;
-        }
-      }
-    }
-
-    const now = Date.now();
-    if (now - lastWheelTime.current < 800) return; // Cooldown to prevent rapid flipping
-    
-    if (Math.abs(e.deltaY) > 80) {
-      if (e.deltaY > 0) flipRack('next');
-      else flipRack('prev');
-      lastWheelTime.current = now;
-    }
-  };
 
   const bgStyle = !isSimplified
     ? (wallpaper === 'custom' && customWallpaper
@@ -302,7 +276,6 @@ export const LibraryView = ({
         backgroundAttachment: 'fixed',
         backgroundRepeat: 'no-repeat'
       }}
-      onWheel={handleWheel}
     >
       {/* Ambient Lighting & Vignette Overlay */}
       <AnimatePresence>
@@ -586,29 +559,29 @@ export const LibraryView = ({
             </div>
           </div>
         ) : (
-          <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden">
+          <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden min-h-0">
             {/* Carousel Container */}
             <motion.div 
-              className="flex w-full h-full cursor-grab active:cursor-grabbing"
+              className="flex w-full h-full cursor-grab active:cursor-grabbing min-h-0"
               drag="x"
               dragConstraints={{ left: 0, right: 0 }}
               onDragEnd={(_, info) => {
                 const threshold = 50;
                 if (info.offset.x < -threshold && currentRack < shelves.length - 1) {
-                  setCurrentRack(prev => prev + 1);
+                  flipRack('next');
                 } else if (info.offset.x > threshold && currentRack > 0) {
-                  setCurrentRack(prev => prev - 1);
+                  flipRack('prev');
                 }
               }}
             >
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={currentRack}
-                  initial={{ x: rackDirection === 'next' ? 300 : -300, opacity: 0 }}
+                  initial={{ x: rackDirection === 'next' ? '100%' : '-100%', opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: rackDirection === 'next' ? -300 : 300, opacity: 0 }}
+                  exit={{ x: rackDirection === 'next' ? '-100%' : '100%', opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-start px-2 sm:px-4 pt-4 sm:pt-6 pb-4 overflow-y-auto scrollbar-none"
+                  className="absolute inset-0 flex flex-col items-center justify-center px-2 sm:px-4 pt-2 pb-20 overflow-hidden"
                 >
                   <AnimatePresence>
                     {dragState && (
@@ -623,15 +596,18 @@ export const LibraryView = ({
                     )}
                   </AnimatePresence>
                   {/* Rack Header */}
-                  <div className="mb-8 flex items-center gap-4">
+                  <div className="mb-2 sm:mb-3 flex items-center gap-4 shrink-0">
                     <ShelfTitle 
                       title={shelves[currentRack].title} 
                       onChange={(title) => onUpdateShelfTitle(shelves[currentRack].id, title)}
                     />
                   </div>
 
-                  {/* Flow Grid (replaces strict 4x4 for better responsiveness) */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-3 sm:gap-x-3 sm:gap-y-4 w-full items-start justify-items-center">
+                  {/* Strict 4×4 grid — sized to ~80% of viewport height */}
+                  <div
+                    className="grid grid-cols-4 grid-rows-4 gap-1.5 sm:gap-2 w-full max-w-5xl mx-auto shrink min-h-0"
+                    style={{ height: 'min(80vh, calc(100dvh - 9rem))' }}
+                  >
                     {Array.from({ length: 16 }).map((_, idx) => {
                       const bookId = shelves[currentRack].bookIds[idx];
                       const book = bookId ? getBook(bookId) : null;
@@ -640,8 +616,8 @@ export const LibraryView = ({
                         <div 
                           key={`slot-${currentRack}-${idx}`}
                           className={cn(
-                            "relative w-full h-full flex flex-col items-center justify-center min-h-0 transition-all duration-300",
-                            !book && "border-2 border-dashed border-white/5 rounded-2xl opacity-10 hover:opacity-30 hover:bg-white/5",
+                            "relative flex flex-col items-center justify-end min-h-0 min-w-0 transition-all duration-300",
+                            !book && "border-2 border-dashed border-white/5 rounded-lg opacity-10 hover:opacity-30 hover:bg-white/5",
                             dragOverBook?.shelfId === shelves[currentRack].id && dragOverBook?.index === idx && "ring-2 ring-amber-500 bg-amber-500/10 opacity-100 scale-105 z-10"
                           )}
                           onDragOver={(e) => handleBookDragOver(e, shelves[currentRack].id, idx)}
@@ -653,7 +629,7 @@ export const LibraryView = ({
                               onDragStart={(e) => handleDragStart(e, book.id, shelves[currentRack].id, idx)}
                               onDragEnd={handleDragEnd}
                               className={cn(
-                                "w-full max-w-[100px] sm:max-w-[120px] lg:max-w-[140px] transition-all cursor-grab active:cursor-grabbing",
+                                "w-full h-full max-h-full flex flex-col items-center justify-end min-h-0 transition-all cursor-grab active:cursor-grabbing",
                                 dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
                             >
@@ -669,12 +645,13 @@ export const LibraryView = ({
                                 isIdentifying={identifyingBookId === book.id}
                                 isSavedInDb={savedBookCovers?.[book.filename]}
                                 showLabels={showCoverLabels}
+                                fillHeight
                               />
-                              {!isSimplified && <ShelfLedge />}
+                              {!isSimplified && <ShelfLedge compact />}
 
                             </div>
                           ) : (
-                            <div className="w-full h-full" />
+                            <div className="w-full flex-1 min-h-[2rem]" />
                           )}
                         </div>
                       );
@@ -729,7 +706,7 @@ export const LibraryView = ({
                     {shelves.map((shelf, idx) => (
                       <button
                         key={`dot-${idx}`}
-                        onClick={() => setCurrentRack(idx)}
+                        onClick={() => goToRack(idx)}
                         className={cn(
                           "relative w-4 h-4 flex items-center justify-center transition-all group/dot",
                           dragState && "hover:scale-150 active:scale-125"
@@ -746,7 +723,7 @@ export const LibraryView = ({
                     ))}
                     {onAddShelf && (
                       <button
-                        onClick={() => { onAddShelf(); setCurrentRack(shelves.length); }}
+                        onClick={() => { onAddShelf(); goToRack(shelves.length); }}
                         className="w-4 h-4 flex items-center justify-center text-stone-500 hover:text-amber-500 transition-all"
                         title="Añadir estante"
                       >
@@ -755,7 +732,7 @@ export const LibraryView = ({
                     )}
                     {onRemoveShelf && shelves.length > 1 && (
                       <button
-                        onClick={() => { onRemoveShelf(shelves[currentRack].id); setCurrentRack(Math.max(0, currentRack - 1)); }}
+                        onClick={() => { onRemoveShelf(shelves[currentRack].id); goToRack(Math.max(0, currentRack - 1)); }}
                         className="w-4 h-4 flex items-center justify-center text-stone-500 hover:text-red-500 transition-all"
                         title="Eliminar estante actual"
                       >
@@ -847,15 +824,12 @@ export const LibraryView = ({
   );
 };
 
-function ShelfLedge() {
+function ShelfLedge({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="relative h-5 w-full mt-[-6px] z-0 pointer-events-none">
-      {/* The main plank top surface */}
-      <div className="absolute inset-x-[-4px] top-0 h-3 bg-gradient-to-b from-[#3d2b1f] to-[#2a1d13] rounded-sm shadow-xl border-t border-white/10" />
-      {/* The plank front edge (depth) */}
-      <div className="absolute inset-x-[-4px] top-3 h-2 bg-[#1a110b] rounded-b-md shadow-2xl border-t border-black/40" />
-      {/* Decorative shadow under the ledge */}
-      <div className="absolute inset-x-[-6px] top-5 h-6 bg-black/40 blur-lg rounded-full" />
+    <div className={cn("relative w-full z-0 pointer-events-none shrink-0", compact ? "h-2 mt-[-2px]" : "h-5 mt-[-6px]")}>
+      <div className={cn("absolute inset-x-[-2px] top-0 bg-gradient-to-b from-[#3d2b1f] to-[#2a1d13] rounded-sm shadow-xl border-t border-white/10", compact ? "h-1.5" : "h-3 inset-x-[-4px]")} />
+      <div className={cn("absolute inset-x-[-2px] bg-[#1a110b] rounded-b-md shadow-2xl border-t border-black/40", compact ? "top-1.5 h-1" : "top-3 h-2 inset-x-[-4px]")} />
+      {!compact && <div className="absolute inset-x-[-6px] top-5 h-6 bg-black/40 blur-lg rounded-full" />}
     </div>
   );
 }
