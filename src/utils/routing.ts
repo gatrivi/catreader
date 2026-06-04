@@ -1,3 +1,9 @@
+/** Root path for the library view (respects Vite base URL). */
+export function getLibraryPath(): string {
+  const base = import.meta.env.BASE_URL || '/';
+  return base.endsWith('/') ? base : `${base}/`;
+}
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()
