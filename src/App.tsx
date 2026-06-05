@@ -45,6 +45,7 @@ import { useLibrary, LibraryBook } from './hooks/useLibrary';
 import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
 import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath } from './utils/routing';
+import { displayBookTitle } from './components/BookCover';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
 
@@ -100,11 +101,9 @@ export default function App() {
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isReaderMode, setIsReaderMode] = useState(false);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
-  const [showLoading, setShowLoading] = useState(false);
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
-  const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const userInitiatedOpenRef = useRef(false);
+  const restoreTargetPageRef = useRef<number | null>(null);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
     if (storedText.startsWith('[')) {
@@ -153,7 +152,6 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [identifyingBookId, setIdentifyingBookId] = useState<string | null>(null);
-  const [isOpening, setIsOpening] = useState(false);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [dailyHighlight, setDailyHighlight] = useState<Highlight | null>(null);
   const [quadrant, setQuadrant] = useState<number>(1);
@@ -247,18 +245,6 @@ export default function App() {
       setIsRestoring(false);
     }
   }, [numPages, pageNumber]);
-
-  useEffect(() => {
-    if (fileUrl && userInitiatedOpenRef.current && (!isLoaded || isRestoring)) {
-      // Only show blocking overlay for user-opened books that are still slow after 2.5s
-      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 2500);
-    } else {
-      setShowLoading(false);
-    }
-    return () => {
-      if (loadingDelayRef.current) clearTimeout(loadingDelayRef.current);
-    };
-  }, [fileUrl, isLoaded, isRestoring]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -405,14 +391,19 @@ export default function App() {
     };
 
     const handleScrollActivity = () => scheduleSave();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') saveProgressRef.current();
+    };
     const container = containerRef.current;
     container.addEventListener('scroll', handleScrollActivity, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibility);
 
     scheduleSave();
     maxIntervalTimer = setInterval(() => saveProgressRef.current(), 60000);
 
     return () => {
       container.removeEventListener('scroll', handleScrollActivity);
+      document.removeEventListener('visibilitychange', handleVisibility);
       clearTimeout(inactivityTimer);
       clearInterval(maxIntervalTimer);
     };
@@ -611,18 +602,21 @@ export default function App() {
 
   const closeBook = (skipHistory = false) => {
     if (!fileUrl) return;
+    // Flush progress before tearing down reader state
+    if (isLoaded && fileName) {
+      saveProgressRef.current?.();
+    }
+    restoreTargetPageRef.current = null;
     if (fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
     if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
-    if (loadingDelayRef.current) clearTimeout(loadingDelayRef.current);
     setFileUrl(null);
     setFileName('');
     setNumPages(0);
     setIsLoaded(false);
     setIsRestoring(false);
-    setShowLoading(false);
     setTextContent(null);
     setIsReaderMode(false);
     setQuadrant(1);
@@ -644,11 +638,9 @@ export default function App() {
     book: LibraryBook,
     forcePage?: number,
     forceQuadrant?: number,
-    skipHistory = false,
-    userInitiated = false
+    skipHistory = false
   ) => {
     const filename = book.filename;
-    userInitiatedOpenRef.current = userInitiated;
     
     // If book is already open, just jump to page/quadrant if specified
     if (filename === fileName && fileUrl) {
@@ -656,8 +648,6 @@ export default function App() {
       return;
     }
 
-    setIsOpening(true);
-    setTimeout(() => setIsOpening(false), 1500); // Safety fallback
     console.log(`[Reader] Opening book: ${filename}`);
     
     // Revoke previous URL if opening a different book
@@ -667,12 +657,13 @@ export default function App() {
 
     setFileName(filename);
     setFileType(book.type);
+    restoreTargetPageRef.current = null;
+    setPageNumber(1);
+    setScrollRatio(0);
     
     // Clear previous timeouts
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
     if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
-    if (loadingDelayRef.current) clearTimeout(loadingDelayRef.current);
-
     const shelf = shelves.find(s => s.bookIds.includes(book.id));
     const shelfTitle = shelf?.title || 'library';
     const bookPath = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
@@ -685,58 +676,63 @@ export default function App() {
       pushReaderHistory(bookPath, filename);
     }
     localStorage.setItem('catreader_last_book', filename);
-    try {
+
+    const progressPromise = forcePage
+      ? Promise.resolve(null)
+      : loadProgress(filename);
+
+    const blobPromise = (async (): Promise<Blob> => {
       const cached = await coverDB.getBookContent(filename);
-      let blob: Blob;
       if (cached && cached.size > 0) {
-        blob = cached;
-        console.log(`[Reader] Using cached blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
-      } else {
-        if (cached && cached.size === 0) {
-          console.warn(`[Reader] Cached blob for ${filename} is empty, refetching...`);
-        }
-        const baseUrl = import.meta.env.BASE_URL || '/';
-        const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
-        const fetchUrl = `${booksDirPath}${filename}`;
-        console.log(`[Reader] Fetching blob from: ${fetchUrl}`);
-        const res = await fetch(fetchUrl);
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        blob = await res.blob();
-        console.log(`[Reader] Fetched blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
-        if (blob.size === 0) {
-          throw new Error('Fetched blob is empty (0 bytes)');
-        }
-        if (book.type === 'pdf' && !blob.type.includes('pdf')) {
-          console.warn(`[Reader] Fetched blob has unexpected type for PDF: ${blob.type}. This may be an HTML fallback.`);
-        }
-        await coverDB.saveBookContent(filename, blob);
+        console.log(`[Reader] Using cached blob for ${filename}: ${cached.size} bytes, type=${cached.type}`);
+        return cached;
       }
+      if (cached && cached.size === 0) {
+        console.warn(`[Reader] Cached blob for ${filename} is empty, refetching...`);
+      }
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
+      const fetchUrl = `${booksDirPath}${filename}`;
+      console.log(`[Reader] Fetching blob from: ${fetchUrl}`);
+      const res = await fetch(fetchUrl);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const blob = await res.blob();
+      console.log(`[Reader] Fetched blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
+      if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
+      if (book.type === 'pdf' && !blob.type.includes('pdf')) {
+        console.warn(`[Reader] Fetched blob has unexpected type for PDF: ${blob.type}. This may be an HTML fallback.`);
+      }
+      coverDB.saveBookContent(filename, blob).catch(() => {});
+      return blob;
+    })();
+
+    try {
+      const [blob, progress] = await Promise.all([blobPromise, progressPromise]);
       const url = URL.createObjectURL(blob);
       setFileUrl(url);
       if (book.type === 'txt') {
         const text = await blob.text();
         setTextContent([text]);
         setNumPages(1);
-        await coverDB.saveGhostText(filename, text);
-        await syncService.saveGhostText(filename, text);
+        coverDB.saveGhostText(filename, text).catch(() => {});
+        syncService.saveGhostText(filename, text).catch(() => {});
       } else if (book.type === 'epub') {
         setTextContent(null);
       } else {
         setTextContent(null);
-        // Ghost text is now extracted on-demand when reader mode is toggled
       }
+
       if (forcePage) {
+        restoreTargetPageRef.current = forcePage;
         setPageNumber(forcePage);
         setScrollRatio(0);
         if (forceQuadrant) setQuadrant(forceQuadrant);
+      } else if (progress?.page && progress.page > 1) {
+        restoreTargetPageRef.current = progress.page;
       } else {
-        const progress = await loadProgress(filename);
-        if (!progress) {
-          // Firestore/localStorage miss: reset to page 1 to avoid carrying over
-          // the pageNumber from a previously-read book.
-          setPageNumber(1);
-          setScrollRatio(0);
-        }
+        restoreTargetPageRef.current = null;
+        setPageNumber(1);
+        setScrollRatio(0);
       }
       
       // Safety timeout for the "Restoring position" overlay
@@ -784,15 +780,8 @@ export default function App() {
         if (book) {
           openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
         }
-      } else {
-        const lastBookId = localStorage.getItem('catreader_last_book');
-        if (lastBookId) {
-          const book = library.find(b => b.filename === lastBookId);
-          if (book) {
-            openFromLibrary(book, undefined, undefined, true);
-          }
-        }
       }
+      // Land on gallery — user picks a book (no auto-resume ambush)
     }
   }, [library, fileUrl, editingBook]);
 
@@ -860,7 +849,7 @@ export default function App() {
     if (!container || !fileUrl) return;
 
     const observer = new IntersectionObserver((entries) => {
-      if (isRestoring) return;
+      if (isRestoring || restoreTargetPageRef.current !== null) return;
       let bestPage = pageNumber, bestRatio = -1;
       entries.forEach((entry) => {
         if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
@@ -901,38 +890,6 @@ export default function App() {
   return (
     <div className={cn("fixed inset-0 overflow-hidden flex flex-col transition-colors duration-500", themeStyles[theme])} onMouseMove={resetUITimer} onTouchStart={resetUITimer}>
       <button onClick={() => setShowDiagnostics(true)} className="fixed top-2 right-4 z-40 text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help">{APP_VERSION}</button>
-
-      <AnimatePresence>
-        {isOpening && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onAnimationComplete={() => setTimeout(() => setIsOpening(false), 800)}
-            className="fixed inset-0 z-[100] bg-stone-950 flex items-center justify-center perspective-1000"
-          >
-            <motion.div 
-              initial={{ rotateY: 0, scale: 0.8, opacity: 0 }}
-              animate={{ rotateY: -180, scale: 1.2, opacity: 1 }}
-              transition={{ duration: 0.8, ease: "easeInOut" }}
-              className="w-44 h-64 bg-[#f4ecd8] rounded-r-md border-l-8 border-[#8b5a2b] shadow-2xl relative preserve-3d"
-            >
-              {/* Cover Face */}
-              <div className="absolute inset-0 backface-hidden flex items-center justify-center p-4 text-center">
-                <div className="font-serif font-bold text-[#5b4636] text-xs">Abriendo libro...</div>
-              </div>
-              {/* Inside Face (Page) */}
-              <div className="absolute inset-0 backface-hidden rotate-y-180 bg-white flex items-center justify-center p-4">
-                 <div className="w-full h-full border-2 border-stone-100 flex flex-col gap-2 p-2">
-                    <div className="h-2 w-3/4 bg-stone-100 rounded" />
-                    <div className="h-2 w-full bg-stone-50 rounded" />
-                    <div className="h-2 w-5/6 bg-stone-100 rounded" />
-                 </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>{showDiagnostics && (
 
@@ -981,45 +938,39 @@ export default function App() {
         </motion.div>
       )}</AnimatePresence>
 
-      {/* Always-visible library escape hatch on mobile (header auto-hides / overflows) */}
-      {fileUrl && (
-        <button
-          type="button"
-          onClick={() => closeBook()}
-          className="md:hidden fixed z-[60] flex items-center gap-2 bg-stone-950/90 text-white pl-3 pr-4 py-2.5 rounded-full shadow-xl border border-amber-500/30 backdrop-blur-md font-bold text-xs uppercase tracking-wide active:scale-95 transition-transform"
-          style={{
-            top: 'max(0.75rem, env(safe-area-inset-top))',
-            left: 'max(0.75rem, env(safe-area-inset-left))',
-          }}
-          aria-label="Volver a la biblioteca"
-        >
-          <Library size={18} className="text-amber-400 shrink-0" />
-          Biblioteca
-        </button>
-      )}
-
       <AnimatePresence>{showUI && !isManualHide && fileUrl && (
         <motion.header
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -100, opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed z-50 flex items-center gap-1.5 sm:gap-2 bg-stone-950/80 text-stone-200 px-2 sm:px-3 py-1.5 rounded-full shadow-lg backdrop-blur-md border border-white/5 max-w-[calc(100vw-5.5rem)] sm:max-w-[min(100vw-2rem,42rem)] overflow-x-auto scrollbar-none"
+          className="fixed left-0 right-0 z-50 flex items-center gap-2 bg-stone-950/90 text-stone-200 px-3 py-2 shadow-lg backdrop-blur-md border-b border-white/5"
           style={{
-            top: 'max(0.75rem, env(safe-area-inset-top))',
-            left: 'max(5.5rem, calc(0.75rem + env(safe-area-inset-left) + 7.5rem))',
-            right: 'max(0.75rem, env(safe-area-inset-right))',
+            top: 0,
+            paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
+            paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+            paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
           }}
         >
-          <button onClick={() => closeBook()} className="hidden md:flex hover:text-white transition-colors p-1 shrink-0" aria-label="Biblioteca"><Library size={16} /></button>
-          <div className="flex items-center gap-1 group/title cursor-pointer min-w-0 shrink" onClick={() => {
+          <button
+            onClick={() => closeBook()}
+            className="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-full hover:bg-white/10 text-amber-400 hover:text-amber-300 transition-colors"
+            aria-label="Volver a la biblioteca"
+          >
+            <Library size={18} />
+            <span className="text-[10px] font-bold uppercase tracking-wide hidden sm:inline">Biblioteca</span>
+          </button>
+          <div className="flex items-center gap-1 group/title cursor-pointer min-w-0 flex-1" onClick={() => {
             const book = library.find(b => b.filename === fileName);
             if (book) setEditingBook(book);
           }}>
-            <span className="text-[10px] font-medium truncate max-w-[88px] sm:max-w-[120px] text-stone-300 group-hover/title:text-white transition-colors">
-              {library.find(b => b.filename === fileName)?.title || fileName}
+            <span className="text-xs font-medium truncate text-stone-200 group-hover/title:text-white transition-colors">
+              {(() => {
+                const book = library.find(b => b.filename === fileName);
+                return book ? displayBookTitle(book.title, book.filename) : fileName;
+              })()}
             </span>
-            <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 group-hover/title:scale-110 shrink-0" />
+            <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 shrink-0 hidden sm:block" />
           </div>
           <div className="hidden sm:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
           <div className="hidden sm:flex items-center gap-0.5 shrink-0">
@@ -1095,30 +1046,6 @@ export default function App() {
         </div>
       )}
 
-      <AnimatePresence>
-        {showLoading && fileUrl && (!isLoaded || isRestoring) && (
-          <motion.div
-            key="reader-loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 bg-stone-950/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4"
-          >
-            <Loader2 className="animate-spin text-amber-500" size={36} />
-            <p className="text-sm text-stone-300 font-medium">
-              {isRestoring ? 'Restaurando tu lectura…' : 'Preparando páginas…'}
-            </p>
-            <button 
-              onClick={() => closeBook()}
-              className="mt-2 px-6 py-2 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-all"
-            >
-              Cancelar
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <main
         ref={containerRef}
         className="flex-1 overflow-auto scrollbar-none relative"
@@ -1137,7 +1064,7 @@ export default function App() {
             library={library} 
             covers={covers} 
             isLoading={isLoadingLibrary} 
-            onOpenBook={(book) => openFromLibrary(book, undefined, undefined, false, true)} 
+            onOpenBook={(book) => openFromLibrary(book)} 
             onEditBook={setEditingBook} 
             onGoogleDrive={handleGoogleDrive} 
             onFileUpload={onFileChange} 
@@ -1179,29 +1106,20 @@ export default function App() {
               const ratios = Array(pdf.numPages).fill(fallback);
               try {
                 setNumPages(pdf.numPages);
-
-                // Clamp pageNumber so the visibility window never excludes all pages
-                const clampedPage = Math.min(Math.max(1, pageNumber), pdf.numPages);
+                const target = restoreTargetPageRef.current ?? pageNumber;
+                const clampedPage = Math.min(Math.max(1, target), pdf.numPages);
                 if (clampedPage !== pageNumber) {
-                  console.warn(`[Reader] Clamping restored page ${pageNumber} → ${clampedPage}`);
                   setPageNumber(clampedPage);
                 }
-
-                // Fetch current page ratio first so target page renders accurately
-                try {
-                  const page = await pdf.getPage(clampedPage);
-                  const viewport = page.getViewport({ scale: 1 });
-                  ratios[clampedPage - 1] = viewport.width / viewport.height;
-                } catch (e) { /* ignore */ }
-
                 setPageRatios(ratios);
+                // Show the reader immediately — page canvas fills in as PDF.js renders
                 setIsLoaded(true);
               } catch (e) {
                 console.error('[Reader] onLoadSuccess error:', e);
                 setIsLoaded(true);
               }
 
-              // Fill remaining ratios in background batches
+              // Fill page ratios in background (layout placeholders only)
               (async () => {
                 try {
                   const batchSize = 20;
@@ -1232,7 +1150,31 @@ export default function App() {
               setIsRestoring(false); // Also clear restoring so overlay doesn't hang
               showToast('Error al cargar PDF');
             }}
-            onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); if (quadrant > 1) { const offset = ((quadrant - 1) / 4) * el.clientHeight; containerRef.current.scrollBy({ top: offset, behavior: 'instant' }); } } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
+            onPageRenderSuccess={(p) => {
+              const targetPage = restoreTargetPageRef.current ?? pageNumber;
+              if (p !== targetPage || !containerRef.current) return;
+              const jump = () => {
+                const el = document.getElementById(`page-${targetPage}`);
+                if (el && containerRef.current) {
+                  if (scrollRatio > 0) {
+                    containerRef.current.scrollTo({
+                      top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight),
+                      behavior: 'instant',
+                    });
+                  } else {
+                    el.scrollIntoView({ behavior: 'instant' });
+                    if (quadrant > 1) {
+                      const offset = ((quadrant - 1) / 4) * el.clientHeight;
+                      containerRef.current.scrollBy({ top: offset, behavior: 'instant' });
+                    }
+                  }
+                  setScrollRatio(0);
+                  restoreTargetPageRef.current = null;
+                  setTimeout(() => setIsRestoring(false), 50);
+                }
+              };
+              requestAnimationFrame(() => requestAnimationFrame(jump));
+            }} 
             onPageRenderError={(_p, err) => {
               setRenderErrors((prev) => new Set(prev).add(_p));
               if (_p === pageNumber) setIsRestoring(false);

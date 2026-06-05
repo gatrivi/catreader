@@ -60,7 +60,6 @@ export function useReaderSync({
    * Loads reading progress for a specific book.
    */
   const loadProgress = useCallback(async (id: string): Promise<ReadingProgress | null> => {
-    setIsSyncing(true);
     setIsRestoring(true);
     const category = getDeviceCategory();
     
@@ -68,10 +67,18 @@ export function useReaderSync({
     const timeout = setTimeout(() => setIsRestoring(false), 10000);
 
     try {
-      const progress = await syncService.loadProgress(id);
-      const localStr = localStorage.getItem(`catreader_progress_${id}`);
+      const [progress, localStr] = await Promise.all([
+        syncService.loadProgress(id),
+        Promise.resolve(localStorage.getItem(`catreader_progress_${id}`)),
+      ]);
       const local = localStr ? JSON.parse(localStr) : null;
-      const data = progress || local;
+      // Prefer whichever source is newer — cloud-only merge was resetting to stale page 1
+      const data =
+        progress && local
+          ? (local.updatedAt || 0) >= (progress.updatedAt || 0)
+            ? local
+            : progress
+          : progress || local;
       
       if (data) {
         // Restore the full zoom map if available to ensure other device settings aren't lost
@@ -92,6 +99,7 @@ export function useReaderSync({
         if (data.updatedAt) setLastSyncTime(data.updatedAt);
 
         const needsScrollRestore =
+          (data.page && data.page > 1) ||
           (data.scrollRatio && data.scrollRatio > 0) ||
           !!data.epubCfi;
         if (!needsScrollRestore) {
@@ -109,10 +117,8 @@ export function useReaderSync({
       clearTimeout(timeout);
       setIsRestoring(false);
       return null;
-    } finally {
-      setIsSyncing(false);
     }
-  }, [getDeviceCategory, setIsSyncing]);
+  }, [getDeviceCategory]);
 
   /**
    * Saves the current reading progress.

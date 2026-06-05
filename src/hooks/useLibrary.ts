@@ -406,15 +406,20 @@ export function useLibrary({
    */
   const fetchEnhancedCover = useCallback(async (book: LibraryBook, forceAI = false) => {
     console.log(`[Cover] fetchEnhancedCover called for ${book.title}, forceAI=${forceAI}`);
+    const meta = enrichedMetadataRef.current[book.filename];
+    if (meta?.coverSource?.type === 'user-custom' && !forceAI) {
+      console.log(`[Cover] Preserving user-custom coverSource for: ${book.title}`);
+      return;
+    }
     // Check if there is already a custom user-captured/uploaded cover
     try {
       const existingCover = await coverDB.getCover(book.filename);
-      const isCustom = existingCover && (
-        existingCover.startsWith('data:image/jpeg') || 
-        existingCover.startsWith('data:image/png') || 
+      const isCaptured = existingCover && (
+        existingCover.startsWith('data:image/jpeg') ||
+        existingCover.startsWith('data:image/png') ||
         existingCover.startsWith('data:image/webp')
       );
-      if (isCustom && !forceAI) {
+      if (isCaptured && !forceAI) {
         console.log(`[Cover] Preserving custom/captured cover for: ${book.title}`);
         return;
       }
@@ -703,8 +708,9 @@ export function useLibrary({
       
       const hasCover = coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
       const hasUserCustomSource = currentMeta?.coverSource?.type === 'user-custom';
-      
-      if (!hasCover && !hasUserCustomSource) {
+      const hasOpenLibraryCover = currentMeta?.coverSource?.type === 'openlibrary';
+
+      if (!hasCover && !hasUserCustomSource && !hasOpenLibraryCover) {
         setEnrichmentProgress({ current: idx + 1, total: library.length, filename: `Cover: ${book.title}` });
         await fetchEnhancedCover(book);
       }
