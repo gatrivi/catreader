@@ -60,7 +60,6 @@ export function useReaderSync({
    * Loads reading progress for a specific book.
    */
   const loadProgress = useCallback(async (id: string): Promise<ReadingProgress | null> => {
-    setIsSyncing(true);
     setIsRestoring(true);
     const category = getDeviceCategory();
     
@@ -118,10 +117,8 @@ export function useReaderSync({
       clearTimeout(timeout);
       setIsRestoring(false);
       return null;
-    } finally {
-      setIsSyncing(false);
     }
-  }, [getDeviceCategory, setIsSyncing]);
+  }, [getDeviceCategory]);
 
   /**
    * Saves the current reading progress.

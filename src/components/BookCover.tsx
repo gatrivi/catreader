@@ -9,6 +9,17 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Prefer enriched title; never show raw filename on the spine when we can help it. */
+export function displayBookTitle(title: string, filename: string): string {
+  const stripped = filename.replace(/\.[^/.]+$/, '');
+  if (title && title !== filename && title !== stripped) return title;
+  return stripped
+    .replace(/[-_]+/g, ' ')
+    .replace(/,\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const SUPPORTED_TYPES = ['pdf', 'txt', 'epub'];
 
 interface BookCoverProps {
@@ -104,7 +115,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
     if (onHover) onHover(null);
   };
 
-  const hasMetadata = book.title !== book.filename && !!book.author;
+  const spineTitle = displayBookTitle(book.title, book.filename);
+  const hasMetadata = spineTitle !== book.filename.replace(/\.[^/.]+$/, '') && !!book.author;
 
   return (
     <div 
@@ -208,7 +220,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
                     "font-serif font-bold text-sm leading-tight line-clamp-4 mt-2 break-words",
                     isSimplified ? "text-stone-300" : "text-[#5b4636]"
                   )}>
-                    {book.title}
+                    {spineTitle}
                   </div>
                   <div className={cn(
                     "font-serif text-[10px] uppercase tracking-widest line-clamp-2 mb-2 break-words",
@@ -216,6 +228,15 @@ export const BookCover: React.FC<BookCoverProps> = ({
                   )}>
                     {book.author || 'Autor Desconocido'}
                   </div>
+                </div>
+              )}
+
+              {/* Title always visible on the spine (even when cover art loads) */}
+              {(displayCover || svgDataUrl) && (
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-2 pt-6 pb-1.5 z-30 pointer-events-none">
+                  <p className="text-white text-[9px] sm:text-[10px] font-bold leading-tight line-clamp-2 text-center drop-shadow-md">
+                    {spineTitle}
+                  </p>
                 </div>
               )}
 
@@ -242,7 +263,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
         {/* Title/Author Label Overlay */}
         {showLabels && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 z-30 pointer-events-none">
-            <p className="text-white text-[9px] font-bold truncate leading-tight">{book.title}</p>
+            <p className="text-white text-[9px] font-bold truncate leading-tight">{spineTitle}</p>
             {book.author && book.author !== 'Desconocido' && (
               <p className="text-white/70 text-[7px] truncate leading-tight">{book.author}</p>
             )}
