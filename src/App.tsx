@@ -105,6 +105,7 @@ export default function App() {
   const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userInitiatedOpenRef = useRef(false);
+  const restoreTargetPageRef = useRef<number | null>(null);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
     if (storedText.startsWith('[')) {
@@ -405,14 +406,19 @@ export default function App() {
     };
 
     const handleScrollActivity = () => scheduleSave();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') saveProgressRef.current();
+    };
     const container = containerRef.current;
     container.addEventListener('scroll', handleScrollActivity, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibility);
 
     scheduleSave();
     maxIntervalTimer = setInterval(() => saveProgressRef.current(), 60000);
 
     return () => {
       container.removeEventListener('scroll', handleScrollActivity);
+      document.removeEventListener('visibilitychange', handleVisibility);
       clearTimeout(inactivityTimer);
       clearInterval(maxIntervalTimer);
     };
@@ -611,6 +617,11 @@ export default function App() {
 
   const closeBook = (skipHistory = false) => {
     if (!fileUrl) return;
+    // Flush progress before tearing down reader state
+    if (isLoaded && fileName) {
+      saveProgressRef.current?.();
+    }
+    restoreTargetPageRef.current = null;
     if (fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
@@ -667,6 +678,9 @@ export default function App() {
 
     setFileName(filename);
     setFileType(book.type);
+    restoreTargetPageRef.current = null;
+    setPageNumber(1);
+    setScrollRatio(0);
     
     // Clear previous timeouts
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
@@ -726,14 +740,16 @@ export default function App() {
         // Ghost text is now extracted on-demand when reader mode is toggled
       }
       if (forcePage) {
+        restoreTargetPageRef.current = forcePage;
         setPageNumber(forcePage);
         setScrollRatio(0);
         if (forceQuadrant) setQuadrant(forceQuadrant);
       } else {
         const progress = await loadProgress(filename);
-        if (!progress) {
-          // Firestore/localStorage miss: reset to page 1 to avoid carrying over
-          // the pageNumber from a previously-read book.
+        if (progress?.page && progress.page > 1) {
+          restoreTargetPageRef.current = progress.page;
+        } else {
+          restoreTargetPageRef.current = null;
           setPageNumber(1);
           setScrollRatio(0);
         }
@@ -860,7 +876,7 @@ export default function App() {
     if (!container || !fileUrl) return;
 
     const observer = new IntersectionObserver((entries) => {
-      if (isRestoring) return;
+      if (isRestoring || restoreTargetPageRef.current !== null) return;
       let bestPage = pageNumber, bestRatio = -1;
       entries.forEach((entry) => {
         if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
@@ -1232,7 +1248,31 @@ export default function App() {
               setIsRestoring(false); // Also clear restoring so overlay doesn't hang
               showToast('Error al cargar PDF');
             }}
-            onPageRenderSuccess={(p) => { if (p === pageNumber && containerRef.current) { const jump = () => { const el = document.getElementById(`page-${p}`); if (el && containerRef.current) { if (scrollRatio > 0) { containerRef.current.scrollTo({ top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight), behavior: 'instant' }); } else { el.scrollIntoView({ behavior: 'instant' }); if (quadrant > 1) { const offset = ((quadrant - 1) / 4) * el.clientHeight; containerRef.current.scrollBy({ top: offset, behavior: 'instant' }); } } setScrollRatio(0); setTimeout(() => setIsRestoring(false), 50); } }; setTimeout(jump, 300); } }} 
+            onPageRenderSuccess={(p) => {
+              const targetPage = restoreTargetPageRef.current ?? pageNumber;
+              if (p !== targetPage || !containerRef.current) return;
+              const jump = () => {
+                const el = document.getElementById(`page-${targetPage}`);
+                if (el && containerRef.current) {
+                  if (scrollRatio > 0) {
+                    containerRef.current.scrollTo({
+                      top: scrollRatio * (containerRef.current.scrollHeight - containerRef.current.clientHeight),
+                      behavior: 'instant',
+                    });
+                  } else {
+                    el.scrollIntoView({ behavior: 'instant' });
+                    if (quadrant > 1) {
+                      const offset = ((quadrant - 1) / 4) * el.clientHeight;
+                      containerRef.current.scrollBy({ top: offset, behavior: 'instant' });
+                    }
+                  }
+                  setScrollRatio(0);
+                  restoreTargetPageRef.current = null;
+                  setTimeout(() => setIsRestoring(false), 50);
+                }
+              };
+              setTimeout(jump, 300);
+            }} 
             onPageRenderError={(_p, err) => {
               setRenderErrors((prev) => new Set(prev).add(_p));
               if (_p === pageNumber) setIsRestoring(false);
