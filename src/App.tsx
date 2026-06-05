@@ -19,7 +19,6 @@ import {
   Maximize2,
   Pencil,
   Crop,
-  Check,
   BookText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,12 +44,36 @@ import { useLibrary, LibraryBook } from './hooks/useLibrary';
 
 import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
-import { buildBookPath, parseBookPath, matchBookBySlug } from './utils/routing';
+import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath } from './utils/routing';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function libraryUrl(): string {
+  return new URL(getLibraryPath(), window.location.origin).toString();
+}
+
+/** Ensure browser Back returns to the gallery instead of leaving the site. */
+function seedReaderHistoryStack(bookPath: string, filename: string) {
+  const bookUrl = new URL(bookPath, window.location.origin).toString();
+  window.history.replaceState({ view: 'library' }, '', libraryUrl());
+  window.history.pushState({ view: 'reader', filename }, '', bookUrl);
+}
+
+function pushReaderHistory(bookPath: string, filename: string) {
+  const bookUrl = new URL(bookPath, window.location.origin).toString();
+  if (!parseBookPath(window.location.pathname)) {
+    window.history.pushState({ view: 'reader', filename }, '', bookUrl);
+    return;
+  }
+  if (window.history.state?.view !== 'reader' || window.history.length <= 1) {
+    seedReaderHistoryStack(bookPath, filename);
+    return;
+  }
+  window.history.pushState({ view: 'reader', filename }, '', bookUrl);
 }
 
 declare var google: any;
@@ -81,6 +104,7 @@ export default function App() {
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
   const loadingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userInitiatedOpenRef = useRef(false);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
     if (storedText.startsWith('[')) {
@@ -225,9 +249,9 @@ export default function App() {
   }, [numPages, pageNumber]);
 
   useEffect(() => {
-    if (fileUrl && (!isLoaded || isRestoring)) {
-      // Delay increased to 1200ms so cached/fast loads never flash the overlay
-      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 1200);
+    if (fileUrl && userInitiatedOpenRef.current && (!isLoaded || isRestoring)) {
+      // Only show blocking overlay for user-opened books that are still slow after 2.5s
+      loadingDelayRef.current = setTimeout(() => setShowLoading(true), 2500);
     } else {
       setShowLoading(false);
     }
@@ -586,7 +610,8 @@ export default function App() {
   };
 
   const closeBook = (skipHistory = false) => {
-    if (fileUrl && fileUrl.startsWith('blob:')) {
+    if (!fileUrl) return;
+    if (fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
@@ -601,19 +626,29 @@ export default function App() {
     setTextContent(null);
     setIsReaderMode(false);
     setQuadrant(1);
+    setShowUI(true);
+    setIsManualHide(false);
     localStorage.removeItem('catreader_last_book');
     if (!skipHistory) {
-      const url = new URL(window.location.href);
-      url.pathname = '/';
-      url.search = '';
-      window.history.pushState({}, '', url.toString());
+      if (window.history.state?.view === 'reader' && window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.history.replaceState({ view: 'library' }, '', libraryUrl());
+      }
     }
   };
 
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const openFromLibrary = async (book: LibraryBook, forcePage?: number, forceQuadrant?: number, skipHistory = false) => {
+  const openFromLibrary = async (
+    book: LibraryBook,
+    forcePage?: number,
+    forceQuadrant?: number,
+    skipHistory = false,
+    userInitiated = false
+  ) => {
     const filename = book.filename;
+    userInitiatedOpenRef.current = userInitiated;
     
     // If book is already open, just jump to page/quadrant if specified
     if (filename === fileName && fileUrl) {
@@ -640,11 +675,14 @@ export default function App() {
 
     const shelf = shelves.find(s => s.bookIds.includes(book.id));
     const shelfTitle = shelf?.title || 'library';
-    if (!skipHistory) {
-      const url = new URL(window.location.href);
-      url.pathname = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
-      url.search = '';
-      window.history.pushState({ filename }, '', url.toString());
+    const bookPath = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
+    if (skipHistory) {
+      const onBookUrl = !!parseBookPath(window.location.pathname);
+      if (!onBookUrl || window.history.length <= 1) {
+        seedReaderHistoryStack(bookPath, filename);
+      }
+    } else {
+      pushReaderHistory(bookPath, filename);
     }
     localStorage.setItem('catreader_last_book', filename);
     try {
@@ -780,7 +818,11 @@ export default function App() {
       const url = new URL(window.location.href);
       url.pathname = buildBookPath(shelfTitle, fileName, pageNumber, quadrant);
       url.search = '';
-      window.history.replaceState(window.history.state, '', url.toString());
+      window.history.replaceState(
+        { view: 'reader', filename: fileName, ...(typeof window.history.state === 'object' ? window.history.state : {}) },
+        '',
+        url.toString()
+      );
     }
   }, [pageNumber, quadrant, fileName, library, shelves]);
 
@@ -939,38 +981,66 @@ export default function App() {
         </motion.div>
       )}</AnimatePresence>
 
+      {/* Always-visible library escape hatch on mobile (header auto-hides / overflows) */}
+      {fileUrl && (
+        <button
+          type="button"
+          onClick={() => closeBook()}
+          className="md:hidden fixed z-[60] flex items-center gap-2 bg-stone-950/90 text-white pl-3 pr-4 py-2.5 rounded-full shadow-xl border border-amber-500/30 backdrop-blur-md font-bold text-xs uppercase tracking-wide active:scale-95 transition-transform"
+          style={{
+            top: 'max(0.75rem, env(safe-area-inset-top))',
+            left: 'max(0.75rem, env(safe-area-inset-left))',
+          }}
+          aria-label="Volver a la biblioteca"
+        >
+          <Library size={18} className="text-amber-400 shrink-0" />
+          Biblioteca
+        </button>
+      )}
+
       <AnimatePresence>{showUI && !isManualHide && fileUrl && (
-        <motion.header initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }} transition={{ duration: 0.2 }} className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/80 text-stone-200 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-md border border-white/5">
-          <button onClick={() => closeBook()} className="hover:text-white transition-colors p-1" aria-label="Library"><Library size={16} /></button>
-          <div className="flex items-center gap-1 group/title cursor-pointer" onClick={() => {
+        <motion.header
+          initial={{ y: -100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -100, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed z-50 flex items-center gap-1.5 sm:gap-2 bg-stone-950/80 text-stone-200 px-2 sm:px-3 py-1.5 rounded-full shadow-lg backdrop-blur-md border border-white/5 max-w-[calc(100vw-5.5rem)] sm:max-w-[min(100vw-2rem,42rem)] overflow-x-auto scrollbar-none"
+          style={{
+            top: 'max(0.75rem, env(safe-area-inset-top))',
+            left: 'max(5.5rem, calc(0.75rem + env(safe-area-inset-left) + 7.5rem))',
+            right: 'max(0.75rem, env(safe-area-inset-right))',
+          }}
+        >
+          <button onClick={() => closeBook()} className="hidden md:flex hover:text-white transition-colors p-1 shrink-0" aria-label="Biblioteca"><Library size={16} /></button>
+          <div className="flex items-center gap-1 group/title cursor-pointer min-w-0 shrink" onClick={() => {
             const book = library.find(b => b.filename === fileName);
             if (book) setEditingBook(book);
           }}>
-            <span className="text-[10px] font-medium truncate max-w-[120px] text-stone-300 group-hover/title:text-white transition-colors">
+            <span className="text-[10px] font-medium truncate max-w-[88px] sm:max-w-[120px] text-stone-300 group-hover/title:text-white transition-colors">
               {library.find(b => b.filename === fileName)?.title || fileName}
             </span>
-            <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 group-hover/title:scale-110" />
+            <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 group-hover/title:scale-110 shrink-0" />
           </div>
-          <div className="w-px h-3 bg-white/10 mx-0.5" />
-          <div className="flex items-center gap-0.5">
+          <div className="hidden sm:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="hidden sm:flex items-center gap-0.5 shrink-0">
             {['light', 'sepia', 'paper', 'dim', 'dark'].map((t) => (
               <button key={t} onClick={() => setTheme(t as any)} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === t ? "bg-indigo-500 ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title={t} />
             ))}
           </div>
-          <div className="w-px h-3 bg-white/10 mx-0.5" />
-          <div className="flex items-center gap-0.5">
+          <div className="hidden md:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="hidden md:flex items-center gap-0.5 shrink-0">
             <button onClick={() => changeZoom(-0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomOut size={12}/></button>
             <span className="text-[9px] font-mono w-7 text-center text-stone-400">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span>
             <button onClick={() => changeZoom(0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomIn size={12}/></button>
           </div>
-          <div className="w-px h-3 bg-white/10 mx-0.5" />
-          <div className="flex items-center gap-1">
+          <div className="hidden lg:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="hidden lg:flex items-center gap-1 shrink-0">
             <button onClick={toggleReaderMode} className={cn("p-1 rounded-full transition-all", isReaderMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Reader Mode"><BookText size={14} /></button>
             <button onClick={() => setIsFocusMode(!isFocusMode)} className={cn("p-1 rounded-full transition-all", isFocusMode ? "bg-indigo-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Focus (F)"><Maximize2 size={14} /></button>
             <button onClick={() => setIsCaptureMode(!isCaptureMode)} className={cn("p-1 rounded-full transition-all", isCaptureMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Capture Cover"><Crop size={14} /></button>
           </div>
-          <div className="w-px h-3 bg-white/10 mx-0.5" />
-          <div className="relative" ref={menuRef}>
+          <div className="w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="relative shrink-0" ref={menuRef}>
             <button onClick={() => setShowMenu(!showMenu)} className={cn("p-1 hover:bg-white/10 rounded-full transition-colors", showMenu && "bg-white/10")} aria-label="More"><MoreVertical size={14} /></button>
             <AnimatePresence>{showMenu && (
               <motion.div initial={{ opacity: 0, y: -4, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.95 }} className="absolute top-full right-0 mt-2 bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl py-1 min-w-[160px] z-[70]">
@@ -984,9 +1054,30 @@ export default function App() {
                 </button>
                 <label className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2 cursor-pointer"><Upload size={12} /> Subir PDF<input type="file" accept=".pdf,.txt,.epub" className="hidden" onChange={(e) => { onFileChange(e); setShowMenu(false); }} /></label>
                 <button onClick={() => { navigator.clipboard.writeText(window.location.href); setShowMenu(false); showToast('Enlace copiado'); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2">🔗 Copiar enlace</button>
+                <div className="border-t border-white/10 my-1 md:hidden" />
+                <div className="px-3 py-2 md:hidden">
+                  <p className="text-[9px] font-bold text-stone-500 uppercase tracking-widest mb-2">Tema</p>
+                  <div className="flex items-center gap-1.5">
+                    {['light', 'sepia', 'paper', 'dim', 'dark'].map((t) => (
+                      <button key={t} onClick={() => setTheme(t as any)} className={cn("w-5 h-5 rounded-full border border-white/20", theme === t ? "bg-indigo-500 ring-1 ring-white/40" : "bg-stone-700")} title={t} />
+                    ))}
+                  </div>
+                </div>
+                <div className="px-3 py-2 flex items-center justify-between md:hidden">
+                  <span className="text-[9px] font-bold text-stone-500 uppercase tracking-widest">Zoom</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => changeZoom(-0.1)} className="p-1.5 hover:bg-white/10 rounded-full text-stone-400"><ZoomOut size={14}/></button>
+                    <span className="text-[10px] font-mono w-8 text-center text-stone-300">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span>
+                    <button onClick={() => changeZoom(0.1)} className="p-1.5 hover:bg-white/10 rounded-full text-stone-400"><ZoomIn size={14}/></button>
+                  </div>
+                </div>
                 <div className="border-t border-white/10 my-1" />
                 <button onClick={() => { setShowDiagnostics(true); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-500 hover:bg-white/10">Diagnostics</button>
                 <button onClick={() => { setIsManualHide(true); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-500 hover:bg-white/10">Ocultar UI (H)</button>
+                <div className="border-t border-white/10 my-1 sm:hidden" />
+                <button onClick={() => { closeBook(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-amber-300 hover:bg-white/10 flex items-center gap-2 sm:hidden font-bold">
+                  <Library size={12} /> Volver a biblioteca
+                </button>
               </motion.div>
             )}</AnimatePresence>
           </div>
@@ -1012,39 +1103,15 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 bg-stone-950 flex flex-col items-center justify-center gap-6"
+            className="fixed inset-0 z-50 bg-stone-950/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4"
           >
-            <Loader2 className="animate-spin text-amber-500" size={40} />
-            <div className="flex flex-col gap-2 text-xs font-mono text-stone-400">
-              <div className="flex items-center gap-2">
-                <Check size={14} className="text-emerald-500" />
-                <span className="text-stone-300">Libro descargado</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {isLoaded ? (
-                  <Check size={14} className="text-emerald-500" />
-                ) : (
-                  <Loader2 size={14} className="animate-spin text-amber-500" />
-                )}
-                <span className={isLoaded ? 'text-stone-300' : 'text-stone-200'}>
-                  {isLoaded ? 'Páginas listas' : 'Preparando páginas…'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {isRestoring ? (
-                  <Loader2 size={14} className="animate-spin text-amber-500" />
-                ) : (
-                  <Check size={14} className="text-emerald-500" />
-                )}
-                <span className={isRestoring ? 'text-stone-200' : 'text-stone-300'}>
-                  {isRestoring ? 'Restaurando posición…' : 'Posición restaurada'}
-                </span>
-              </div>
-            </div>
-            
+            <Loader2 className="animate-spin text-amber-500" size={36} />
+            <p className="text-sm text-stone-300 font-medium">
+              {isRestoring ? 'Restaurando tu lectura…' : 'Preparando páginas…'}
+            </p>
             <button 
               onClick={() => closeBook()}
-              className="mt-4 px-6 py-2 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-all"
+              className="mt-2 px-6 py-2 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-all"
             >
               Cancelar
             </button>
@@ -1052,13 +1119,25 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main ref={containerRef} className="flex-1 overflow-auto scrollbar-none relative" onDoubleClick={handleDoubleClick}>
+      <main
+        ref={containerRef}
+        className="flex-1 overflow-auto scrollbar-none relative"
+        onDoubleClick={handleDoubleClick}
+        onClick={(e) => {
+          if (!fileUrl) return;
+          const target = e.target as HTMLElement;
+          if (target.closest('button, a, input, textarea, [role="button"]')) return;
+          setShowUI(true);
+          setIsManualHide(false);
+          resetUITimer();
+        }}
+      >
         {!fileUrl ? (
           <LibraryView 
             library={library} 
             covers={covers} 
             isLoading={isLoadingLibrary} 
-            onOpenBook={openFromLibrary} 
+            onOpenBook={(book) => openFromLibrary(book, undefined, undefined, false, true)} 
             onEditBook={setEditingBook} 
             onGoogleDrive={handleGoogleDrive} 
             onFileUpload={onFileChange} 
@@ -1220,7 +1299,10 @@ export default function App() {
       )}</AnimatePresence>
 
       {fileUrl && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/70 text-stone-300 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border border-white/5">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-stone-950/70 text-stone-300 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border border-white/5"
+          style={{ bottom: 'max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem))' }}
+        >
           <button onClick={() => changePage(-1)} disabled={pageNumber <= 1} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronLeft size={16}/></button>
           <PageInput pageNumber={pageNumber} numPages={numPages} onGoToPage={scrollToPage} />
           <button onClick={() => changePage(1)} disabled={pageNumber >= numPages} className="disabled:opacity-10 hover:text-white transition-colors p-0.5"><ChevronRight size={16}/></button>
@@ -1230,7 +1312,7 @@ export default function App() {
 
       <AnimatePresence>{toast.visible && (<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-stone-900/90 backdrop-blur-md text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-white/10">{toast.message}</motion.div>)}</AnimatePresence>
 
-      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} isSyncing={isSyncing} />
+      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} onPasteError={(msg) => showToast(msg)} isSyncing={isSyncing} />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
     </div>
   );

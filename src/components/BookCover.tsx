@@ -33,6 +33,8 @@ interface BookCoverProps {
   isIdentifying?: boolean;
   isSavedInDb?: boolean;
   showLabels?: boolean;
+  /** Fit cover height inside a fixed grid cell (library rack) */
+  fillHeight?: boolean;
 }
 
 export const BookCover: React.FC<BookCoverProps> = ({ 
@@ -46,7 +48,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
   isSimplified,
   isIdentifying,
   isSavedInDb,
-  showLabels
+  showLabels,
+  fillHeight = false
 }) => {
   React.useEffect(() => {
     console.log(`[BookCover] Mount/update ${book.filename}: cover=${!!cover} source=${cover?.startsWith('data:') ? 'dataURL' : cover?.startsWith('http') ? 'url' : cover ? 'svg/other' : 'none'}`);
@@ -105,7 +108,10 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   return (
     <div 
-      className="group relative flex flex-col items-center w-full"
+      className={cn(
+        "group relative flex flex-col items-center w-full min-h-0",
+        fillHeight && "h-full justify-end"
+      )}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -131,7 +137,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
         onClick={isSupported ? onClick : undefined}
         title="Arrastra para mover el libro"
         className={cn(
-          "relative w-full aspect-[2/3] bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
+          "relative bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
+          fillHeight ? "h-full max-h-full w-auto aspect-[2/3]" : "w-full aspect-[2/3]",
           isSimplified 
             ? "shadow-none border-stone-700 bg-stone-800" 
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]",

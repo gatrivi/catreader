@@ -231,9 +231,9 @@ const PageItem: React.FC<PageItemProps> = ({
             onRenderError={handleError}
           />
           
-          {/* Capture Mode Block Layer */}
+          {/* Capture Mode: crosshair cursor only; selection rect handles interaction */}
           {isCaptureMode && (
-            <div className="absolute inset-0 z-20 cursor-crosshair" />
+            <div className="absolute inset-0 z-20 cursor-crosshair pointer-events-none" />
           )}
 
           {/* Selection Overlay */}
@@ -317,16 +317,26 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     [onLoadError]
   );
 
-  const handleMouseUp = useCallback(() => {
-    if (fileType !== 'pdf' && fileType !== 'txt') return;
-    if (isCaptureMode) return;
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0 && onTextSelection) {
-      const range = selection.getRangeAt(0);
+  useEffect(() => {
+    if (!onTextSelection || isCaptureMode) return;
+
+    const handleSelectionEnd = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
+      const text = selection.toString().trim();
+      if (text.length < 2) return;
+
+      const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      if (!range) return;
       const rect = range.getBoundingClientRect();
-      onTextSelection(selection.toString().trim(), rect.left + rect.width / 2, rect.top);
-    }
-  }, [onTextSelection, fileType, isCaptureMode]);
+      if (rect.width === 0 && rect.height === 0) return;
+
+      onTextSelection(text, rect.left + rect.width / 2, rect.top);
+    };
+
+    document.addEventListener('mouseup', handleSelectionEnd);
+    return () => document.removeEventListener('mouseup', handleSelectionEnd);
+  }, [onTextSelection, isCaptureMode]);
 
   return (
     <div
@@ -335,7 +345,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         isSimplified && 'bg-stone-900 transition-none',
         themeStyles[theme]
       )}
-      onMouseUp={handleMouseUp}
     >
       <AnimatePresence>
         {isCaptureMode && (

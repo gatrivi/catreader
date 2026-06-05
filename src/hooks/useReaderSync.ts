@@ -90,9 +90,14 @@ export function useReaderSync({
         setTheme(data.theme as Theme || 'sepia');
         setScrollRatio(data.scrollRatio || 0);
         if (data.updatedAt) setLastSyncTime(data.updatedAt);
-        
-        clearTimeout(timeout);
-        setIsRestoring(false);
+
+        const needsScrollRestore =
+          (data.scrollRatio && data.scrollRatio > 0) ||
+          !!data.epubCfi;
+        if (!needsScrollRestore) {
+          clearTimeout(timeout);
+          setIsRestoring(false);
+        }
         return data;
       }
       
@@ -113,7 +118,7 @@ export function useReaderSync({
    * Saves the current reading progress.
    */
   const saveProgress = useCallback(async () => {
-    if (!fileName || !isLoaded || !containerRef.current || isRestoring) return;
+    if (!fileName || !isLoaded || !containerRef.current) return;
 
     setIsSyncing(true);
     const now = Date.now();
@@ -142,7 +147,7 @@ export function useReaderSync({
 
     setLastSyncTime(now);
     setIsSyncing(false);
-  }, [fileName, isLoaded, isRestoring, zoom, theme, pageNumber, epubCfi, getDeviceCategory, containerRef, setIsSyncing]);
+  }, [fileName, isLoaded, zoom, theme, pageNumber, epubCfi, getDeviceCategory, containerRef, setIsSyncing]);
 
   // Handle theme changes persisting to localStorage
   useEffect(() => {
