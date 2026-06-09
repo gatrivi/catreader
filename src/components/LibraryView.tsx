@@ -561,19 +561,7 @@ export const LibraryView = ({
         ) : (
           <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden min-h-0">
             {/* Carousel Container */}
-            <motion.div 
-              className="flex w-full h-full cursor-grab active:cursor-grabbing min-h-0"
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              onDragEnd={(_, info) => {
-                const threshold = 50;
-                if (info.offset.x < -threshold && currentRack < shelves.length - 1) {
-                  flipRack('next');
-                } else if (info.offset.x > threshold && currentRack > 0) {
-                  flipRack('prev');
-                }
-              }}
-            >
+            <div className="flex w-full h-full min-h-0">
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={currentRack}
@@ -605,7 +593,7 @@ export const LibraryView = ({
 
                   {/* Strict 4×4 grid — sized to ~80% of viewport height */}
                   <div
-                    className="grid grid-cols-4 grid-rows-4 gap-1.5 sm:gap-2 w-full max-w-5xl mx-auto shrink min-h-0"
+                    className="grid grid-cols-4 grid-rows-4 gap-2.5 sm:gap-3.5 w-full max-w-5xl mx-auto shrink min-h-0"
                     style={{ height: 'min(80vh, calc(100dvh - 9rem))' }}
                   >
                     {Array.from({ length: 16 }).map((_, idx) => {
@@ -625,11 +613,8 @@ export const LibraryView = ({
                         >
                           {book ? (
                             <div
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, book.id, shelves[currentRack].id, idx)}
-                              onDragEnd={handleDragEnd}
                               className={cn(
-                                "w-full h-full max-h-full flex flex-col items-center justify-end min-h-0 transition-all cursor-grab active:cursor-grabbing",
+                                "w-full h-full max-h-full flex flex-col items-center justify-end min-h-0 transition-all",
                                 dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
                             >
@@ -639,6 +624,11 @@ export const LibraryView = ({
                                 onClick={() => onOpenBook(book)}
                                 onEdit={() => onEditBook(book)}
                                 onShare={() => onShareBook?.(book)}
+                                onDragStart={(e) => {
+                                  handleDragStart(e, book.id, shelves[currentRack].id, idx);
+                                  e.stopPropagation();
+                                }}
+                                onDragEnd={handleDragEnd}
                                 onHover={setHoverColor}
                                 readingProgress={onGetProgress?.(book.filename)}
                                 isSimplified={isSimplified}
@@ -659,7 +649,7 @@ export const LibraryView = ({
                   </div>
                 </motion.div>
               </AnimatePresence>
-            </motion.div>
+            </div>
 
             {/* Navigation / Move Targets */}
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-[60] max-w-[90vw]">

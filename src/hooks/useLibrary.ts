@@ -464,6 +464,10 @@ export function useLibrary({
 
       // If forceAI is set OR external APIs failed, try Gemini/SVG
       if (enrichedMetadataRef.current[book.filename]?.svg && !forceAI) {
+        const existingDb = await coverDB.getCover(book.filename);
+        if (existingDb && !existingDb.includes('<svg') && existingDb !== enrichedMetadataRef.current[book.filename].svg) {
+          return;
+        }
         const svg = enrichedMetadataRef.current[book.filename].svg as string;
         await coverDB.saveCover(book.filename, svg);
         setCovers(prev => ({ ...prev, [book.filename]: svg }));
@@ -516,14 +520,14 @@ export function useLibrary({
         updatedAt: Date.now()
       };
       const currentMeta = enrichedMetadataRef.current[filename] || { title: filename.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
-      const enrichedItem = { ...currentMeta, coverSource };
+      const enrichedItem = { ...currentMeta, coverSource, svg: undefined };
       const newMetadata = { ...enrichedMetadataRef.current, [filename]: enrichedItem };
       setEnrichedMetadata(newMetadata);
       localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
       await coverDB.saveBookMetadata(filename, enrichedItem);
       await syncService.saveMetadata(newMetadata);
       setLibrary(prev => prev.map(book => 
-        book.filename === filename ? { ...book, coverSource } : book
+        book.filename === filename ? { ...book, coverSource, svg: undefined } : book
       ));
     } catch (err) {
       console.error('[Cover Upload] Failed to process and sync cover thumbnail:', err);
@@ -587,7 +591,9 @@ export function useLibrary({
     const enrichedItem = { 
       title, 
       author, 
-      svg: svg || enrichedMetadataRef.current[filename]?.svg,
+      svg: existingSource?.type === 'user-custom'
+        ? undefined
+        : (svg || enrichedMetadataRef.current[filename]?.svg),
       coverSource: existingSource
     };
     const newMetadata = { 
@@ -601,7 +607,13 @@ export function useLibrary({
     } catch (dbErr) {}
     await syncService.saveMetadata(newMetadata);
     setLibrary(prev => prev.map(book => 
-      book.filename === filename ? { ...book, title, author, svg: svg || book.svg, coverSource: existingSource } : book
+      book.filename === filename ? {
+        ...book,
+        title,
+        author,
+        svg: existingSource?.type === 'user-custom' ? undefined : (svg || book.svg),
+        coverSource: existingSource
+      } : book
     ));
   };
 
@@ -674,7 +686,11 @@ export function useLibrary({
         const enriched = await enrichBookWithGemini(book);
         if (enriched) {
           const existingSource = currentMeta?.coverSource;
-          const enrichedWithSource = { ...enriched, coverSource: existingSource };
+          const enrichedWithSource = {
+            ...enriched,
+            coverSource: existingSource,
+            svg: existingSource?.type === 'user-custom' ? undefined : enriched.svg,
+          };
           
           const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enrichedWithSource };
           setEnrichedMetadata(newMetadata);
@@ -686,15 +702,15 @@ export function useLibrary({
           setLibrary(prev => prev.map(b => b.filename === book.filename ? { ...b, ...enrichedWithSource } : b));
           
           if (enriched.svg && existingSource?.type !== 'user-custom') {
-            // Check if there is already a custom user-captured/uploaded cover before overwriting
             try {
               const existingCover = await coverDB.getCover(book.filename);
-              const isCustom = existingCover && (
-                existingCover.startsWith('data:image/jpeg') || 
-                existingCover.startsWith('data:image/png') || 
-                existingCover.startsWith('data:image/webp')
+              const isCustomImage = existingCover && (
+                existingCover.startsWith('data:image/jpeg') ||
+                existingCover.startsWith('data:image/png') ||
+                existingCover.startsWith('data:image/webp') ||
+                existingCover.startsWith('http')
               );
-              if (!isCustom) {
+              if (!isCustomImage) {
                 await coverDB.saveCover(book.filename, enriched.svg);
                 setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
               }
