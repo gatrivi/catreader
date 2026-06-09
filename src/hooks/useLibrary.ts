@@ -434,13 +434,39 @@ export function useLibrary({
       
       // If forceAI is not set, try external APIs first
       if (!forceAI) {
-        const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
-        const gBooksRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
-        const gBooksData = await gBooksRes.json();
-        
-        const thumbnail = gBooksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail || 
-                          gBooksData.items?.[0]?.volumeInfo?.imageLinks?.smallThumbnail;
-        
+        const GOOGLE_COOLDOWN_KEY = 'catreader_google_books_cooldown_until';
+        const cooldownUntil = Number(localStorage.getItem(GOOGLE_COOLDOWN_KEY) || '0');
+        const googleAllowed = Date.now() >= cooldownUntil;
+
+        let thumbnail: string | undefined;
+        if (!googleAllowed) {
+          console.warn(`[Cover] Skipping Google Books due to cooldown (until ${new Date(cooldownUntil).toISOString()})`);
+        } else {
+          const query = encodeURIComponent(`intitle:${searchTitle}${book.author ? ` inauthor:${book.author}` : ''}`);
+          const url = `https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+          try {
+            const gBooksRes = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+            if (gBooksRes.status === 429) {
+              const backoffMs = 5 * 60 * 1000;
+              localStorage.setItem(GOOGLE_COOLDOWN_KEY, String(Date.now() + backoffMs));
+              console.warn(`[Cover] Google Books rate-limited (429). Backing off for ${backoffMs / 1000}s.`);
+            } else if (gBooksRes.ok) {
+              const gBooksData = await gBooksRes.json();
+              thumbnail =
+                gBooksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail ||
+                gBooksData.items?.[0]?.volumeInfo?.imageLinks?.smallThumbnail;
+            }
+          } catch (e) {
+            // Network/abort errors: treat as "no thumbnail" and fall through to OpenLibrary/Gemini/fallback.
+            console.warn('[Cover] Google Books fetch failed:', e);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
+
         if (thumbnail) {
           const secureThumbnail = thumbnail.replace('http://', 'https://');
           await coverDB.saveCover(book.filename, secureThumbnail);

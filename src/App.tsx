@@ -658,6 +658,7 @@ export default function App() {
     setFileName(filename);
     setFileType(book.type);
     setIsReaderMode(false);
+    setIsLoaded(false);
     restoreTargetPageRef.current = null;
     setPageNumber(1);
     setScrollRatio(0);
@@ -677,8 +678,21 @@ export default function App() {
     const blobPromise = (async (): Promise<Blob> => {
       const cached = await coverDB.getBookContent(filename);
       if (cached && cached.size > 0) {
-        console.log(`[Reader] Using cached blob for ${filename}: ${cached.size} bytes, type=${cached.type}`);
-        return cached;
+        const cachedType = cached.type || '';
+        const isProbablyHtml =
+          cachedType.includes('text/html') ||
+          cachedType.includes('application/xhtml+xml') ||
+          cachedType.includes('application/json');
+
+        if (book.type === 'pdf' && isProbablyHtml) {
+          console.warn(`[Reader] Cached blob for ${filename} looks like non-PDF (${cachedType}); refetching...`);
+          await coverDB.deleteBookContent(filename).catch(() => {});
+        } else {
+          console.log(
+            `[Reader] Using cached blob for ${filename}: ${cached.size} bytes, type=${cachedType || 'unknown'}`
+          );
+          return cached;
+        }
       }
       if (cached && cached.size === 0) {
         console.warn(`[Reader] Cached blob for ${filename} is empty, refetching...`);
@@ -687,16 +701,58 @@ export default function App() {
       const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
       const fetchUrl = `${booksDirPath}${filename}`;
       console.log(`[Reader] Fetching blob from: ${fetchUrl}`);
-      const res = await fetch(fetchUrl);
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const blob = await res.blob();
-      console.log(`[Reader] Fetched blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
-      if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
-      if (book.type === 'pdf' && !blob.type.includes('pdf')) {
-        console.warn(`[Reader] Fetched blob has unexpected type for PDF: ${blob.type}. This may be an HTML fallback.`);
+      
+      const maxAttempts = 3;
+      let lastErr: unknown;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        try {
+          const res = await fetch(fetchUrl, {
+            cache: 'no-store',
+            signal: controller.signal
+          });
+          if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+          const contentType = res.headers.get('content-type') || '';
+          const blob = await res.blob();
+          const blobType = blob.type || contentType || '';
+
+          console.log(
+            `[Reader] Fetched blob for ${filename}: ${blob.size} bytes, type=${blobType || 'unknown'}`
+          );
+
+          if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
+
+          // Avoid caching HTML error pages as PDFs (common fallback causes endless "successful" cache reads).
+          if (book.type === 'pdf') {
+            const isHtmlFallback =
+              blobType.includes('text/html') ||
+              blobType.includes('application/xhtml+xml') ||
+              blobType.includes('application/json');
+            const isPdfLike =
+              blobType.includes('pdf') || blobType.includes('application/pdf') || blobType.includes('octet-stream') || !blobType;
+
+            if (isHtmlFallback || !isPdfLike) {
+              throw new Error(`Fetched blob is not a PDF (type=${blobType || 'unknown'})`);
+            }
+          }
+
+          await coverDB.saveBookContent(filename, blob).catch(() => {});
+          return blob;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < maxAttempts) {
+            await new Promise(r => setTimeout(r, attempt * 800));
+          }
+        } finally {
+          clearTimeout(timeoutId);
+        }
       }
-      coverDB.saveBookContent(filename, blob).catch(() => {});
-      return blob;
+
+      throw lastErr instanceof Error ? lastErr : new Error('Failed to fetch blob');
     })();
 
     try {
@@ -741,11 +797,15 @@ export default function App() {
       restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), 5000);
     } catch (err: any) {
       console.error('[Reader] Failed to open book:', err);
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+      setIsLoaded(false);
       setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
       showToast('Error al abrir el libro.');
+      return;
     }
-    if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
-    else {
+    if (book.type === 'txt' || book.type === 'epub') {
+      setIsLoaded(true);
+    } else {
       setIsLoaded(false);
       // Safety timeout for "Preparando páginas" (5s for heavy PDFs)
       loadingTimeoutRef.current = setTimeout(() => {
