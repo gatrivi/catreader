@@ -39,6 +39,8 @@ interface BookCoverProps {
   onClick: () => void;
   onEdit: () => void;
   onShare?: () => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: () => void;
   onHover?: (color: string | null) => void;
   isSimplified?: boolean;
   isIdentifying?: boolean;
@@ -54,7 +56,9 @@ export const BookCover: React.FC<BookCoverProps> = ({
   readingProgress = 0,
   onClick, 
   onEdit, 
-  onShare, 
+  onShare,
+  onDragStart,
+  onDragEnd,
   onHover,
   isSimplified,
   isIdentifying,
@@ -212,7 +216,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
               {displayCover ? (
                 <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
-              ) : svgDataUrl && !book.coverSource ? (
+              ) : svgDataUrl && book.coverSource?.type !== 'user-custom' ? (
                 <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
               ) : (
                 <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
@@ -298,10 +302,19 @@ export const BookCover: React.FC<BookCoverProps> = ({
           </button>
         </div>
 
-        {/* Drag Handle indicator */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 bg-black/40 backdrop-blur-sm p-3 rounded-full border border-white/20">
-          <GripVertical size={24} className="text-white shadow-xl" />
-        </div>
+        {/* Drag handle — only this element starts a shelf drag (keeps tap-to-open working) */}
+        {onDragStart && (
+          <div
+            draggable
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/40 backdrop-blur-sm p-2 rounded-full border border-white/20 cursor-grab active:cursor-grabbing"
+            title="Arrastra para mover"
+          >
+            <GripVertical size={20} className="text-white shadow-xl" />
+          </div>
+        )}
       </motion.div>
     </div>
   );

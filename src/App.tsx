@@ -44,7 +44,7 @@ import { useLibrary, LibraryBook } from './hooks/useLibrary';
 
 import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
-import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath } from './utils/routing';
+import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath, resolveBookRoute, buildBookShareUrl } from './utils/routing';
 import { displayBookTitle } from './components/BookCover';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
@@ -657,6 +657,7 @@ export default function App() {
 
     setFileName(filename);
     setFileType(book.type);
+    setIsReaderMode(false);
     restoreTargetPageRef.current = null;
     setPageNumber(1);
     setScrollRatio(0);
@@ -667,14 +668,6 @@ export default function App() {
     const shelf = shelves.find(s => s.bookIds.includes(book.id));
     const shelfTitle = shelf?.title || 'library';
     const bookPath = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
-    if (skipHistory) {
-      const onBookUrl = !!parseBookPath(window.location.pathname);
-      if (!onBookUrl || window.history.length <= 1) {
-        seedReaderHistoryStack(bookPath, filename);
-      }
-    } else {
-      pushReaderHistory(bookPath, filename);
-    }
     localStorage.setItem('catreader_last_book', filename);
 
     const progressPromise = forcePage
@@ -710,6 +703,15 @@ export default function App() {
       const [blob, progress] = await Promise.all([blobPromise, progressPromise]);
       const url = URL.createObjectURL(blob);
       setFileUrl(url);
+
+      if (skipHistory) {
+        const onBookUrl = !!resolveBookRoute(window.location.pathname, window.location.search);
+        if (!onBookUrl || window.history.length <= 1) {
+          seedReaderHistoryStack(bookPath, filename);
+        }
+      } else {
+        pushReaderHistory(bookPath, filename);
+      }
       if (book.type === 'txt') {
         const text = await blob.text();
         setTextContent([text]);
@@ -756,9 +758,9 @@ export default function App() {
   // --- Browser Navigation ---
   useEffect(() => {
     const handlePopState = () => {
-      const parsed = parseBookPath(window.location.pathname);
+      const parsed = resolveBookRoute(window.location.pathname, window.location.search);
       if (parsed) {
-        const book = matchBookBySlug(library, parsed.bookSlug);
+        const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
         if (book) {
           openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
         }
@@ -774,14 +776,14 @@ export default function App() {
     if (editingBook) return;
     if (library.length > 0 && !fileUrl && !hasResumedRef.current) {
       hasResumedRef.current = true; // Mark as resumed immediately to prevent any subsequent auto-resumes
-      const parsed = parseBookPath(window.location.pathname);
+      const parsed = resolveBookRoute(window.location.pathname, window.location.search);
       if (parsed) {
-        const book = matchBookBySlug(library, parsed.bookSlug);
+        const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
         if (book) {
           openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
         }
       }
-      // Land on gallery — user picks a book (no auto-resume ambush)
+      // Land on gallery when no deep link — user picks a book
     }
   }, [library, fileUrl, editingBook]);
 
@@ -984,9 +986,24 @@ export default function App() {
             <span className="text-[9px] font-mono w-7 text-center text-stone-400">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span>
             <button onClick={() => changeZoom(0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomIn size={12}/></button>
           </div>
+          {(fileType === 'pdf' || fileType === 'txt') && (
+            <>
+              <div className="w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+              <button
+                onClick={toggleReaderMode}
+                className={cn(
+                  "p-1.5 rounded-full transition-all shrink-0",
+                  isReaderMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10"
+                )}
+                title="Modo lector (texto)"
+                aria-label="Modo lector"
+              >
+                <BookText size={16} />
+              </button>
+            </>
+          )}
           <div className="hidden lg:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
           <div className="hidden lg:flex items-center gap-1 shrink-0">
-            <button onClick={toggleReaderMode} className={cn("p-1 rounded-full transition-all", isReaderMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Reader Mode"><BookText size={14} /></button>
             <button onClick={() => setIsFocusMode(!isFocusMode)} className={cn("p-1 rounded-full transition-all", isFocusMode ? "bg-indigo-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Focus (F)"><Maximize2 size={14} /></button>
             <button onClick={() => setIsCaptureMode(!isCaptureMode)} className={cn("p-1 rounded-full transition-all", isCaptureMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Capture Cover"><Crop size={14} /></button>
           </div>
@@ -1004,6 +1021,11 @@ export default function App() {
                   <Pencil size={12} /> Editar Libro
                 </button>
                 <label className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2 cursor-pointer"><Upload size={12} /> Subir PDF<input type="file" accept=".pdf,.txt,.epub" className="hidden" onChange={(e) => { onFileChange(e); setShowMenu(false); }} /></label>
+                {(fileType === 'pdf' || fileType === 'txt') && (
+                  <button onClick={() => { toggleReaderMode(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2 lg:hidden">
+                    <BookText size={12} /> {isReaderMode ? 'Ver PDF' : 'Modo lector'}
+                  </button>
+                )}
                 <button onClick={() => { navigator.clipboard.writeText(window.location.href); setShowMenu(false); showToast('Enlace copiado'); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2">🔗 Copiar enlace</button>
                 <div className="border-t border-white/10 my-1 md:hidden" />
                 <div className="px-3 py-2 md:hidden">
@@ -1087,7 +1109,7 @@ export default function App() {
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 
             savedBookCovers={savedBookCovers}
-            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); const path = buildBookPath(shelf?.title || 'library', book.filename); navigator.clipboard.writeText(`${window.location.origin}${path}`); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={removeShelf} />
+            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); navigator.clipboard.writeText(buildBookShareUrl(shelf?.title || 'library', book.filename)); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={removeShelf} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 
@@ -1214,7 +1236,7 @@ export default function App() {
                     updatedAt: Date.now()
                   };
                   const currentMeta = enrichedMetadata[fileName] || { title: fileName.replace(/\.[^/.]+$/, ""), author: 'Desconocido' };
-                  await updateBookMetadata(fileName, currentMeta.title, currentMeta.author, currentMeta.svg, coverSource);
+                  await updateBookMetadata(fileName, currentMeta.title, currentMeta.author, undefined, coverSource);
                   console.log(`[Capture] Metadata updated with coverSource`);
                 } catch (syncErr) {
                   console.error('[Capture Sync] Failed to sync captured cover thumbnail to cloud:', syncErr);
