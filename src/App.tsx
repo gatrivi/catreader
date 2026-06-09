@@ -820,9 +820,11 @@ export default function App() {
     const handlePopState = () => {
       const parsed = resolveBookRoute(window.location.pathname, window.location.search);
       if (parsed) {
-        const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
+        const rawFilename = 'rawFilename' in parsed ? parsed.rawFilename : undefined;
+        const quadrant = 'quadrant' in parsed ? parsed.quadrant : undefined;
+        const book = matchBookBySlug(library, parsed.bookSlug, rawFilename);
         if (book) {
-          openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
+          openFromLibrary(book as LibraryBook, parsed.page, quadrant, true);
         }
       } else {
         closeBook(true);
@@ -838,10 +840,12 @@ export default function App() {
       hasResumedRef.current = true; // Mark as resumed immediately to prevent any subsequent auto-resumes
       const parsed = resolveBookRoute(window.location.pathname, window.location.search);
       if (parsed) {
-        const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
-        if (book) {
-          openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
-        }
+          const rawFilename = 'rawFilename' in parsed ? parsed.rawFilename : undefined;
+          const quadrant = 'quadrant' in parsed ? parsed.quadrant : undefined;
+          const book = matchBookBySlug(library, parsed.bookSlug, rawFilename);
+          if (book) {
+            openFromLibrary(book as LibraryBook, parsed.page, quadrant, true);
+          }
       }
       // Land on gallery when no deep link — user picks a book
     }
