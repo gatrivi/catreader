@@ -58,63 +58,87 @@ export function useReaderSync({
 
   /**
    * Loads reading progress for a specific book.
+   *
+   * Important: opening a book must not wait indefinitely on Firestore/auth.
+   * Use local progress immediately, then let cloud progress refine it if it
+   * arrives quickly or is newer.
    */
   const loadProgress = useCallback(async (id: string): Promise<ReadingProgress | null> => {
     setIsRestoring(true);
     const category = getDeviceCategory();
-    
-    // Safety unlock for isRestoring: prevents getting stuck if PDF fails to render
-    const timeout = setTimeout(() => setIsRestoring(false), 10000);
+    const restoreSafetyTimeout = setTimeout(() => setIsRestoring(false), 10000);
+
+    const applyProgress = (data: ReadingProgress): ReadingProgress => {
+      // Restore the full zoom map if available to ensure other device settings aren't lost
+      if (data.zoom && typeof data.zoom === 'object') {
+        zoomMapRef.current = { ...data.zoom };
+      } else if (typeof data.zoom === 'number') {
+        // Back-fill previous format
+        zoomMapRef.current = { desktop: data.zoom };
+      }
+
+      const targetZoom = zoomMapRef.current[category] || zoomMapRef.current.desktop || 1.0;
+
+      setPageNumber(data.page || 1);
+      if (data.epubCfi) setEpubCfi(data.epubCfi);
+      setZoom(targetZoom);
+      setTheme((data.theme as Theme) || 'sepia');
+      setScrollRatio(data.scrollRatio || 0);
+      if (data.updatedAt) setLastSyncTime(data.updatedAt);
+
+      const needsScrollRestore =
+        (data.page && data.page > 1) ||
+        (data.scrollRatio && data.scrollRatio > 0) ||
+        !!data.epubCfi;
+
+      if (!needsScrollRestore) {
+        clearTimeout(restoreSafetyTimeout);
+        setIsRestoring(false);
+      }
+
+      return data;
+    };
 
     try {
-      const [progress, localStr] = await Promise.all([
-        syncService.loadProgress(id),
-        Promise.resolve(localStorage.getItem(`catreader_progress_${id}`)),
-      ]);
-      const local = localStr ? JSON.parse(localStr) : null;
-      // Prefer whichever source is newer — cloud-only merge was resetting to stale page 1
-      const data =
-        progress && local
-          ? (local.updatedAt || 0) >= (progress.updatedAt || 0)
-            ? local
-            : progress
-          : progress || local;
-      
-      if (data) {
-        // Restore the full zoom map if available to ensure other device settings aren't lost
-        if (data.zoom && typeof data.zoom === 'object') {
-          zoomMapRef.current = { ...data.zoom };
-        } else if (typeof data.zoom === 'number') {
-          // Back-fill previous format
-          zoomMapRef.current = { 'desktop': data.zoom };
+      let local: ReadingProgress | null = null;
+      const localStr = localStorage.getItem(`catreader_progress_${id}`);
+      if (localStr) {
+        try {
+          local = JSON.parse(localStr) as ReadingProgress;
+        } catch (parseErr) {
+          console.warn('[ReaderSync] Ignoring corrupt local progress:', parseErr);
         }
-
-        const targetZoom = zoomMapRef.current[category] || zoomMapRef.current['desktop'] || 1.0;
-
-        setPageNumber(data.page || 1);
-        if (data.epubCfi) setEpubCfi(data.epubCfi);
-        setZoom(targetZoom);
-        setTheme(data.theme as Theme || 'sepia');
-        setScrollRatio(data.scrollRatio || 0);
-        if (data.updatedAt) setLastSyncTime(data.updatedAt);
-
-        const needsScrollRestore =
-          (data.page && data.page > 1) ||
-          (data.scrollRatio && data.scrollRatio > 0) ||
-          !!data.epubCfi;
-        if (!needsScrollRestore) {
-          clearTimeout(timeout);
-          setIsRestoring(false);
-        }
-        return data;
       }
-      
-      clearTimeout(timeout);
+
+      const cloudProgressPromise = syncService.loadProgress(id).catch((err) => {
+        console.warn('[ReaderSync] Cloud progress load skipped:', err);
+        return null;
+      });
+
+      if (local) {
+        // Do not block opening. If cloud is newer, update state after open.
+        cloudProgressPromise.then((cloud) => {
+          if (cloud && (cloud.updatedAt || 0) > (local?.updatedAt || 0)) {
+            applyProgress(cloud);
+          }
+        });
+        return applyProgress(local);
+      }
+
+      // No local progress: give cloud a short chance, then open at page 1.
+      const cloud = await Promise.race([
+        cloudProgressPromise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
+      ]);
+
+      if (cloud) return applyProgress(cloud);
+
+      clearTimeout(restoreSafetyTimeout);
       setIsRestoring(false);
       return null;
     } catch (err) {
       console.error('Sync load error:', err);
-      clearTimeout(timeout);
+      clearTimeout(restoreSafetyTimeout);
       setIsRestoring(false);
       return null;
     }
