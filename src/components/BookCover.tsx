@@ -150,7 +150,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
       )}
 
       <motion.div 
-        onClick={isSupported ? onClick : undefined}
+        onClick={onClick}
         title="Arrastra para mover el libro"
         className={cn(
           "relative bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
@@ -160,7 +160,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
             : "shadow-[2px_2px_8px_rgba(0,0,0,0.4)] sm:shadow-[8px_8px_20px_rgba(0,0,0,0.6)] hover:-translate-y-1 sm:hover:-translate-y-2 duration-300 hover:shadow-[4px_4px_12px_rgba(0,0,0,0.5)] sm:hover:shadow-[12px_12px_28px_rgba(0,0,0,0.7)]",
           isIdentifying && "ring-4 ring-amber-500 ring-offset-2 ring-offset-stone-900 animate-pulse",
           isSavedInDb && "ring-4 ring-emerald-500/80 ring-offset-2 ring-offset-stone-900 shadow-[0_0_20px_rgba(16,185,129,0.6)] animate-pulse",
-          !isSupported && "cursor-not-allowed filter grayscale contrast-75 brightness-75",
+          !isSupported && "filter grayscale contrast-75 brightness-75",
           !hasMetadata && !isSimplified && "ring-1 ring-dashed ring-amber-500/40"
         )}
       >

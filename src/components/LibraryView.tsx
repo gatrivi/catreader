@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Shelf } from '../hooks/useShelves';
+import { filterLibraryBooks } from '../utils/reader';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -110,11 +111,7 @@ export const LibraryView = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pfp = authService.getPFP();
 
-  const filteredBooks = library.filter(book => 
-    book.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    book.author?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    book.filename.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredBooks = filterLibraryBooks(library, searchQuery);
   const svgDataUrl = pfp ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(pfp)))}` : null;
   const gastonPfpUrl = '/profile.jpg';
 

@@ -133,7 +133,7 @@ export const EpubView: React.FC<EpubViewProps> = ({
         background: 'rgba(245, 158, 11, 0.35) !important',
         color: 'inherit !important'
       },
-      `.${HIGHLIGHT_CLASS}`: {
+      [`.${HIGHLIGHT_CLASS}`]: {
         fill: 'rgba(245, 158, 11, 0.36) !important',
         'fill-opacity': '0.36 !important',
         'mix-blend-mode': 'multiply'

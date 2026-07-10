@@ -46,6 +46,8 @@ import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
 import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath, resolveBookRoute, buildBookShareUrl } from './utils/routing';
 import { displayBookTitle } from './components/BookCover';
+import { clampPage, offsetPage } from './utils/reader';
+import { PageInput } from './components/PageInput';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
 
@@ -158,7 +160,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.8.5';
+  const APP_VERSION = 'v2.9.0';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -240,8 +242,9 @@ export default function App() {
   // Safety net: clamp pageNumber whenever numPages becomes known or changes
   useEffect(() => {
     if (numPages > 0 && pageNumber > numPages) {
-      console.warn(`[Reader] pageNumber ${pageNumber} clamped to ${numPages}`);
-      setPageNumber(numPages);
+      const clamped = clampPage(pageNumber, numPages);
+      console.warn(`[Reader] pageNumber ${pageNumber} clamped to ${clamped}`);
+      setPageNumber(clamped);
       setIsRestoring(false);
     }
   }, [numPages, pageNumber]);
@@ -835,7 +838,7 @@ export default function App() {
   };
 
   const changePage = (offset: number) => {
-    const newPage = Math.min(Math.max(1, pageNumber + offset), numPages);
+    const newPage = offsetPage(pageNumber, offset, numPages);
     if (newPage !== pageNumber) scrollToPage(newPage);
   };
 
@@ -1129,7 +1132,7 @@ export default function App() {
               try {
                 setNumPages(pdf.numPages);
                 const target = restoreTargetPageRef.current ?? pageNumber;
-                const clampedPage = Math.min(Math.max(1, target), pdf.numPages);
+                const clampedPage = clampPage(target, pdf.numPages);
                 if (clampedPage !== pageNumber) {
                   setPageNumber(clampedPage);
                 }
@@ -1279,54 +1282,5 @@ export default function App() {
       <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} onPasteError={(msg) => showToast(msg)} isSyncing={isSyncing} />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
     </div>
-  );
-}
-
-function PageInput({ pageNumber, numPages, onGoToPage }: { pageNumber: number; numPages: number; onGoToPage: (p: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(pageNumber));
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setValue(String(pageNumber));
-  }, [pageNumber]);
-
-  useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [editing]);
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        inputMode="numeric"
-        value={value}
-        onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))}
-        onBlur={() => {
-          const p = parseInt(value, 10);
-          if (!isNaN(p) && p >= 1 && p <= numPages) onGoToPage(p);
-          setEditing(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            const p = parseInt(value, 10);
-            if (!isNaN(p) && p >= 1 && p <= numPages) onGoToPage(p);
-            setEditing(false);
-          }
-          if (e.key === 'Escape') setEditing(false);
-        }}
-        className="w-10 bg-transparent text-center text-[10px] font-mono text-stone-300 outline-none border-b border-white/20 focus:border-amber-500"
-      />
-    );
-  }
-
-  return (
-    <button onClick={() => setEditing(true)} className="text-[10px] font-mono tabular-nums min-w-[48px] text-center hover:text-white transition-colors">
-      {pageNumber} / {numPages}
-    </button>
   );
 }

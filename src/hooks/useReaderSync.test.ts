@@ -108,4 +108,57 @@ describe('useReaderSync', () => {
       })
     );
   });
+
+  it('restores page number from progress (open book resume)', async () => {
+    (syncService.loadProgress as any).mockResolvedValue({
+      page: 42,
+      zoom: 1,
+      theme: 'dim',
+      updatedAt: Date.now()
+    });
+
+    const { result } = renderHook(() => useReaderSync(mockProps));
+
+    await act(async () => {
+      await result.current.loadProgress('test.pdf');
+    });
+
+    expect(result.current.pageNumber).toBe(42);
+  });
+
+  it('allows setPageNumber for go-to-page', async () => {
+    (syncService.loadProgress as any).mockResolvedValue(null);
+    const { result } = renderHook(() => useReaderSync(mockProps));
+
+    act(() => {
+      result.current.setPageNumber(7);
+    });
+
+    expect(result.current.pageNumber).toBe(7);
+
+    await act(async () => {
+      await result.current.saveProgress();
+    });
+
+    expect(syncService.saveProgress).toHaveBeenCalledWith(
+      'test.pdf',
+      expect.objectContaining({ page: 7 })
+    );
+  });
+
+  it('falls back to localStorage progress when cloud miss', async () => {
+    (syncService.loadProgress as any).mockResolvedValue(null);
+    localStorage.setItem(
+      'catreader_progress_test.pdf',
+      JSON.stringify({ page: 15, zoom: 1.2, updatedAt: Date.now() })
+    );
+
+    const { result } = renderHook(() => useReaderSync(mockProps));
+
+    await act(async () => {
+      await result.current.loadProgress('test.pdf');
+    });
+
+    expect(result.current.pageNumber).toBe(15);
+  });
 });

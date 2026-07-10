@@ -32,9 +32,16 @@ describe('BookCover', () => {
     const handleClick = vi.fn();
     render(<BookCover book={mockBook} onClick={handleClick} onEdit={() => {}} />);
     
-    fireEvent.click(screen.getByText('Test Book').parentElement?.parentElement!);
-    // Note: The clickable div is the one with onClick
-    // Since we're clicking the parent of the text, it should trigger.
-    // In the component, the onClick is on the main cover div.
+    fireEvent.click(screen.getByTitle('Arrastra para mover el libro'));
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('still calls onClick when file type is unsupported', () => {
+    const handleClick = vi.fn();
+    const unsupportedBook = { ...mockBook, type: 'docx' };
+    render(<BookCover book={unsupportedBook} onClick={handleClick} onEdit={() => {}} />);
+
+    fireEvent.click(screen.getByTitle('Arrastra para mover el libro'));
+    expect(handleClick).toHaveBeenCalledTimes(1);
   });
 });

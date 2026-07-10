@@ -31,12 +31,15 @@ export function buildBookPath(
   return path;
 }
 
-export function parseBookPath(path: string): {
+export type BookRoute = {
   shelfSlug: string;
   bookSlug: string;
+  rawFilename?: string;
   page?: number;
   quadrant?: number;
-} | null {
+};
+
+export function parseBookPath(path: string): BookRoute | null {
   const parts = path.split('/').filter(Boolean);
   if (parts.length < 2) return null;
   const [shelfSlug, bookSlug, pageStr, quadrantStr] = parts;
@@ -67,12 +70,7 @@ export function matchBookBySlug(
 }
 
 /** Legacy share links: ?book=filename.pdf&page=12 */
-export function parseBookQuery(search: string): {
-  shelfSlug: string;
-  bookSlug: string;
-  rawFilename?: string;
-  page?: number;
-} | null {
+export function parseBookQuery(search: string): BookRoute | null {
   const params = new URLSearchParams(search);
   const book = params.get('book');
   if (!book) return null;

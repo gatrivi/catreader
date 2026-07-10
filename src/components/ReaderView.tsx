@@ -6,6 +6,7 @@ import { SadMonkIcon } from './SadMonkIcon';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { isPageInRenderWindow } from '../utils/reader';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -448,7 +449,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               </div>
             ) : (
               Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
-                const isVisible = Math.abs(p - pageNumber) <= 8;
+                const isVisible = isPageInRenderWindow(p, pageNumber);
                 const ratio = pageRatios[p - 1] || 595 / 842;
                 const calculatedHeight = (zoom * 800) / ratio;
                 const minWidth = Math.min(
