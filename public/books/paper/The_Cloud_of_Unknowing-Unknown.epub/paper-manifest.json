@@ -1,0 +1,147 @@
+{
+  "seed": "d702114861f9d97f5a8bf9dcf1ebf24aba900d30cba8734ce7e50637e5a4a888",
+  "bookId": "The_Cloud_of_Unknowing-Unknown.epub",
+  "paletteTint": "#f4ead5",
+  "stains": [
+    {
+      "id": "s0",
+      "page_center": 37,
+      "radius_pages": 3.561019256711006,
+      "x": 0.7236494649201631,
+      "y": 0.12345323003828526,
+      "r_px": 109,
+      "intensity": 0.1785243507940322,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-0.svg"
+    },
+    {
+      "id": "s1",
+      "page_center": 13,
+      "radius_pages": 4.231423328630626,
+      "x": 0.7651165017858148,
+      "y": 0.7493767574429512,
+      "r_px": 75,
+      "intensity": 0.20949763918761163,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-1.svg"
+    },
+    {
+      "id": "s2",
+      "page_center": 13,
+      "radius_pages": 4.726432679221034,
+      "x": 0.6791730327531695,
+      "y": 0.4788848180323839,
+      "r_px": 93,
+      "intensity": 0.3132337742834352,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-2.svg"
+    },
+    {
+      "id": "s3",
+      "page_center": 5,
+      "radius_pages": 2.9453012757003307,
+      "x": 0.6252431614324451,
+      "y": 0.20097493305802347,
+      "r_px": 158,
+      "intensity": 0.30364019112894314,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-3.svg"
+    },
+    {
+      "id": "s4",
+      "page_center": 25,
+      "radius_pages": 3.4303563283756375,
+      "x": 0.8902661541476846,
+      "y": 0.8977128913626075,
+      "r_px": 138,
+      "intensity": 0.49465697812847786,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-4.svg"
+    },
+    {
+      "id": "s5",
+      "page_center": 7,
+      "radius_pages": 4.356671123765409,
+      "x": 0.3926339682191611,
+      "y": 0.2009968126192689,
+      "r_px": 80,
+      "intensity": 0.30174303692765536,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-5.svg"
+    },
+    {
+      "id": "s6",
+      "page_center": 30,
+      "radius_pages": 3.4617196721956134,
+      "x": 0.6046720094978809,
+      "y": 0.474805542640388,
+      "r_px": 143,
+      "intensity": 0.4564236202277243,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-6.svg"
+    },
+    {
+      "id": "s7",
+      "page_center": 38,
+      "radius_pages": 3.4017671141773462,
+      "x": 0.5615811657160521,
+      "y": 0.5281177759170532,
+      "r_px": 118,
+      "intensity": 0.29415246695280073,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-7.svg"
+    },
+    {
+      "id": "s8",
+      "page_center": 22,
+      "radius_pages": 4.993315634317696,
+      "x": 0.6404990373179317,
+      "y": 0.33080770913511515,
+      "r_px": 111,
+      "intensity": 0.4627590020885691,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-8.svg"
+    },
+    {
+      "id": "s9",
+      "page_center": 31,
+      "radius_pages": 4.307401762343943,
+      "x": 0.6816853884607553,
+      "y": 0.13844328727573157,
+      "r_px": 108,
+      "intensity": 0.19558122135931624,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-9.svg"
+    },
+    {
+      "id": "s10",
+      "page_center": 28,
+      "radius_pages": 2.111754396930337,
+      "x": 0.7850746596232057,
+      "y": 0.706021673232317,
+      "r_px": 66,
+      "intensity": 0.31996064060367646,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-10.svg"
+    },
+    {
+      "id": "s11",
+      "page_center": 40,
+      "radius_pages": 3.663247433491051,
+      "x": 0.10574861988425255,
+      "y": 0.4690180016681552,
+      "r_px": 111,
+      "intensity": 0.2384895657538436,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-11.svg"
+    },
+    {
+      "id": "s12",
+      "page_center": 16,
+      "radius_pages": 5.046677283011377,
+      "x": 0.7787517346441746,
+      "y": 0.8037526093423367,
+      "r_px": 109,
+      "intensity": 0.49305481855990363,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-12.svg"
+    },
+    {
+      "id": "s13",
+      "page_center": 19,
+      "radius_pages": 4.875072753988206,
+      "x": 0.42230738550424574,
+      "y": 0.5272162621840835,
+      "r_px": 68,
+      "intensity": 0.35168328633299095,
+      "src": "/books/paper/The_Cloud_of_Unknowing-Unknown.epub/stains/stain-13.svg"
+    }
+  ]
+}

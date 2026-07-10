@@ -12,6 +12,8 @@ export interface LibraryBook {
   filename: string;
   type: string;
   svg?: string;
+  /** Path to paper-manifest.json when Paper Soul bake exists */
+  paper?: string;
   coverSource?: {
     type: 'user-custom' | 'ai-generated' | 'openlibrary';
     url?: string;

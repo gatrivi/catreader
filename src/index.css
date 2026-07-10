@@ -66,3 +66,13 @@
   transform: rotateY(180deg);
 }
 
+/* Paper Soul — ink variance (EPUB/TXT / reader-mode text) */
+.paper-soul-ink .ink-0 { opacity: 0.94; letter-spacing: 0.01em; }
+.paper-soul-ink .ink-1 { opacity: 0.97; font-weight: 450; }
+.paper-soul-ink .ink-2 { opacity: 0.91; letter-spacing: -0.01em; }
+.paper-soul-ink .ink-3 { opacity: 0.96; }
+.paper-soul-ink .ink-4 { opacity: 0.93; letter-spacing: 0.015em; }
+.paper-soul-ink .ink-5 { opacity: 0.98; font-weight: 400; }
+.paper-soul-ink .ink-6 { opacity: 0.92; }
+.paper-soul-ink .ink-7 { opacity: 0.95; letter-spacing: 0.005em; }
+

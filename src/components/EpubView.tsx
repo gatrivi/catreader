@@ -124,7 +124,11 @@ export const EpubView: React.FC<EpubViewProps> = ({
     const themeStyles: any = {
       body: {
         background: 'transparent !important',
-        color: theme === 'dark' ? '#d1d5db' : theme === 'sepia' ? '#433422' : '#1c1917',
+        color:
+          theme === 'dark' ? '#d1d5db'
+          : theme === 'sepia' || theme === 'paper' ? '#4a3f35'
+          : theme === 'dim' ? '#cbd5e1'
+          : '#1c1917',
         'font-family': 'serif !important',
         'font-size': '18px !important',
         'line-height': '1.6 !important'

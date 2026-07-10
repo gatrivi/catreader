@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { syncService, ReadingProgress } from '../services/syncService';
 
-type Theme = 'light' | 'dim' | 'dark' | 'sepia';
+type Theme = 'light' | 'dim' | 'dark' | 'sepia' | 'paper';
 
 interface UseReaderSyncProps {
   fileName: string;

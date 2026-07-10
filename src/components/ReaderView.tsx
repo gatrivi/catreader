@@ -7,6 +7,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { isPageInRenderWindow } from '../utils/reader';
+import { PaperLayer } from './PaperLayer';
+import { usePaperTexture } from '../hooks/usePaperTexture';
+import { wrapInkVariance } from '../utils/paperSoul';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -38,6 +41,8 @@ interface ReaderViewProps {
   isSimplified: boolean;
   isReaderMode?: boolean;
   onToggleReaderMode?: () => void;
+  /** books.json paper manifest URL */
+  paperPath?: string | null;
 }
 
 interface PageItemProps {
@@ -299,8 +304,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   isSimplified,
   isReaderMode,
   onToggleReaderMode,
+  paperPath,
 }) => {
   const [docError, setDocError] = useState<string | null>(null);
+  const isTextView = isReaderMode || fileType === 'txt';
+  const paperOn = theme === 'paper';
+  // Stains + ink only on DOM text (TXT / reader mode / EPUB shell). PDF raster keeps filter-only Paper Mode.
+  const paperLayersOn = paperOn && (isTextView || fileType === 'epub');
+  const { active, grainUrl } = usePaperTexture(paperPath, pageNumber, paperLayersOn);
 
   const handleLoadSuccess = useCallback(
     (pdf: any) => {
@@ -364,11 +375,12 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       {isReaderMode || fileType === 'txt' ? (
         <div
           className={cn(
-            'max-w-2xl w-full p-6 sm:p-12 font-serif leading-relaxed shadow-xl rounded-2xl min-h-[80vh] selection:bg-amber-200 selection:text-amber-900 transition-all duration-300 flex flex-col gap-2',
+            'relative max-w-2xl w-full p-6 sm:p-12 font-serif leading-relaxed shadow-xl rounded-2xl min-h-[80vh] selection:bg-amber-200 selection:text-amber-900 transition-all duration-300 flex flex-col gap-2',
             themeStyles[theme]
           )}
           style={{ fontSize: `${(typeof zoom === 'number' ? zoom : 1) * 1.25}rem` }}
         >
+          {paperLayersOn && <PaperLayer active={active} grainUrl={grainUrl} />}
           {textContent ? (
             textContent.map((pageHtml, idx) => {
               const pNum = idx + 1;
@@ -390,12 +402,16 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 );
               }
 
+              const isPlain = fileType === 'txt' && pageHtml && !pageHtml.includes('<');
+              const html =
+                paperOn && isPlain ? wrapInkVariance(pageHtml) : pageHtml;
+
               return (
                 <div
                   key={`text-page-item-${pNum}`}
                   id={`text-page-${pNum}`}
                   data-page={pNum}
-                  className="text-page-wrapper py-6 border-b border-stone-200/20 dark:border-stone-800/20 last:border-b-0 flex flex-col gap-3"
+                  className="relative z-[1] text-page-wrapper py-6 border-b border-stone-200/20 dark:border-stone-800/20 last:border-b-0 flex flex-col gap-3"
                 >
                   <div className="flex items-center justify-between border-b border-stone-200/30 dark:border-stone-800/30 pb-2 mb-4 font-mono text-[9px] text-stone-400 dark:text-stone-500 select-none">
                     <span className="tracking-widest uppercase font-bold text-amber-600/70 dark:text-amber-500/60">PÁGINA {pNum}</span>
@@ -409,10 +425,13 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                     )}
                   </div>
 
-                  {pageHtml ? (
-                    <div 
-                      className="semantic-page-content leading-relaxed text-justify space-y-4"
-                      dangerouslySetInnerHTML={{ __html: pageHtml }}
+                  {html ? (
+                    <div
+                      className={cn(
+                        'semantic-page-content leading-relaxed text-justify space-y-4',
+                        paperOn && isPlain && 'paper-soul-ink'
+                      )}
+                      dangerouslySetInnerHTML={{ __html: html }}
                     />
                   ) : (
                     <div className="flex items-center justify-center py-10 text-stone-400 dark:text-stone-600 gap-2">
@@ -477,13 +496,16 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           </Document>
         </div>
       ) : fileType === 'epub' ? (
-        <div className="w-full h-[calc(100vh-120px)] flex flex-col">
-          <EpubView 
-            fileUrl={fileUrl} 
-            theme={theme} 
-            initialLocation={epubCfi} 
-            onLocationChange={onEpubLocationChange} 
-          />
+        <div className="relative w-full h-[calc(100vh-120px)] flex flex-col">
+          {paperLayersOn && <PaperLayer active={active} grainUrl={grainUrl} />}
+          <div className="relative z-[1] flex-1 flex flex-col min-h-0">
+            <EpubView 
+              fileUrl={fileUrl} 
+              theme={theme} 
+              initialLocation={epubCfi} 
+              onLocationChange={onEpubLocationChange} 
+            />
+          </div>
         </div>
       ) : (
         <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-stone-900/40 backdrop-blur-md rounded-3xl border border-white/5 shadow-2xl py-20">

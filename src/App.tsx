@@ -160,7 +160,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.9.0';
+  const APP_VERSION = 'v2.9.1';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1125,6 +1125,7 @@ export default function App() {
             scrollRatio={scrollRatio} 
             isRestoring={isRestoring} 
             isReaderMode={isReaderMode}
+            paperPath={library.find(b => b.filename === fileName)?.paper ?? null}
             pageRatios={pageRatios} 
             onLoadSuccess={async (pdf) => {
               const fallback = 595 / 842;

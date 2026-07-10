@@ -16,11 +16,21 @@ const currentBooks = fs.existsSync(outputFile)
   ? JSON.parse(fs.readFileSync(outputFile, 'utf8'))
   : [];
 
+function paperSafeId(filename) {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 96);
+}
+
+function paperManifestPath(filename) {
+  const p = path.join(booksDir, 'paper', paperSafeId(filename), 'paper-manifest.json');
+  return fs.existsSync(p) ? `/books/paper/${paperSafeId(filename)}/paper-manifest.json` : undefined;
+}
+
 const books = files
   .filter(file => supportedExtensions.some(ext => file.toLowerCase().endsWith(ext)))
   .map(file => {
     const ext = path.extname(file);
     const existing = currentBooks.find(b => b.filename === file);
+    const paper = paperManifestPath(file);
     
     return {
       id: file,
@@ -28,7 +38,8 @@ const books = files
       type: ext.substring(1).toLowerCase(),
       title: existing?.title || file.replace(ext, ''),
       author: existing?.author,
-      svg: existing?.svg
+      svg: existing?.svg,
+      ...(paper ? { paper } : {})
     };
   });
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="g" cx="45%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="hsl(40 50% 50%)" stop-opacity="0.7946569781284778"/>
+      <stop offset="55%" stop-color="hsl(40 50% 50%)" stop-opacity="0.22259564015781505"/>
+      <stop offset="100%" stop-color="hsl(40 50% 50%)" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="w">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="8487" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="18"/>
+    </filter>
+  </defs>
+  <circle cx="128" cy="128" r="110" fill="url(#g)" filter="url(#w)"/>
+</svg>

@@ -8,6 +8,7 @@
     "dev": "tsx server.ts",
     "prebuild": "node scripts/generate-library.js",
     "enrich": "node scripts/gemini-enrich.js",
+    "paper-bake": "node scripts/paper-bake.js",
     "build": "vite build && node scripts/post-build.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",

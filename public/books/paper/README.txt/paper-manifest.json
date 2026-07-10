@@ -1,0 +1,157 @@
+{
+  "seed": "b01eeed0ec6fc4f4799e44c7b4084e649d6eee4f1aca52ac935553ff82108398",
+  "bookId": "README.txt",
+  "paletteTint": "#f4ead5",
+  "stains": [
+    {
+      "id": "s0",
+      "page_center": 15,
+      "radius_pages": 5.206948812119663,
+      "x": 0.7684998350217939,
+      "y": 0.19196394309401513,
+      "r_px": 83,
+      "intensity": 0.16986532161245121,
+      "src": "/books/paper/README.txt/stains/stain-0.svg"
+    },
+    {
+      "id": "s1",
+      "page_center": 33,
+      "radius_pages": 4.771788047626615,
+      "x": 0.6307550249621272,
+      "y": 0.20836268924176693,
+      "r_px": 93,
+      "intensity": 0.1533729801652953,
+      "src": "/books/paper/README.txt/stains/stain-1.svg"
+    },
+    {
+      "id": "s2",
+      "page_center": 19,
+      "radius_pages": 5.49787219800055,
+      "x": 0.36109448727220295,
+      "y": 0.4591239115223289,
+      "r_px": 103,
+      "intensity": 0.2548879852285608,
+      "src": "/books/paper/README.txt/stains/stain-2.svg"
+    },
+    {
+      "id": "s3",
+      "page_center": 22,
+      "radius_pages": 3.646779803559184,
+      "x": 0.2645985459908843,
+      "y": 0.25742415320128204,
+      "r_px": 96,
+      "intensity": 0.499984351254534,
+      "src": "/books/paper/README.txt/stains/stain-3.svg"
+    },
+    {
+      "id": "s4",
+      "page_center": 38,
+      "radius_pages": 5.017667888663709,
+      "x": 0.3061091057956219,
+      "y": 0.81392309255898,
+      "r_px": 144,
+      "intensity": 0.3277414371492341,
+      "src": "/books/paper/README.txt/stains/stain-4.svg"
+    },
+    {
+      "id": "s5",
+      "page_center": 9,
+      "radius_pages": 3.6014161072671413,
+      "x": 0.6004476370289922,
+      "y": 0.7677615283057094,
+      "r_px": 86,
+      "intensity": 0.32040776195935905,
+      "src": "/books/paper/README.txt/stains/stain-5.svg"
+    },
+    {
+      "id": "s6",
+      "page_center": 8,
+      "radius_pages": 3.15218120533973,
+      "x": 0.3799055431038142,
+      "y": 0.1369040619581938,
+      "r_px": 78,
+      "intensity": 0.1831209316384047,
+      "src": "/books/paper/README.txt/stains/stain-6.svg"
+    },
+    {
+      "id": "s7",
+      "page_center": 7,
+      "radius_pages": 3.0598526326939464,
+      "x": 0.19915868751704693,
+      "y": 0.39516682904213674,
+      "r_px": 79,
+      "intensity": 0.3465248331311159,
+      "src": "/books/paper/README.txt/stains/stain-7.svg"
+    },
+    {
+      "id": "s8",
+      "page_center": 12,
+      "radius_pages": 2.7023780597373843,
+      "x": 0.4233051907271147,
+      "y": 0.10746934842318297,
+      "r_px": 103,
+      "intensity": 0.4097859048633836,
+      "src": "/books/paper/README.txt/stains/stain-8.svg"
+    },
+    {
+      "id": "s9",
+      "page_center": 26,
+      "radius_pages": 1.6816211007535458,
+      "x": 0.6823521809652447,
+      "y": 0.6821568489074707,
+      "r_px": 103,
+      "intensity": 0.2516846053535119,
+      "src": "/books/paper/README.txt/stains/stain-9.svg"
+    },
+    {
+      "id": "s10",
+      "page_center": 2,
+      "radius_pages": 2.750336593016982,
+      "x": 0.19124925322830677,
+      "y": 0.6389033550396561,
+      "r_px": 133,
+      "intensity": 0.3527572107966989,
+      "src": "/books/paper/README.txt/stains/stain-10.svg"
+    },
+    {
+      "id": "s11",
+      "page_center": 5,
+      "radius_pages": 5.1976923337206244,
+      "x": 0.11359400507062674,
+      "y": 0.332457129098475,
+      "r_px": 62,
+      "intensity": 0.4907282962463796,
+      "src": "/books/paper/README.txt/stains/stain-11.svg"
+    },
+    {
+      "id": "s12",
+      "page_center": 17,
+      "radius_pages": 3.354196483269334,
+      "x": 0.3679699365049601,
+      "y": 0.4131848311051727,
+      "r_px": 116,
+      "intensity": 0.38773871447192504,
+      "src": "/books/paper/README.txt/stains/stain-12.svg"
+    },
+    {
+      "id": "s13",
+      "page_center": 20,
+      "radius_pages": 4.930461948737502,
+      "x": 0.1748417528346181,
+      "y": 0.8611174268648029,
+      "r_px": 122,
+      "intensity": 0.44280980207258835,
+      "src": "/books/paper/README.txt/stains/stain-13.svg"
+    },
+    {
+      "id": "s14",
+      "page_center": 5,
+      "radius_pages": 3.915073873475194,
+      "x": 0.16448758076876402,
+      "y": 0.18109925072640182,
+      "r_px": 99,
+      "intensity": 0.4756078951642848,
+      "src": "/books/paper/README.txt/stains/stain-14.svg"
+    }
+  ]
+}
