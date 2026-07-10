@@ -307,7 +307,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   paperPath,
 }) => {
   const [docError, setDocError] = useState<string | null>(null);
-  const isTextView = isReaderMode || fileType === 'txt';
   const paperOn = theme === 'paper';
   // Grain+stains on all paths when paper theme; ink only on DOM text.
   const { manifest, active, grainUrl } = usePaperTexture(paperPath, pageNumber, paperOn);
