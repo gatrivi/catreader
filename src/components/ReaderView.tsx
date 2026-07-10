@@ -9,7 +9,7 @@ import { twMerge } from 'tailwind-merge';
 import { isPageInRenderWindow } from '../utils/reader';
 import { PaperLayer } from './PaperLayer';
 import { usePaperTexture } from '../hooks/usePaperTexture';
-import { wrapInkVariance } from '../utils/paperSoul';
+import { applyInkVariance, stainsForPage } from '../utils/paperSoul';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -309,9 +309,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const [docError, setDocError] = useState<string | null>(null);
   const isTextView = isReaderMode || fileType === 'txt';
   const paperOn = theme === 'paper';
-  // Stains + ink only on DOM text (TXT / reader mode / EPUB shell). PDF raster keeps filter-only Paper Mode.
-  const paperLayersOn = paperOn && (isTextView || fileType === 'epub');
-  const { active, grainUrl } = usePaperTexture(paperPath, pageNumber, paperLayersOn);
+  // Grain+stains on all paths when paper theme; ink only on DOM text.
+  const { manifest, active, grainUrl } = usePaperTexture(paperPath, pageNumber, paperOn);
 
   const handleLoadSuccess = useCallback(
     (pdf: any) => {
@@ -380,7 +379,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           )}
           style={{ fontSize: `${(typeof zoom === 'number' ? zoom : 1) * 1.25}rem` }}
         >
-          {paperLayersOn && <PaperLayer active={active} grainUrl={grainUrl} />}
+          {paperOn && <PaperLayer active={active} grainUrl={grainUrl} />}
           {textContent ? (
             textContent.map((pageHtml, idx) => {
               const pNum = idx + 1;
@@ -402,9 +401,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 );
               }
 
-              const isPlain = fileType === 'txt' && pageHtml && !pageHtml.includes('<');
-              const html =
-                paperOn && isPlain ? wrapInkVariance(pageHtml) : pageHtml;
+              const html = paperOn && pageHtml ? applyInkVariance(pageHtml) : pageHtml;
 
               return (
                 <div
@@ -429,7 +426,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                     <div
                       className={cn(
                         'semantic-page-content leading-relaxed text-justify space-y-4',
-                        paperOn && isPlain && 'paper-soul-ink'
+                        paperOn && 'paper-soul-ink'
                       )}
                       dangerouslySetInnerHTML={{ __html: html }}
                     />
@@ -452,7 +449,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       ) : fileType === 'pdf' ? (
         <div
           className="relative shadow-2xl flex flex-col gap-0 py-0"
-          style={{ filter: pdfFilter[theme] }}
         >
           <Document
             file={fileUrl}
@@ -475,21 +471,37 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                   window.innerWidth * 0.9,
                   zoom * 800
                 );
+                const pageStains = paperOn ? stainsForPage(manifest, p) : [];
 
                 return (
-                  <PageItem
+                  <div
                     key={`page-item-${p}`}
-                    pageNum={p}
-                    zoom={zoom}
-                    isVisible={isVisible}
-                    calculatedHeight={calculatedHeight}
-                    minWidth={minWidth}
-                    isFocusMode={isFocusMode}
-                    isCaptureMode={isCaptureMode}
-                    onCapture={onCapture}
-                    onRenderSuccess={onPageRenderSuccess}
-                    onRenderError={onPageRenderError}
-                  />
+                    className="relative"
+                    style={{ minHeight: calculatedHeight }}
+                  >
+                    {/* Filter on canvas only — PaperLayer is a sibling so it stays unfiltered */}
+                    <div style={{ filter: pdfFilter[theme] }}>
+                      <PageItem
+                        pageNum={p}
+                        zoom={zoom}
+                        isVisible={isVisible}
+                        calculatedHeight={calculatedHeight}
+                        minWidth={minWidth}
+                        isFocusMode={isFocusMode}
+                        isCaptureMode={isCaptureMode}
+                        onCapture={onCapture}
+                        onRenderSuccess={onPageRenderSuccess}
+                        onRenderError={onPageRenderError}
+                      />
+                    </div>
+                    {paperOn && (
+                      <PaperLayer
+                        active={pageStains}
+                        grainUrl={grainUrl}
+                        className="z-[5]"
+                      />
+                    )}
+                  </div>
                 );
               })
             )}
@@ -497,7 +509,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         </div>
       ) : fileType === 'epub' ? (
         <div className="relative w-full h-[calc(100vh-120px)] flex flex-col">
-          {paperLayersOn && <PaperLayer active={active} grainUrl={grainUrl} />}
+          {paperOn && <PaperLayer active={active} grainUrl={grainUrl} />}
           <div className="relative z-[1] flex-1 flex flex-col min-h-0">
             <EpubView 
               fileUrl={fileUrl} 

@@ -67,6 +67,25 @@ export function wrapInkVariance(text: string): string {
   return out;
 }
 
+/** Word-level ink for HTML ghost text (ponytail: avoids per-char span explosion). */
+export function wrapInkVarianceHtml(html: string): string {
+  let i = 0;
+  return html.replace(/(^|>)([^<]+)(?=<|$)/g, (_m, open: string, text: string) => {
+    if (!/\S/.test(text)) return open + text;
+    const wrapped = text.replace(/\S+/g, (word) => {
+      const cls = inkClass(word.charCodeAt(0), i++);
+      return `<span class="ink-${cls}">${word}</span>`;
+    });
+    return open + wrapped;
+  });
+}
+
+/** Plain → char wrap; HTML → word wrap. */
+export function applyInkVariance(content: string): string {
+  if (!content) return content;
+  return content.includes('<') ? wrapInkVarianceHtml(content) : wrapInkVariance(content);
+}
+
 function escapeHtml(ch: string): string {
   if (ch === '&') return '&amp;';
   if (ch === '<') return '&lt;';

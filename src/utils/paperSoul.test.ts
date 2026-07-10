@@ -4,6 +4,8 @@ import {
   stainsForPage,
   inkClass,
   wrapInkVariance,
+  wrapInkVarianceHtml,
+  applyInkVariance,
   paperSafeId,
   type PaperManifest,
 } from './paperSoul';
@@ -48,6 +50,19 @@ describe('paperSoul', () => {
     expect(html).toContain('class="ink-');
     expect(html).toContain('>A</span>');
     expect(html.endsWith(' ')).toBe(true);
+  });
+
+  it('wrapInkVarianceHtml wraps words, keeps tags', () => {
+    const html = wrapInkVarianceHtml('<p>Hello world</p>');
+    expect(html).toContain('<p>');
+    expect(html).toContain('class="ink-');
+    expect(html).toContain('>Hello</span>');
+    expect(html).toContain('>world</span>');
+  });
+
+  it('applyInkVariance picks path by content', () => {
+    expect(applyInkVariance('Hi').includes('ink-')).toBe(true);
+    expect(applyInkVariance('<em>Hi</em>')).toContain('<em>');
   });
 
   it('paperSafeId sanitizes', () => {

@@ -1,12 +1,13 @@
 # Reader themes & reader mode
 
-## Paper Soul (v2.9.1+)
+## Paper Soul (v2.9.2+)
 
 Per-book stain bake + grain overlay when theme = **paper**. See `docs/paper-soul-implementation-plan.md`.
 
 - Bake: `npm run paper-bake -- <filename>` → `public/books/paper/<id>/`
 - Index: `generate-library.js` sets `books.json` → `paper` path
-- Render: `usePaperTexture` + `PaperLayer` (TXT / reader mode / EPUB). PDF canvas stays filter-only.
+- Render: `usePaperTexture` + `PaperLayer` on **PDF canvas** (multiply overlay, filter sibling) and **text/EPUB**
+- Ink: TXT per-char, ghost HTML per-word (`applyInkVariance`)
 - Utils: `src/utils/paperSoul.ts`
 
 ---
