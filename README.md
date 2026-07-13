@@ -1,47 +1,51 @@
-# CatReader 🐱📖
+# CatReader
 
-An industry-standard, cross-device PDF/TXT reader with zero-auth cloud sync and Google Drive integration.
+Distraction-free PDF / EPUB / TXT reader. Progress syncs across devices (Firebase). No login required (anonymous + optional portable profile).
 
-## 🚀 Getting Started
+**Version:** see badge in app UI (`APP_VERSION` in `src/App.tsx`) — currently **v2.9.2**.
 
-### 1. Adding Books (Local Library)
-Simply place your PDF or TXT files inside the `/public/books/` directory. 
-The app automatically scans this folder and adds them to your Library.
+## Docs map
 
-### 2. Running Locally
+| Doc | What |
+|-----|------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full app map (start here) |
+| [docs/reader-themes.md](docs/reader-themes.md) | Themes + Modo lector |
+| [docs/paper-soul-implementation-plan.md](docs/paper-soul-implementation-plan.md) | Paper theme bake/render |
+| [docs/perf-and-tests.md](docs/perf-and-tests.md) | Perf notes + test list |
+| [agents.md](agents.md) | Agent directives / backlog |
+| [completed_tasks.md](completed_tasks.md) | Shipped features archive |
+
+## Quick start
+
 ```bash
 npm install
-npm run dev
+npm run dev      # http://localhost:3000
+npm test
+npm run lint
 ```
 
-## 🌍 Deployment (Vercel, Netlify, GitHub Pages)
+Drop books into `public/books/` (`.pdf` / `.epub` / `.txt`). `predev`/`prebuild` runs `scripts/generate-library.js` → `public/books.json`.
 
-This app is built with Vite and React. It is designed to be deployed as a purely **static site**, making it incredibly easy to host anywhere with zero backend configuration.
+Optional:
 
-1. Push your code (including the `/public/books/` folder with your PDFs) to GitHub.
-2. Import the repository into Vercel or Netlify.
-3. The build command is `npm run build` and the output directory is `dist`.
-4. **That's it!** 
-
-During the build process, a script (`scripts/generate-library.js`) automatically runs to index all the books in your `/public/books/` folder and generates a static `books.json` file. 
-
-You can also use the **Gemini Enrichment CLI** to automatically identify books and generate covers:
 ```bash
-npm run enrich
+npm run enrich              # Gemini OCR + SVG covers
+npm run paper-bake -- file.pdf
 ```
-This script uses multimodal OCR to scan PDFs, identifies titles/authors, and generates unique SVG covers for PDF, TXT, and EPUB files.
 
-## 🏗️ Architecture & Industry Standards
+Env: copy `.env.example` → `.env` (`VITE_GEMINI_API_KEY`, Firebase config via `firebase-applet-config.json`).
 
-- **Frontend:** React 18, Vite, Tailwind CSS, Framer Motion.
-- **PDF Rendering:** `react-pdf` (Mozilla's PDF.js under the hood).
-- **Pre-buffering:** Adjacent pages are pre-rendered invisibly in the DOM to ensure smooth navigation, especially for large scanned PDFs.
-- **Sync:** `kvdb.io` for zero-auth cross-device progress synchronization.
-- **Static Site Generation (SSG):** The library is statically generated at build time, eliminating the need for a Node.js server in production.
+## Deploy
 
-## 📖 Features
-- **Multi-format Support:** Reads `.pdf` and `.txt` files.
-- **Google Drive Integration:** Pick files directly from Drive or upload local files to the cloud.
-- **Smart Navigation:** Click the left/right edges of the screen, or use the bottom slider to jump to any page instantly.
-- **Themes:** Light, Dark, and Sepia modes.
-- **Auto-hide UI:** The interface gets out of your way while reading.
+Static Vite site (`npm run build` → `dist`). Works on Vercel/Netlify. Books must be in `public/books/` so they ship with the build (PWA caches PDFs at runtime; not precached).
+
+## Features (current)
+
+- Paged library: 4×4 racks, DnD, 8 shelves, wallpaper, `/` search
+- Continuous PDF scroll with ±8 page virtualization
+- EPUB + TXT; PDF “Modo lector” (ghost text)
+- Themes: light / sepia / **paper** / dim / dark
+- Zoom per device class (mobile / tablet / desktop)
+- Deep links + share URLs
+- Google Drive pick/upload
+- Cover edit: Google Books / AI / paste / page crop

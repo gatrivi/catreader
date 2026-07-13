@@ -27,8 +27,8 @@ Header / More menu: `light | sepia | paper | dim | dark`.
 - Applied in `App.tsx` → `themeStyles` + `pdfFilter`.
 - PDF pages get `style={{ filter: pdfFilter[theme] }}` in `ReaderView.tsx`.
 - TXT / reader-mode text uses `themeStyles` on the text container.
-- Persisted via `useReaderSync` → localStorage `catreader_theme` + cloud progress.sync.
-- Note: `useReaderSync` Theme type is still `'light'|'dim'|'dark'|'sepia'` — `paper` works in UI but may not type-check / sync cleanly until that union is extended.
+- Persisted via `useReaderSync` → localStorage `catreader_theme` + cloud progress sync.
+- Theme union includes `'paper'` (v2.9.1+).
 
 ## Reader mode (“Modo lector”)
 

@@ -27,9 +27,13 @@ Maintain a sleek, distraction-free PDF/Text reader that synchronizes progress ac
 Completed tasks are moved to [completed_tasks.md](file:///c:/zengatrivi/REACTJS/catreader/completed_tasks.md).
 
 ### UPCOMING / IDEAS
-- [ ] Windows/Android "Default App" integration (PWA / File Handlers).
-- [ ] EPUB / DOCX support.
-- [ ] Annotation / Highlighting sync.
+- [ ] Windows/Android "Default App" integration (PWA / File Handlers) — PWA install exists; OS file handlers not.
+- [ ] DOCX support (EPUB already via `EpubView`).
+- [ ] Richer annotation / highlighting UX (Firestore hooks exist).
+- [ ] Paper Soul: catts bake job + photo grain + remaining library bake.
+
+### DOC MAP
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 -tldr all responses.
@@ -44,25 +48,15 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 [] implementation plans should really be little more than tldr
 
-### SESSION CONTEXT (2026-05-11)
+### SESSION CONTEXT (2026-07-13)
 
-### What Was Done
-- **Version:** `v2.7.1`
-- **Library Search:** Added real-time filtering with `/` shortcut and dedicated results view.
-- **Format Badges:** Visual type identification (PDF/EPUB/TXT) on book covers.
-- **Reader Enhancements:** Integrated 'Edit Book' in header and More menu.
-- **Paper Mode:** Anti-glare 'Old Paper' theme for PDFs to reduce eye strain.
-- **Illustration Capture:** Real-time cropping of book pages to set as custom covers.
-- **Total Refactor of `App.tsx`:** Reduced from 2100+ lines to ~650 lines. Extracted logic into `useLibrary`, `useReaderSync`, and `useGoogleDrive` hooks.
-- **Fixed Zoom Preservation:** Zoom is now stored per device category (mobile, tablet, desktop) and correctly merged during sync to prevent flattening.
-- **Verification:** Added comprehensive tests for `useReaderSync` covering new zoom logic and data back-filling. All lint checks passed.
+- **Version:** `v2.9.2`
+- **Docs crawl:** Rewrote README; added `docs/ARCHITECTURE.md`; fixed stale theme/perf notes; GEMINI.md → v2.9.2.
+- App.tsx ~1200 lines; logic in hooks. Sync = Firebase (not KVDB).
+- Shelves: 8, localStorage `catreader_shelves_v2`, auto-assign emptiest.
+- Paper Soul v1 in reader (`PaperLayer` + `npm run paper-bake`).
 
-### Architecture Notes
-- App.tsx is now modular and manageable (~650 lines). Core logic resides in specialized hooks in `src/hooks/`.
-- Books are auto-assigned to shelves round-robin on first load. Unassigned books get distributed to the emptiest shelf.
-- Shelf data model: `{ id, title, bookIds: string[] }`. Book IDs are filenames from `books.json`.
-
-### Known Issues / Next UX Tasks
-- Drag-and-drop has no visual "ghost" preview — books just go transparent (`opacity-40`)
-- No shelf nesting yet — user asked to "see if we can nest them" later
-- Progress preservation: Verified that reading progress is restored on mount via `loadProgress`.
+### Known Issues
+- DnD: no ghost preview (`opacity-40` only)
+- No shelf nesting
+- Paper: Node bake stand-in; full library bake + catts job still open

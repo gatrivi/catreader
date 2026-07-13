@@ -1,18 +1,19 @@
 # CatReader Instructions
 
 ## Mission
-Maintain a premium, distraction-free reading experience. "Laconic UX" is the priority—minimal UI, zero-friction setup.
+Premium, distraction-free reading. Laconic UX — minimal UI, zero-friction setup.
 
 ## Technical Standards
-- **Modular Hooks:** Logic belongs in `src/hooks/`, not `App.tsx`.
-- **Zoom Logic:** Always treat zoom as a device-category map: `{ mobile, tablet, desktop }`.
-- **Performance:** Never disable PDF virtualization; keep the 3-page buffer for smooth scrolling.
-- **Metadata:** Prefer `books.json` for static data and Firestore for user-specific overrides.
+- Logic in `src/hooks/`, not bloating `App.tsx` further.
+- Zoom = device-category map: `{ mobile, tablet, desktop }`.
+- PDF virtualization (`PDF_RENDER_WINDOW`) stays on.
+- Static metadata → `books.json`; user overrides → Firestore / IndexedDB.
+- Map: `docs/ARCHITECTURE.md`.
 
 ## Workflow
-1. **Research:** Check `agents.md` and `completed_tasks.md`.
-2. **Strategy:** Keep implementation plans TL;DR.
-3. **Validation:** Run `npm run lint` and `npm test` before any push.
-4. **Version:** Always increment version in `App.tsx` and end responses with the current version tag.
+1. Check `agents.md` + `docs/ARCHITECTURE.md`.
+2. Plans stay TL;DR.
+3. `npm run lint` + `npm test` before push.
+4. Bump `APP_VERSION` in `App.tsx`; end responses with that tag.
 
-**v2.7.6**
+**v2.9.2**
