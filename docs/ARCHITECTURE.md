@@ -1,4 +1,4 @@
-# CatReader architecture (v2.9.2)
+# CatReader architecture (v2.9.3)
 
 TLDR map of the live app. Prefer this over README fluff / old session notes.
 
@@ -32,6 +32,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `useReaderSync` | Page / zoom-per-device / theme / epubCfi; localStorage + Firestore |
 | `useGoogleDrive` | Drive picker + upload |
 | `usePaperTexture` | Load paper manifest + prefetch stains for nearby pages |
+| `useLiveAudio` | Page/selection → CATTS `/tts/live`, play + IDB cache |
 
 ## Components (`src/components/`)
 
@@ -53,7 +54,8 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 |--------|------|
 | `syncService` | progress, metadata, covers (Storage), ghostText, highlights, settings |
 | `authService` | portable id / username / PFP in localStorage |
-| `db` (`coverDB`) | IndexedDB: covers, content blobs, ghostText, highlights, bookMetadata |
+| `db` (`coverDB`) | IndexedDB: covers, content, ghostText, highlights, bookMetadata, ttsAudio |
+| `catts` | `POST /tts/live|speak` → wav (host `VITE_CATTS_URL`) |
 
 ## Utils
 
@@ -104,3 +106,4 @@ See `docs/perf-and-tests.md`. Run `npm test` before push.
 - DnD has no ghost preview (opacity fade only)
 - Paper bake: Node stand-in only; catts job + photo grain still TODO
 - Highlights sync exists in services; full annotation UX still light
+- Live audio: PDF/TXT; EPUB TBD; needs CATTS up on `:59200`

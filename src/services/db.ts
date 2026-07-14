@@ -10,10 +10,11 @@ export const coverDB = {
   ghostStore: 'ghostText',
   highlightsStore: 'highlights',
   metadataStore: 'bookMetadata',
+  ttsAudioStore: 'ttsAudio',
   
   async init(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 5); // Bumped version for bookMetadata store
+      const request = indexedDB.open(this.dbName, 6); // v6: ttsAudio cache
       request.onupgradeneeded = (e: any) => {
         const db = request.result;
         const oldVersion = e.oldVersion || 0;
@@ -41,6 +42,11 @@ export const coverDB = {
           case oldVersion < 5:
             if (!db.objectStoreNames.contains(this.metadataStore)) {
               db.createObjectStore(this.metadataStore);
+            }
+            // fall through
+          case oldVersion < 6:
+            if (!db.objectStoreNames.contains(this.ttsAudioStore)) {
+              db.createObjectStore(this.ttsAudioStore);
             }
         }
       };
@@ -235,7 +241,28 @@ export const coverDB = {
       this.deleteGhostText(filename).catch(() => {}),
       this.deleteBookMetadata(filename).catch(() => {})
     ]);
-  }
+  },
+
+  /** Cache TTS wav by stable key (lang:hash). */
+  async saveTtsAudio(key: string, blob: Blob): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.ttsAudioStore, 'readwrite');
+      tx.objectStore(this.ttsAudioStore).put(blob, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async getTtsAudio(key: string): Promise<Blob | null> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.ttsAudioStore, 'readonly');
+      const request = tx.objectStore(this.ttsAudioStore).get(key);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
 };
 
 export interface Highlight {

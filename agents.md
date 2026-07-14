@@ -48,15 +48,14 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 [] implementation plans should really be little more than tldr
 
-### SESSION CONTEXT (2026-07-13)
+### SESSION CONTEXT (2026-07-14)
 
-- **Version:** `v2.9.2`
-- **Docs crawl:** Rewrote README; added `docs/ARCHITECTURE.md`; fixed stale theme/perf notes; GEMINI.md → v2.9.2.
-- App.tsx ~1200 lines; logic in hooks. Sync = Firebase (not KVDB).
-- Shelves: 8, localStorage `catreader_shelves_v2`, auto-assign emptiest.
-- Paper Soul v1 in reader (`PaperLayer` + `npm run paper-bake`).
+- **Version:** `v2.9.3`
+- Live audio: headphones btn → CATTS `100.87.252.18:59200` `/tts/live`; selection or page start; wav cache IDB `ttsAudio`.
+- See `docs/ARCHITECTURE.md`. Paper Soul bake still Node stand-in.
 
 ### Known Issues
 - DnD: no ghost preview (`opacity-40` only)
 - No shelf nesting
+- Live audio: EPUB not yet; CATTS must be reachable
 - Paper: Node bake stand-in; full library bake + catts job still open

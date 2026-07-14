@@ -19,7 +19,8 @@ import {
   Maximize2,
   Pencil,
   Crop,
-  BookText
+  BookText,
+  Headphones
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, type Highlight } from './services/syncService';
@@ -50,6 +51,8 @@ import { clampPage, offsetPage } from './utils/reader';
 import { PageInput } from './components/PageInput';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
+import { sentencesFromPageHtml } from './utils/sentences';
+import { useLiveAudio } from './hooks/useLiveAudio';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -160,14 +163,17 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.9.2';
+  const APP_VERSION = 'v2.9.3';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
   const hasResumedRef = useRef(false);
+  const textContentRef = useRef(textContent);
+  textContentRef.current = textContent;
 
   // --- Hooks Integration ---
-  
+  const liveAudio = useLiveAudio('es');
+
   const {
     library, setLibrary,
     enrichedMetadata,
@@ -320,6 +326,10 @@ export default function App() {
       setToast(prev => ({ ...prev, visible: false }));
     }, 2500);
   }, []);
+
+  useEffect(() => {
+    if (liveAudio.error) showToast(liveAudio.error);
+  }, [liveAudio.error, showToast]);
 
   useEffect(() => {
     resetUITimer();
@@ -603,8 +613,75 @@ export default function App() {
     }
   };
 
+  const resolvePageTextForTts = async (): Promise<string> => {
+    const fromState = textContentRef.current?.[pageNumber - 1];
+    if (fromState?.trim()) return fromState;
+    try {
+      const stored = await coverDB.getGhostText(fileName);
+      if (stored?.startsWith('[')) {
+        const pages = JSON.parse(stored);
+        if (Array.isArray(pages) && pages[pageNumber - 1]?.trim()) return pages[pageNumber - 1];
+      }
+    } catch { /* ignore */ }
+    const textPage = document.getElementById(`text-page-${pageNumber}`);
+    if (textPage) {
+      const body = textPage.querySelector('.semantic-page-content');
+      const html = body?.innerHTML || textPage.innerText || '';
+      if (html.trim()) return html;
+    }
+    const pdfPage = document.querySelector(`.react-pdf__Page[data-page-number="${pageNumber}"]`);
+    return pdfPage?.textContent || '';
+  };
+
+  const toggleLiveAudio = async () => {
+    if (liveAudio.status === 'playing' || liveAudio.status === 'paused') {
+      liveAudio.togglePause();
+      return;
+    }
+    if (liveAudio.status === 'loading') {
+      liveAudio.stop();
+      return;
+    }
+    if (fileType === 'epub') {
+      showToast('Audio: PDF/TXT por ahora');
+      return;
+    }
+    let pageHtml = await resolvePageTextForTts();
+    if (!pageHtml.trim() && fileType === 'pdf' && fileUrl) {
+      showToast('Extrayendo texto…');
+      try {
+        const blob = (await coverDB.getBookContent(fileName)) || (await fetch(fileUrl).then((r) => r.blob()));
+        void extractGhostTextLazy(blob, fileName);
+        for (let n = 0; n < 50; n++) {
+          await new Promise((r) => setTimeout(r, 120));
+          pageHtml = await resolvePageTextForTts();
+          if (pageHtml.trim()) break;
+        }
+      } catch (e) {
+        console.error('[LiveAudio] extract failed', e);
+      }
+    }
+    if (!pageHtml.trim()) {
+      showToast('Sin texto — probá Modo lector');
+      return;
+    }
+    const sel =
+      window.getSelection()?.toString().trim() ||
+      selectedTextMenu?.text?.trim() ||
+      '';
+    const queue = sentencesFromPageHtml(pageHtml, sel || null);
+    if (queue.length === 0) {
+      showToast('Sin oraciones');
+      return;
+    }
+    showToast(sel ? 'Audio desde selección' : 'Audio desde inicio de página');
+    setSelectedTextMenu(null);
+    await liveAudio.start(queue);
+  };
+
   const closeBook = (skipHistory = false) => {
     if (!fileUrl) return;
+    liveAudio.stop();
     // Flush progress before tearing down reader state
     if (isLoaded && fileName) {
       saveProgressRef.current?.();
@@ -1002,6 +1079,21 @@ export default function App() {
                 aria-label="Modo lector"
               >
                 <BookText size={16} />
+              </button>
+              <button
+                onClick={() => void toggleLiveAudio()}
+                className={cn(
+                  "p-1.5 rounded-full transition-all shrink-0",
+                  liveAudio.status === 'playing' || liveAudio.status === 'loading'
+                    ? "bg-emerald-500 text-white shadow-lg"
+                    : liveAudio.status === 'paused'
+                      ? "bg-emerald-700 text-white"
+                      : "text-stone-400 hover:text-white hover:bg-white/10"
+                )}
+                title={liveAudio.status === 'playing' ? 'Pausar audio' : 'Leer en voz alta (CATTS)'}
+                aria-label="Audio en vivo"
+              >
+                {liveAudio.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <Headphones size={16} />}
               </button>
             </>
           )}
