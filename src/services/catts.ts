@@ -49,3 +49,64 @@ export async function cattsSpeak(text: string, lang: CattsLang = 'es'): Promise<
   }
   return res.blob();
 }
+
+/* --- Audiobook library API (docs/CATREADER_TTS.md on catts box) --- */
+
+/** Library API key. Defaults to shared 'catts-local'; override via VITE_CATTS_API_KEY. */
+function libHeaders(): HeadersInit {
+  return { 'X-API-Key': apiKey() || 'catts-local' };
+}
+
+export interface AudiobookChapter {
+  /** 1-based index used in URLs; falls back to array position when absent */
+  n?: number;
+  title?: string;
+  audio_url?: string;
+  subtitles_url?: string;
+  has_subtitles?: boolean;
+}
+
+export interface AudiobookListItem {
+  id: string;
+  title?: string;
+  author?: string;
+  status?: string;
+  chapters?: number;
+  has_subtitles?: boolean;
+}
+
+export interface AudiobookMeta extends AudiobookListItem {
+  chapters_detail: AudiobookChapter[];
+}
+
+/** GET /books → available audiobooks. */
+export async function cattsAudiobooks(): Promise<AudiobookListItem[]> {
+  const res = await fetch(`${cattsBaseUrl()}/books`, { headers: libHeaders() });
+  if (!res.ok) throw new Error(`CATTS books ${res.status}`);
+  return res.json();
+}
+
+/** GET /books/{id} → meta + chapters_detail. */
+export async function cattsAudiobook(id: string): Promise<AudiobookMeta> {
+  const res = await fetch(`${cattsBaseUrl()}/books/${encodeURIComponent(id)}`, { headers: libHeaders() });
+  if (!res.ok) throw new Error(`CATTS book ${res.status}`);
+  return res.json();
+}
+
+/** GET chapter audio (mpeg) as Blob. Auth header needed → fetch, not <audio src>. */
+export async function cattsChapterAudio(id: string, n: number): Promise<Blob> {
+  const res = await fetch(`${cattsBaseUrl()}/books/${encodeURIComponent(id)}/chapters/${n}/audio`, {
+    headers: libHeaders(),
+  });
+  if (!res.ok) throw new Error(`CATTS chapter audio ${res.status}`);
+  return res.blob();
+}
+
+/** GET chapter subtitles as raw SRT text. */
+export async function cattsChapterSubtitles(id: string, n: number): Promise<string> {
+  const res = await fetch(`${cattsBaseUrl()}/books/${encodeURIComponent(id)}/chapters/${n}/subtitles`, {
+    headers: libHeaders(),
+  });
+  if (!res.ok) throw new Error(`CATTS chapter subtitles ${res.status}`);
+  return res.text();
+}
