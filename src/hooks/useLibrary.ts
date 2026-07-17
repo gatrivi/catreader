@@ -12,6 +12,8 @@ export interface LibraryBook {
   filename: string;
   type: string;
   svg?: string;
+  /** Has a pre-baked audiobook available (cassette icon on cover) */
+  audio?: boolean;
   /** Path to paper-manifest.json when Paper Soul bake exists */
   paper?: string;
   coverSource?: {

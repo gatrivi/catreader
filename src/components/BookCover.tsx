@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Share2, Sparkles, AlertCircle, GripVertical } from 'lucide-react';
+import { Pencil, Share2, Sparkles, AlertCircle, GripVertical, CassetteTape } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -29,6 +29,7 @@ interface BookCoverProps {
     author?: string;
     filename: string;
     type: string;
+    audio?: boolean;
     svg?: string;
     coverSource?: {
       type: 'user-custom' | 'ai-generated' | 'openlibrary';
@@ -166,6 +167,15 @@ export const BookCover: React.FC<BookCoverProps> = ({
       >
         {!hasMetadata && !isSimplified && (
           <div className="absolute top-1 left-1 z-30 w-2 h-2 bg-amber-500 rounded-full animate-pulse" title="Falta título o autor" />
+        )}
+
+        {book.audio && (
+          <div
+            className="absolute top-2 right-2 z-30 p-1 rounded-md bg-black/60 backdrop-blur-md border border-amber-400/40 text-amber-300 shadow-sm"
+            title="Audiolibro disponible"
+          >
+            <CassetteTape size={12} />
+          </div>
         )}
 
         <AnimatePresence mode="wait">

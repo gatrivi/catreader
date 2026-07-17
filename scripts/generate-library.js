@@ -39,6 +39,7 @@ const books = files
       title: existing?.title || file.replace(ext, ''),
       author: existing?.author,
       svg: existing?.svg,
+      ...(existing?.audio ? { audio: existing.audio } : {}),
       ...(paper ? { paper } : {})
     };
   });
