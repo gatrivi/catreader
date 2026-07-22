@@ -50,7 +50,7 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ### SESSION CONTEXT (2026-07-14)
 
-- **Version:** `v2.9.5`
+- **Version:** `v2.9.6`
 - Live audio: headphones btn → CATTS `100.87.252.18:59200` `/tts/live`; selection or page start; wav cache IDB `ttsAudio`.
 - See `docs/ARCHITECTURE.md`. Paper Soul bake still Node stand-in.
 
