@@ -4,6 +4,7 @@ import { coverDB } from '../services/db';
 import { GoogleGenAI } from "@google/genai";
 import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createThumbnail } from '../utils/image';
+import { filterDeletedBooks } from '../utils/shelves';
 
 export interface LibraryBook {
   id: string;
@@ -14,6 +15,8 @@ export interface LibraryBook {
   svg?: string;
   /** Has a pre-baked audiobook available (cassette icon on cover) */
   audio?: boolean;
+  /** CatTS KEEP_* book id for GET /books/{id} */
+  cattsBookId?: string;
   /** Path to paper-manifest.json when Paper Soul bake exists */
   paper?: string;
   coverSource?: {
@@ -87,8 +90,8 @@ export function useLibrary({
       
       // Filter out user-deleted books (static books they chose to hide)
       const deletedRaw = localStorage.getItem('catreader_deleted_books');
-      const deletedSet = new Set(deletedRaw ? JSON.parse(deletedRaw) : []);
-      const visibleData = data.filter((b: LibraryBook) => !deletedSet.has(b.filename));
+      const deletedSet = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
+      const visibleData = filterDeletedBooks(data as LibraryBook[], deletedSet);
       
       setLibrary(visibleData);
       setIsLoadingLibrary(false);
@@ -151,10 +154,10 @@ export function useLibrary({
           }
 
           // Build complete library including manually uploaded books from IndexedDB
-          const staticFilenames = new Set(data.map((b: LibraryBook) => b.filename));
+          const staticFilenames = new Set(visibleData.map((b: LibraryBook) => b.filename));
           const customBooks: LibraryBook[] = [];
           for (const [fname, meta] of Object.entries(metadata)) {
-            if (!staticFilenames.has(fname)) {
+            if (!staticFilenames.has(fname) && !deletedSet.has(fname)) {
               customBooks.push({
                 id: fname,
                 filename: fname,
@@ -167,7 +170,8 @@ export function useLibrary({
             }
           }
 
-          const enriched = data.map((book: LibraryBook) => {
+          // ponytail: enrich visibleData only — mapping raw `data` resurrected deleted books
+          const enriched = visibleData.map((book: LibraryBook) => {
             const meta = metadata[book.filename];
             // If user has a custom cover source, suppress the old SVG so it doesn't flash
             // before the real cover loads from IndexedDB.
@@ -181,7 +185,7 @@ export function useLibrary({
             };
           });
 
-          const allBooks = [...enriched, ...customBooks];
+          const allBooks = filterDeletedBooks([...enriched, ...customBooks], deletedSet);
           setLibrary(allBooks);
 
           // Load covers from IndexedDB for ALL books (both static and custom)

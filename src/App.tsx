@@ -20,7 +20,8 @@ import {
   Pencil,
   Crop,
   BookText,
-  Headphones
+  Headphones,
+  CassetteTape
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncService, type Highlight } from './services/syncService';
@@ -38,6 +39,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.vers
 import { LibraryView } from './components/LibraryView';
 import { ReaderView } from './components/ReaderView';
 import { EditModal } from './components/EditModal';
+import { AudiobookListenPanel } from './components/AudiobookListenPanel';
 import { useShelves } from './hooks/useShelves';
 import { useGoogleDrive } from './hooks/useGoogleDrive';
 import { useReaderSync } from './hooks/useReaderSync';
@@ -163,7 +165,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.9.6';
+  const APP_VERSION = 'v2.9.7';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -173,6 +175,7 @@ export default function App() {
 
   // --- Hooks Integration ---
   const liveAudio = useLiveAudio('es');
+  const [showAudiobook, setShowAudiobook] = useState(false);
 
   const {
     library, setLibrary,
@@ -1095,6 +1098,23 @@ export default function App() {
               >
                 {liveAudio.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <Headphones size={16} />}
               </button>
+              {(() => {
+                const ab = library.find(b => b.filename === fileName);
+                if (!ab?.audio || !ab.cattsBookId) return null;
+                return (
+                  <button
+                    onClick={() => setShowAudiobook(true)}
+                    className={cn(
+                      "p-1.5 rounded-full transition-all shrink-0",
+                      showAudiobook ? "bg-amber-500 text-white shadow-lg" : "text-amber-400 hover:text-amber-200 hover:bg-white/10"
+                    )}
+                    title="Audiolibro CatTS (capítulos)"
+                    aria-label="Audiolibro"
+                  >
+                    <CassetteTape size={16} />
+                  </button>
+                );
+              })()}
             </>
           )}
           <div className="hidden lg:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
@@ -1369,6 +1389,18 @@ export default function App() {
           {isSyncing && <Loader2 size={10} className="animate-spin absolute -right-5 text-indigo-400" />}
         </div>
       )}
+
+      {showAudiobook && (() => {
+        const ab = library.find(b => b.filename === fileName);
+        if (!ab?.cattsBookId) return null;
+        return (
+          <AudiobookListenPanel
+            cattsBookId={ab.cattsBookId}
+            title={displayBookTitle(ab.title, ab.filename)}
+            onClose={() => setShowAudiobook(false)}
+          />
+        );
+      })()}
 
       <AnimatePresence>{toast.visible && (<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-stone-900/90 backdrop-blur-md text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-white/10">{toast.message}</motion.div>)}</AnimatePresence>
 

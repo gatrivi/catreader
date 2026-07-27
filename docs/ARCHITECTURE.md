@@ -28,7 +28,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | Hook | Owns |
 |------|------|
 | `useLibrary` | Load `books.json` + cloud metadata, covers, idle Gemini enrichment |
-| `useShelves` | 8 shelves, localStorage `catreader_shelves_v2`, auto-assign unassigned books |
+| `useShelves` | Sparse 16-slot shelves, localStorage `catreader_shelves_v2`, auto-assign + spill |
 | `useReaderSync` | Page / zoom-per-device / theme / epubCfi; localStorage + Firestore |
 | `useGoogleDrive` | Drive picker + upload |
 | `usePaperTexture` | Load paper manifest + prefetch stains for nearby pages |
@@ -102,6 +102,7 @@ See `docs/perf-and-tests.md`. Run `npm test` before push.
 
 ## Known gaps
 
+- Library view issue enum + status: [`docs/library-view-issues.md`](library-view-issues.md)
 - Shelf nesting not implemented
 - DnD has no ghost preview (opacity fade only)
 - Paper bake: Node stand-in only; catts job + photo grain still TODO

@@ -11,13 +11,15 @@ vi.mock('../services/authService', () => ({
   },
 }));
 
+import { toSparseSlots } from '../utils/shelves';
+
 const books = [
   { id: 'a.pdf', title: 'Alpha Book', author: 'Author A', filename: 'a.pdf', type: 'pdf' },
   { id: 'b.pdf', title: 'Beta Book', author: 'Author B', filename: 'b.pdf', type: 'pdf' },
 ];
 
 const shelves = [
-  { id: 'shelf-0', title: 'Church', bookIds: ['a.pdf', 'b.pdf'] },
+  { id: 'shelf-0', title: 'Church', bookIds: toSparseSlots(['a.pdf', 'b.pdf']) },
 ];
 
 const baseProps = {
@@ -55,7 +57,7 @@ describe('LibraryView', () => {
   });
 
   it('shows empty state when no books', () => {
-    render(<LibraryView {...baseProps} library={[]} shelves={[{ id: 's', title: 'Empty', bookIds: [] }]} />);
+    render(<LibraryView {...baseProps} library={[]} shelves={[{ id: 's', title: 'Empty', bookIds: toSparseSlots([]) }]} />);
     expect(screen.getByText('Biblioteca vacía')).toBeInTheDocument();
   });
 });

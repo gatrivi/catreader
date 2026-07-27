@@ -45,7 +45,7 @@ interface LibraryViewProps {
   onSetCustomWallpaper: (dataUrl: string) => void;
   shelves: Shelf[];
   onUpdateShelfTitle: (shelfId: string, title: string) => void;
-  onMoveBook: (bookId: string, fromShelfId: string, toShelfId: string) => void;
+  onMoveBook: (bookId: string, fromShelfId: string, toShelfId: string, toIndex?: number) => void;
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
   onProfileClick?: () => void;
@@ -195,6 +195,14 @@ export const LibraryView = ({
     setCurrentRack(idx);
   };
 
+  // Clamp rack when shelves shrink (removeShelf)
+  useEffect(() => {
+    if (shelves.length === 0) return;
+    if (currentRack >= shelves.length) {
+      setCurrentRack(shelves.length - 1);
+    }
+  }, [shelves.length, currentRack]);
+
   const flipRack = (dir: 'next' | 'prev') => {
     setRackDirection(dir);
     if (dir === 'next' && currentRack < shelves.length - 1) {
@@ -222,7 +230,7 @@ export const LibraryView = ({
     if (dragState.fromShelfId === toShelfId) {
       onReorderBook(toShelfId, dragState.fromIndex, toIndex);
     } else {
-      onMoveBook(dragState.bookId, dragState.fromShelfId, toShelfId);
+      onMoveBook(dragState.bookId, dragState.fromShelfId, toShelfId, toIndex);
     }
     setDragState(null);
   };
@@ -583,8 +591,11 @@ export const LibraryView = ({
                   {/* Rack Header */}
                   <div className="mb-2 sm:mb-3 flex items-center gap-4 shrink-0">
                     <ShelfTitle 
-                      title={shelves[currentRack].title} 
-                      onChange={(title) => onUpdateShelfTitle(shelves[currentRack].id, title)}
+                      title={shelves[currentRack]?.title ?? ''} 
+                      onChange={(title) => {
+                        const id = shelves[currentRack]?.id;
+                        if (id) onUpdateShelfTitle(id, title);
+                      }}
                     />
                   </div>
 
@@ -593,7 +604,7 @@ export const LibraryView = ({
                     className="grid grid-cols-4 grid-rows-4 gap-2.5 sm:gap-3.5 w-full max-w-5xl mx-auto shrink min-h-0"
                     style={{ height: 'min(80vh, calc(100dvh - 9rem))' }}
                   >
-                    {Array.from({ length: 16 }).map((_, idx) => {
+                    {shelves[currentRack] && Array.from({ length: 16 }).map((_, idx) => {
                       const bookId = shelves[currentRack].bookIds[idx];
                       const book = bookId ? getBook(bookId) : null;
 
@@ -656,11 +667,11 @@ export const LibraryView = ({
                     initial={{ y: 50, opacity: 0, scale: 0.9 }}
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: 50, opacity: 0, scale: 0.9 }}
-                    className="flex gap-2 p-2 bg-stone-900/95 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50"
+                    className="flex gap-2 p-2 bg-stone-900/95 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50 overflow-x-auto max-w-[90vw]"
                   >
-                    {shelves.slice(0, 3).map((shelf, idx) => (
+                    {shelves.map((shelf) => (
                       <div
-                        key={`target-${idx}`}
+                        key={`target-${shelf.id}`}
                         onDragOver={(e) => {
                           e.preventDefault();
                           setDragOverShelf(shelf.id);
