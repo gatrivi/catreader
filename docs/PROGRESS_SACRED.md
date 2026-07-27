@@ -23,3 +23,5 @@ FEATURE #1 = SYNCED PROGRESS. IF THAT BREAKS, THE APP IS BROKEN.
 Code: `src/utils/progressGuard.ts`, `useReaderSync`, `App` toggle/open/close/observer.
 
 Incident: v2.9.8 reader-mode → page ~3 clobber. Fixed v2.9.9+. Hardened v2.10.0.
+
+Related: reader-mode text extract must stay lazy from that same page — [`READER_MODE_LAZY.md`](READER_MODE_LAZY.md).
