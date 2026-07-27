@@ -64,6 +64,7 @@ export interface AudiobookChapter {
   audio_url?: string;
   subtitles_url?: string;
   has_subtitles?: boolean;
+  empty?: boolean;
 }
 
 export interface AudiobookListItem {
@@ -72,6 +73,8 @@ export interface AudiobookListItem {
   author?: string;
   status?: string;
   chapters?: number;
+  chapters_ready?: number;
+  ready?: boolean;
   has_subtitles?: boolean;
 }
 
@@ -79,18 +82,37 @@ export interface AudiobookMeta extends AudiobookListItem {
   chapters_detail: AudiobookChapter[];
 }
 
+function normalizeChapter(ch: Record<string, unknown>, i: number): AudiobookChapter {
+  const n = Number(ch.n ?? ch.index ?? i + 1);
+  const sub = (ch.subtitles_url ?? ch.subtitle_url) as string | undefined;
+  return {
+    n,
+    title: typeof ch.title === 'string' ? ch.title : `Chapter ${n}`,
+    audio_url: typeof ch.audio_url === 'string' ? ch.audio_url : undefined,
+    subtitles_url: sub,
+    has_subtitles: Boolean(sub),
+    empty: Boolean(ch.empty),
+  };
+}
+
 /** GET /books → available audiobooks. */
 export async function cattsAudiobooks(): Promise<AudiobookListItem[]> {
   const res = await fetch(`${cattsBaseUrl()}/books`, { headers: libHeaders() });
   if (!res.ok) throw new Error(`CATTS books ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : data.books ?? [];
 }
 
 /** GET /books/{id} → meta + chapters_detail. */
 export async function cattsAudiobook(id: string): Promise<AudiobookMeta> {
   const res = await fetch(`${cattsBaseUrl()}/books/${encodeURIComponent(id)}`, { headers: libHeaders() });
   if (!res.ok) throw new Error(`CATTS book ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  const raw = Array.isArray(data.chapters_detail) ? data.chapters_detail : [];
+  const chapters_detail = raw
+    .map((ch: Record<string, unknown>, i: number) => normalizeChapter(ch, i))
+    .filter((ch: AudiobookChapter) => !ch.empty);
+  return { ...data, id: data.id || id, chapters_detail };
 }
 
 /** GET chapter audio (mpeg) as Blob. Auth header needed → fetch, not <audio src>. */
