@@ -158,7 +158,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.2';
+  const APP_VERSION = 'v2.10.3';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -188,7 +188,8 @@ export default function App() {
     bulkMagic,
     enrichBookWithGemini,
     savedBookCovers,
-    markCoverAsSaved
+    markCoverAsSaved,
+    removeBook,
   } = useLibrary({
     showToast: (msg) => showToast(msg),
     setIsSyncing,
@@ -1596,7 +1597,36 @@ export default function App() {
 
       <AnimatePresence>{toast.visible && (<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[80] bg-stone-900/90 backdrop-blur-md text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-white/10">{toast.message}</motion.div>)}</AnimatePresence>
 
-      <EditModal book={editingBook} onClose={() => setEditingBook(null)} onSave={async (title, author) => { if (editingBook) { await updateBookMetadata(editingBook.filename, title, author); setEditingBook(null); } }} onUploadCover={(file) => { if (editingBook) handleCoverUpload(editingBook.filename, file); }} onRegenerateCover={async (title, author, forceAI) => { if (editingBook) { setIsSyncing(true); await fetchEnhancedCover({ ...editingBook, title, author }, forceAI); setIsSyncing(false); } }} onPasteError={(msg) => showToast(msg)} isSyncing={isSyncing} />
+      <EditModal
+        book={editingBook}
+        onClose={() => setEditingBook(null)}
+        onSave={async (title, author) => {
+          if (editingBook) {
+            await updateBookMetadata(editingBook.filename, title, author);
+            setEditingBook(null);
+          }
+        }}
+        onUploadCover={(file) => {
+          if (editingBook) handleCoverUpload(editingBook.filename, file);
+        }}
+        onRegenerateCover={async (title, author, forceAI) => {
+          if (editingBook) {
+            setIsSyncing(true);
+            await fetchEnhancedCover({ ...editingBook, title, author }, forceAI);
+            setIsSyncing(false);
+          }
+        }}
+        onDelete={async () => {
+          if (!editingBook) return;
+          const fn = editingBook.filename;
+          const wasOpen = fileName === fn;
+          setEditingBook(null);
+          if (wasOpen) closeBook(true);
+          await removeBook(fn);
+        }}
+        onPasteError={(msg) => showToast(msg)}
+        isSyncing={isSyncing}
+      />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
     </div>
   );
