@@ -165,7 +165,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.9.7';
+  const APP_VERSION = 'v2.9.8';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1224,7 +1224,13 @@ export default function App() {
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 
             savedBookCovers={savedBookCovers}
-            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); navigator.clipboard.writeText(buildBookShareUrl(shelf?.title || 'library', book.filename)); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={removeShelf} />
+            onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); navigator.clipboard.writeText(buildBookShareUrl(shelf?.title || 'library', book.filename)); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={(id) => {
+              const result = removeShelf(id);
+              if (result && result.count > 0) {
+                showToast(`${result.count} libro${result.count === 1 ? '' : 's'} movidos`);
+              }
+              return result;
+            }} />
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 

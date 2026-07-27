@@ -62,7 +62,7 @@ interface LibraryViewProps {
   showCoverLabels?: boolean;
   onToggleCoverLabels?: () => void;
   onAddShelf?: () => void;
-  onRemoveShelf?: (shelfId: string) => void;
+  onRemoveShelf?: (shelfId: string) => { count: number; destinationIndex: number } | null | void;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -160,32 +160,202 @@ export const LibraryView = ({
     fromShelfId: string;
     fromIndex: number;
   } | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; title: string; cover?: string } | null>(null);
+  const [dragOverBook, setDragOverBook] = useState<{ shelfId: string; index: number } | null>(null);
+  const [dragOverShelf, setDragOverShelf] = useState<string | null>(null);
+  const liftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingLiftRef = useRef<{
+    bookId: string;
+    fromShelfId: string;
+    fromIndex: number;
+    title: string;
+    cover?: string;
+    startX: number;
+    startY: number;
+    pointerId: number;
+    isTouch: boolean;
+  } | null>(null);
+  const draggingRef = useRef(false);
+  const dragPayloadRef = useRef<{ bookId: string; fromShelfId: string; fromIndex: number } | null>(null);
+  const suppressClickRef = useRef(false);
+  const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!dailyHighlight) return;
     const timer = setTimeout(() => onDismissHighlight?.(), 8000);
     return () => clearTimeout(timer);
   }, [dailyHighlight, onDismissHighlight]);
-  const [dragOverShelf, setDragOverShelf] = useState<string | null>(null);
-  const dragCounter = useRef(0);
 
   const getBook = (id: string) => library.find(b => b.id === id);
 
-  const handleDragStart = (e: React.DragEvent, bookId: string, shelfId: string, index: number) => {
-    setDragState({ bookId, fromShelfId: shelfId, fromIndex: index });
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', bookId);
-    const img = new Image();
-    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    e.dataTransfer.setDragImage(img, 0, 0);
+  const clearLiftTimer = () => {
+    if (liftTimerRef.current) {
+      clearTimeout(liftTimerRef.current);
+      liftTimerRef.current = null;
+    }
   };
 
-  const handleDragEnd = () => {
+  const endPointerDrag = useCallback(() => {
+    clearLiftTimer();
+    pendingLiftRef.current = null;
+    draggingRef.current = false;
+    dragPayloadRef.current = null;
     setDragState(null);
-    setDragOverShelf(null);
+    setGhost(null);
     setDragOverBook(null);
-    dragCounter.current = 0;
+    setDragOverShelf(null);
+    if (flipTimeoutRef.current) {
+      clearTimeout(flipTimeoutRef.current);
+      flipTimeoutRef.current = null;
+    }
+  }, []);
+
+  const hitTestDrop = (clientX: number, clientY: number) => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const slot = el?.closest('[data-shelf-slot]') as HTMLElement | null;
+    if (slot) {
+      const shelfId = slot.dataset.shelfId!;
+      const index = Number(slot.dataset.slotIndex);
+      setDragOverBook({ shelfId, index });
+      setDragOverShelf(shelfId);
+      return { type: 'slot' as const, shelfId, index };
+    }
+    const rack = el?.closest('[data-rack-target]') as HTMLElement | null;
+    if (rack) {
+      const shelfId = rack.dataset.rackTarget!;
+      setDragOverShelf(shelfId);
+      setDragOverBook(null);
+      return { type: 'rack' as const, shelfId };
+    }
+    setDragOverBook(null);
+    return null;
   };
+
+  const beginLift = (pending: NonNullable<typeof pendingLiftRef.current>, x: number, y: number) => {
+    draggingRef.current = true;
+    suppressClickRef.current = true;
+    const payload = {
+      bookId: pending.bookId,
+      fromShelfId: pending.fromShelfId,
+      fromIndex: pending.fromIndex,
+    };
+    dragPayloadRef.current = payload;
+    setDragState(payload);
+    setGhost({ x, y, title: pending.title, cover: pending.cover });
+  };
+
+  const onBookPointerDown = (
+    e: React.PointerEvent,
+    bookId: string,
+    shelfId: string,
+    index: number,
+    title: string,
+    cover?: string
+  ) => {
+    if (e.button !== 0) return;
+    // ignore taps on edit/share buttons
+    if ((e.target as HTMLElement).closest('button')) return;
+
+    clearLiftTimer();
+    const pending = {
+      bookId,
+      fromShelfId: shelfId,
+      fromIndex: index,
+      title,
+      cover,
+      startX: e.clientX,
+      startY: e.clientY,
+      pointerId: e.pointerId,
+      isTouch: e.pointerType === 'touch',
+    };
+    pendingLiftRef.current = pending;
+
+    if (pending.isTouch) {
+      liftTimerRef.current = setTimeout(() => {
+        if (pendingLiftRef.current === pending) {
+          beginLift(pending, pending.startX, pending.startY);
+        }
+      }, 200);
+    }
+  };
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const pending = pendingLiftRef.current;
+      if (!pending) return;
+
+      if (!draggingRef.current) {
+        const dist = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);
+        if (pending.isTouch) {
+          if (dist > 12) {
+            clearLiftTimer();
+            pendingLiftRef.current = null;
+          }
+          return;
+        }
+        if (dist > 6) beginLift(pending, e.clientX, e.clientY);
+        else return;
+      }
+
+      setGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : g));
+      hitTestDrop(e.clientX, e.clientY);
+
+      // edge-hold rack flip
+      const edge = 48;
+      if (e.clientX < edge && currentRack > 0) {
+        if (!flipTimeoutRef.current) {
+          flipTimeoutRef.current = setTimeout(() => {
+            flipRack('prev');
+            flipTimeoutRef.current = null;
+          }, 500);
+        }
+      } else if (e.clientX > window.innerWidth - edge && currentRack < shelves.length - 1) {
+        if (!flipTimeoutRef.current) {
+          flipTimeoutRef.current = setTimeout(() => {
+            flipRack('next');
+            flipTimeoutRef.current = null;
+          }, 500);
+        }
+      } else if (flipTimeoutRef.current) {
+        clearTimeout(flipTimeoutRef.current);
+        flipTimeoutRef.current = null;
+      }
+    };
+
+    const onUp = (e: PointerEvent) => {
+      clearLiftTimer();
+
+      if (draggingRef.current && dragPayloadRef.current) {
+        const ds = dragPayloadRef.current;
+        const hit = hitTestDrop(e.clientX, e.clientY);
+        if (hit?.type === 'slot') {
+          if (ds.fromShelfId === hit.shelfId) {
+            onReorderBook(hit.shelfId, ds.fromIndex, hit.index);
+          } else {
+            onMoveBook(ds.bookId, ds.fromShelfId, hit.shelfId, hit.index);
+          }
+        } else if (hit?.type === 'rack') {
+          onMoveBook(ds.bookId, ds.fromShelfId, hit.shelfId);
+        }
+        endPointerDrag();
+        setTimeout(() => { suppressClickRef.current = false; }, 0);
+        return;
+      }
+
+      pendingLiftRef.current = null;
+      if (!draggingRef.current) suppressClickRef.current = false;
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', endPointerDrag);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', endPointerDrag);
+    };
+  }, [currentRack, shelves.length, onMoveBook, onReorderBook, endPointerDrag]);
 
   const [rackDirection, setRackDirection] = useState<'next' | 'prev'>('next');
 
@@ -195,7 +365,6 @@ export const LibraryView = ({
     setCurrentRack(idx);
   };
 
-  // Clamp rack when shelves shrink (removeShelf)
   useEffect(() => {
     if (shelves.length === 0) return;
     if (currentRack >= shelves.length) {
@@ -212,58 +381,20 @@ export const LibraryView = ({
     }
   };
 
-  const [dragOverBook, setDragOverBook] = useState<{ shelfId: string; index: number } | null>(null);
-
-  const handleBookDragOver = (e: React.DragEvent, shelfId: string, index: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverBook({ shelfId, index });
+  const onRackSwipeStart = (e: React.TouchEvent) => {
+    if (draggingRef.current) return;
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
-
-  const handleBookDrop = (e: React.DragEvent, toShelfId: string, toIndex: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverBook(null);
-    setDragOverShelf(null);
-    if (!dragState) return;
-
-    if (dragState.fromShelfId === toShelfId) {
-      onReorderBook(toShelfId, dragState.fromIndex, toIndex);
-    } else {
-      onMoveBook(dragState.bookId, dragState.fromShelfId, toShelfId, toIndex);
-    }
-    setDragState(null);
+  const onRackSwipeEnd = (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start || draggingRef.current) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0) flipRack('next');
+    else flipRack('prev');
   };
-
-  const handleShelfDragOver = (e: React.DragEvent, shelfId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverShelf(shelfId);
-  };
-
-  const handleShelfDragEnter = (e: React.DragEvent, shelfId: string) => {
-    e.preventDefault();
-    dragCounter.current++;
-    setDragOverShelf(shelfId);
-  };
-
-  const handleShelfDragLeave = (e: React.DragEvent) => {
-    dragCounter.current--;
-    if (dragCounter.current <= 0) {
-      setDragOverShelf(null);
-    }
-  };
-
-  const handleShelfDrop = (e: React.DragEvent, toShelfId: string) => {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragOverShelf(null);
-    if (!dragState) return;
-    onMoveBook(dragState.bookId, dragState.fromShelfId, toShelfId);
-    setDragState(null);
-  };
-
-  const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bgStyle = !isSimplified
     ? (wallpaper === 'custom' && customWallpaper
@@ -564,7 +695,11 @@ export const LibraryView = ({
             </div>
           </div>
         ) : (
-          <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden min-h-0">
+          <div
+            className="flex-1 relative flex flex-col items-center justify-center overflow-hidden min-h-0"
+            onTouchStart={onRackSwipeStart}
+            onTouchEnd={onRackSwipeEnd}
+          >
             {/* Carousel Container */}
             <div className="flex w-full h-full min-h-0">
               <AnimatePresence initial={false} mode="wait">
@@ -574,7 +709,7 @@ export const LibraryView = ({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: rackDirection === 'next' ? '-100%' : '100%', opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center px-2 sm:px-4 pt-2 pb-20 overflow-hidden"
+                  className="absolute inset-0 flex flex-col items-center justify-center px-2 sm:px-4 pt-2 pb-24 overflow-hidden"
                 >
                   <AnimatePresence>
                     {dragState && (
@@ -582,9 +717,9 @@ export const LibraryView = ({
                         initial={{ opacity: 0, y: -20 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
-                        className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-indigo-600 text-white px-6 py-2 rounded-full shadow-2xl text-[10px] font-bold uppercase tracking-widest border border-indigo-400"
+                        className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-indigo-600 text-white px-6 py-2 rounded-full shadow-2xl text-[10px] font-bold uppercase tracking-widest border border-indigo-400 pointer-events-none"
                       >
-                        Suelta en un hueco vacío o en los puntos de abajo para mover
+                        Soltá en un hueco o en un estante abajo
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -611,13 +746,14 @@ export const LibraryView = ({
                       return (
                         <div 
                           key={`slot-${currentRack}-${idx}`}
+                          data-shelf-slot
+                          data-shelf-id={shelves[currentRack].id}
+                          data-slot-index={idx}
                           className={cn(
-                            "relative flex flex-col items-center justify-end min-h-0 min-w-0 transition-all duration-300",
+                            "relative flex flex-col items-center justify-end min-h-0 min-w-0 transition-all duration-300 touch-none",
                             !book && "border-2 border-dashed border-white/5 rounded-lg opacity-10 hover:opacity-30 hover:bg-white/5",
                             dragOverBook?.shelfId === shelves[currentRack].id && dragOverBook?.index === idx && "ring-2 ring-amber-500 bg-amber-500/10 opacity-100 scale-105 z-10"
                           )}
-                          onDragOver={(e) => handleBookDragOver(e, shelves[currentRack].id, idx)}
-                          onDrop={(e) => handleBookDrop(e, shelves[currentRack].id, idx)}
                         >
                           {book ? (
                             <div
@@ -625,18 +761,31 @@ export const LibraryView = ({
                                 "w-full h-full max-h-full flex flex-col items-center justify-end min-h-0 transition-all",
                                 dragState?.bookId === book.id && "opacity-20 grayscale"
                               )}
+                              onPointerDown={(e) =>
+                                onBookPointerDown(
+                                  e,
+                                  book.id,
+                                  shelves[currentRack].id,
+                                  idx,
+                                  book.title,
+                                  covers[book.filename]
+                                )
+                              }
+                              onClick={(e) => {
+                                if (suppressClickRef.current) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }
+                              }}
                             >
                               <BookCover 
                                 book={book}
                                 cover={covers[book.filename]}
-                                onClick={() => onOpenBook(book)}
+                                onClick={() => {
+                                  if (!suppressClickRef.current) onOpenBook(book);
+                                }}
                                 onEdit={() => onEditBook(book)}
                                 onShare={() => onShareBook?.(book)}
-                                onDragStart={(e) => {
-                                  handleDragStart(e, book.id, shelves[currentRack].id, idx);
-                                  e.stopPropagation();
-                                }}
-                                onDragEnd={handleDragEnd}
                                 onHover={setHoverColor}
                                 readingProgress={onGetProgress?.(book.filename)}
                                 isSimplified={isSimplified}
@@ -646,7 +795,6 @@ export const LibraryView = ({
                                 fillHeight
                               />
                               {!isSimplified && <ShelfLedge compact />}
-
                             </div>
                           ) : (
                             <div className="w-full flex-1 min-h-[2rem]" />
@@ -660,7 +808,7 @@ export const LibraryView = ({
             </div>
 
             {/* Navigation / Move Targets */}
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-4 gap-y-3 z-[60] max-w-[90vw]">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 z-[60] max-w-[94vw]">
               <AnimatePresence mode="wait">
                 {dragState ? (
                   <motion.div 
@@ -672,19 +820,9 @@ export const LibraryView = ({
                     {shelves.map((shelf) => (
                       <div
                         key={`target-${shelf.id}`}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          setDragOverShelf(shelf.id);
-                        }}
-                        onDragLeave={() => setDragOverShelf(null)}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          onMoveBook(dragState.bookId, dragState.fromShelfId, shelf.id);
-                          setDragState(null);
-                          setDragOverShelf(null);
-                        }}
+                        data-rack-target={shelf.id}
                         className={cn(
-                          "px-4 py-3 rounded-xl border border-dashed transition-all flex flex-col items-center gap-1 min-w-[100px]",
+                          "px-4 py-3 rounded-xl border border-dashed transition-all flex flex-col items-center gap-1 min-w-[100px] shrink-0",
                           dragOverShelf === shelf.id 
                             ? "bg-amber-500/20 border-amber-500 scale-105" 
                             : "bg-black/20 border-white/5 text-stone-400"
@@ -699,42 +837,70 @@ export const LibraryView = ({
                   <motion.div 
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 bg-stone-950/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/5 shadow-xl"
+                    className="flex flex-wrap items-center justify-center gap-2 bg-stone-950/50 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/5 shadow-xl max-w-[94vw]"
                   >
-                    {shelves.map((shelf, idx) => (
-                      <button
-                        key={`dot-${idx}`}
-                        onClick={() => goToRack(idx)}
-                        className={cn(
-                          "relative w-4 h-4 flex items-center justify-center transition-all group/dot",
-                          dragState && "hover:scale-150 active:scale-125"
-                        )}
-                        aria-label={`Go to rack ${idx + 1}`}
-                      >
-                        <div className={cn(
-                          "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                          currentRack === idx 
-                            ? "bg-amber-500 scale-[1.8] shadow-[0_0_8px_rgba(245,158,11,0.6)]" 
-                            : "bg-white/20 group-hover/dot:bg-white/40",
-                        )} />
-                      </button>
-                    ))}
+                    <button
+                      onClick={() => flipRack('prev')}
+                      disabled={currentRack === 0}
+                      className="w-8 h-8 flex items-center justify-center rounded-xl text-stone-400 hover:text-white hover:bg-white/10 disabled:opacity-20"
+                      aria-label="Estante anterior"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div className="flex gap-1.5 overflow-x-auto max-w-[70vw] py-0.5 scrollbar-thin">
+                      {shelves.map((shelf, idx) => {
+                        const n = shelf.bookIds.filter(Boolean).length;
+                        return (
+                          <button
+                            key={`chip-${shelf.id}`}
+                            onClick={() => goToRack(idx)}
+                            className={cn(
+                              "shrink-0 px-2.5 py-1.5 rounded-xl text-[10px] font-bold transition-all border",
+                              currentRack === idx
+                                ? "bg-amber-600/90 text-white border-amber-400/40 shadow-lg shadow-amber-950/40"
+                                : "bg-black/30 text-stone-400 border-white/5 hover:text-white hover:bg-white/10"
+                            )}
+                            aria-label={`Ir a ${shelf.title}`}
+                          >
+                            <span className="max-w-[7rem] truncate inline-block align-bottom">{shelf.title}</span>
+                            <span className="ml-1 opacity-60 font-mono">{n}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => flipRack('next')}
+                      disabled={currentRack === shelves.length - 1}
+                      className="w-8 h-8 flex items-center justify-center rounded-xl text-stone-400 hover:text-white hover:bg-white/10 disabled:opacity-20"
+                      aria-label="Estante siguiente"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
                     {onAddShelf && (
                       <button
-                        onClick={() => { onAddShelf(); goToRack(shelves.length); }}
-                        className="w-4 h-4 flex items-center justify-center text-stone-500 hover:text-amber-500 transition-all"
+                        onClick={() => { onAddShelf(); setTimeout(() => goToRack(shelves.length), 0); }}
+                        className="w-8 h-8 flex items-center justify-center rounded-xl text-stone-500 hover:text-amber-500 hover:bg-white/10"
                         title="Añadir estante"
                       >
-                        <span className="text-[10px] font-bold leading-none">+</span>
+                        <span className="text-sm font-bold leading-none">+</span>
                       </button>
                     )}
                     {onRemoveShelf && shelves.length > 1 && (
                       <button
-                        onClick={() => { onRemoveShelf(shelves[currentRack].id); goToRack(Math.max(0, currentRack - 1)); }}
-                        className="w-4 h-4 flex items-center justify-center text-stone-500 hover:text-red-500 transition-all"
+                        onClick={() => {
+                          const id = shelves[currentRack]?.id;
+                          if (!id) return;
+                          const result = onRemoveShelf(id);
+                          if (result && typeof result.destinationIndex === 'number') {
+                            goToRack(result.destinationIndex);
+                          } else {
+                            goToRack(Math.max(0, currentRack - 1));
+                          }
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-xl text-stone-500 hover:text-red-500 hover:bg-white/10"
                         title="Eliminar estante actual"
                       >
-                        <span className="text-[10px] font-bold leading-none">−</span>
+                        <span className="text-sm font-bold leading-none">−</span>
                       </button>
                     )}
                   </motion.div>
@@ -742,20 +908,9 @@ export const LibraryView = ({
               </AnimatePresence>
             </div>
 
-            {/* Navigation Arrows (Desktop) & Drag Edge Zones */}
+            {/* Desktop edge arrows (also help while dragging) */}
             <div className="absolute inset-y-0 left-0 right-0 pointer-events-none hidden md:flex items-center justify-between px-4 lg:px-12 z-20">
-              <div 
-                className="w-20 h-full pointer-events-auto flex items-center justify-start group"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (!flipTimeoutRef.current && currentRack > 0) {
-                    flipTimeoutRef.current = setTimeout(() => {
-                      flipRack('prev');
-                      flipTimeoutRef.current = null;
-                    }, 600);
-                  }
-                }}
-              >
+              <div className="w-16 h-full pointer-events-auto flex items-center justify-start">
                 <button 
                   onClick={() => flipRack('prev')}
                   disabled={currentRack === 0}
@@ -764,18 +919,7 @@ export const LibraryView = ({
                   <ChevronLeft size={32} />
                 </button>
               </div>
-              <div 
-                className="w-20 h-full pointer-events-auto flex items-center justify-end group"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (!flipTimeoutRef.current && currentRack < shelves.length - 1) {
-                    flipTimeoutRef.current = setTimeout(() => {
-                      flipRack('next');
-                      flipTimeoutRef.current = null;
-                    }, 600);
-                  }
-                }}
-              >
+              <div className="w-16 h-full pointer-events-auto flex items-center justify-end">
                 <button 
                   onClick={() => flipRack('next')}
                   disabled={currentRack === shelves.length - 1}
@@ -785,6 +929,22 @@ export const LibraryView = ({
                 </button>
               </div>
             </div>
+
+            {/* Drag ghost */}
+            {ghost && (
+              <div
+                className="fixed z-[200] pointer-events-none w-16 sm:w-20 aspect-[2/3] rounded-md shadow-2xl border border-amber-400/50 overflow-hidden opacity-90"
+                style={{ left: ghost.x + 8, top: ghost.y + 8 }}
+              >
+                {ghost.cover && (ghost.cover.startsWith('data:') || ghost.cover.startsWith('http')) ? (
+                  <img src={ghost.cover} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-stone-800 text-amber-100 text-[8px] font-bold p-1 flex items-center justify-center text-center">
+                    {ghost.title}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

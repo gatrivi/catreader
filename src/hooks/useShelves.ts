@@ -24,6 +24,11 @@ export interface Shelf {
 
 const STORAGE_KEY = 'catreader_shelves_v2';
 
+function findBookShelfId(shelves: Shelf[], bookId: string): string | null {
+  const s = shelves.find((sh) => sh.bookIds.includes(bookId));
+  return s?.id ?? null;
+}
+
 function defaultShelves(): Shelf[] {
   return Array.from({ length: 8 }, (_, i) => ({
     id: `shelf-${i}`,
@@ -193,18 +198,26 @@ export function useShelves(library: Array<{ id: string }>) {
     ]);
   }, []);
 
-  const removeShelf = useCallback((shelfId: string) => {
+  const removeShelf = useCallback((shelfId: string): { count: number; destinationShelfId: string; destinationIndex: number } | null => {
+    let info: { count: number; destinationShelfId: string; destinationIndex: number } | null = null;
     setShelves((prev) => {
       const target = prev.find((s) => s.id === shelfId);
       if (!target) return prev;
       const remaining = prev.filter((s) => s.id !== shelfId);
       if (remaining.length === 0) return prev;
+      const moving = occupiedIds(target.bookIds);
       let next = remaining.map((s) => ({ ...s, bookIds: [...s.bookIds] as SlotId[] }));
-      for (const id of occupiedIds(target.bookIds)) {
+      for (const id of moving) {
         next = spillBook(next, id);
       }
+      const destId = moving.length
+        ? (findBookShelfId(next, moving[0]) ?? next[0].id)
+        : next[0].id;
+      const destinationIndex = Math.max(0, next.findIndex((s) => s.id === destId));
+      info = { count: moving.length, destinationShelfId: destId, destinationIndex };
       return next;
     });
+    return info;
   }, []);
 
   const consolidateShelves = useCallback(() => {

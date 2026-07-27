@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
+import { shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
 
 export interface LibraryBook {
   id: string;
@@ -415,25 +416,20 @@ export function useLibrary({
   const fetchEnhancedCover = useCallback(async (book: LibraryBook, forceAI = false) => {
     console.log(`[Cover] fetchEnhancedCover called for ${book.title}, forceAI=${forceAI}`);
     const meta = enrichedMetadataRef.current[book.filename];
-    if (meta?.coverSource?.type === 'user-custom' && !forceAI) {
-      console.log(`[Cover] Preserving user-custom coverSource for: ${book.title}`);
-      return;
-    }
-    // Check if there is already a custom user-captured/uploaded cover
+    let existingCover: string | null = null;
     try {
-      const existingCover = await coverDB.getCover(book.filename);
-      const isCaptured = existingCover && (
-        existingCover.startsWith('data:image/jpeg') ||
-        existingCover.startsWith('data:image/png') ||
-        existingCover.startsWith('data:image/webp')
-      );
-      if (isCaptured && !forceAI) {
-        console.log(`[Cover] Preserving custom/captured cover for: ${book.title}`);
-        return;
-      }
-      console.log(`[Cover] No custom cover found for ${book.title}, fetching enhanced...`);
+      existingCover = await coverDB.getCover(book.filename);
     } catch (e) {
       console.warn('[Cover] Error checking existing cover:', e);
+    }
+
+    if (shouldSkipCoverFetch({
+      force: forceAI,
+      existingCover,
+      coverSource: meta?.coverSource,
+    })) {
+      console.log(`[Cover] Skipping fetch — existing cover sacred for: ${book.title}`);
+      return;
     }
 
     setIdentifyingBookId(book.id);
@@ -517,10 +513,18 @@ export function useLibrary({
       setCovers(prev => ({ ...prev, [filename]: thumbnail }));
       markCoverAsSaved(filename);
 
-      // Upload to Firebase Storage in the background for cross-device rehydration
-      console.log(`[CoverUpload] Uploading to Firebase Storage...`);
-      const downloadUrl = await syncService.uploadCoverBlob(filename, thumbnail);
-      console.log(`[CoverUpload] Firebase upload complete: ${downloadUrl ? 'success' : 'failed'}`);
+      // Upload to Firebase Storage with retry — empty url = other devices lose the cover
+      let downloadUrl: string | null = null;
+      for (let attempt = 0; attempt < 3 && !downloadUrl; attempt++) {
+        console.log(`[CoverUpload] Firebase Storage attempt ${attempt + 1}...`);
+        downloadUrl = await syncService.uploadCoverBlob(filename, thumbnail);
+      }
+      if (!downloadUrl) {
+        showToast('Portada local OK — sync cloud falló (reintentá)');
+        console.error('[CoverUpload] Storage upload failed after retries');
+      } else {
+        console.log(`[CoverUpload] Firebase upload complete`);
+      }
       const coverSource = {
         type: 'user-custom' as const,
         url: downloadUrl || '',
@@ -537,8 +541,10 @@ export function useLibrary({
       setLibrary(prev => prev.map(book => 
         book.filename === filename ? { ...book, coverSource, svg: undefined } : book
       ));
+      if (downloadUrl) showToast('Portada guardada en la nube');
     } catch (err) {
       console.error('[Cover Upload] Failed to process and sync cover thumbnail:', err);
+      showToast('Error al guardar portada');
     } finally {
       setIsSyncing(false);
     }
@@ -709,16 +715,12 @@ export function useLibrary({
           await syncService.saveMetadata(newMetadata);
           setLibrary(prev => prev.map(b => b.filename === book.filename ? { ...b, ...enrichedWithSource } : b));
           
-          if (enriched.svg && existingSource?.type !== 'user-custom') {
+          if (enriched.svg && !isUserCustomCover(existingSource)) {
             try {
               const existingCover = await coverDB.getCover(book.filename);
-              const isCustomImage = existingCover && (
-                existingCover.startsWith('data:image/jpeg') ||
-                existingCover.startsWith('data:image/png') ||
-                existingCover.startsWith('data:image/webp') ||
-                existingCover.startsWith('http')
-              );
-              if (!isCustomImage) {
+              if (shouldSkipCoverFetch({ existingCover, coverSource: existingSource })) {
+                // keep sacred cover
+              } else {
                 await coverDB.saveCover(book.filename, enriched.svg);
                 setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
               }
@@ -731,10 +733,9 @@ export function useLibrary({
       }
       
       const hasCover = coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
-      const hasUserCustomSource = currentMeta?.coverSource?.type === 'user-custom';
-      const hasOpenLibraryCover = currentMeta?.coverSource?.type === 'openlibrary';
+      const currentSource = enrichedMetadataRef.current[book.filename]?.coverSource;
 
-      if (!hasCover && !hasUserCustomSource && !hasOpenLibraryCover) {
+      if (!shouldSkipCoverFetch({ existingCover: hasCover, coverSource: currentSource })) {
         setEnrichmentProgress({ current: idx + 1, total: library.length, filename: `Cover: ${book.title}` });
         await fetchEnhancedCover(book);
       }

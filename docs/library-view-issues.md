@@ -21,4 +21,5 @@ enum LibraryCoreProblem {
 ```
 
 **Fixed in sparse-shelf pass:** 1, 2, 3 (+ DnD all-shelf targets / `DND_TARGETS_FIRST_3`, rack clamp / `RACK_INDEX_UNSAFE`).  
-**Deferred:** 4–5, 7–8, 10–13.
+**Fixed in v2.9.8:** cover lock + upload retry; pointer drag + ghost; rack chips/swipe; remove-rack toast+jump.  
+**Deferred:** `PROGRESS_AURA_STUB`, `SHELVES_LOCAL_ONLY`, nesting, idle enrich thrash.
