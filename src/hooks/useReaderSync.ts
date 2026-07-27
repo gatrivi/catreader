@@ -149,6 +149,8 @@ export function useReaderSync({
    */
   const saveProgress = useCallback(async () => {
     if (!fileName || !isLoaded || !containerRef.current) return;
+    // Never persist a transient observer page during restore / mode switch
+    if (isRestoring) return;
 
     setIsSyncing(true);
     const now = Date.now();
@@ -177,7 +179,7 @@ export function useReaderSync({
 
     setLastSyncTime(now);
     setIsSyncing(false);
-  }, [fileName, isLoaded, zoom, theme, pageNumber, epubCfi, getDeviceCategory, containerRef, setIsSyncing]);
+  }, [fileName, isLoaded, isRestoring, zoom, theme, pageNumber, epubCfi, getDeviceCategory, containerRef, setIsSyncing]);
 
   // Handle theme changes persisting to localStorage
   useEffect(() => {

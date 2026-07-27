@@ -39,3 +39,17 @@ export function filterLibraryBooks<T extends { title: string; author?: string; f
       b.filename.toLowerCase().includes(q)
   );
 }
+
+/** Block IntersectionObserver page writes during open/restore or reader-mode switch. */
+export function shouldBlockPageObserver(
+  isRestoring: boolean,
+  restoreTargetPage: number | null
+): boolean {
+  return isRestoring || restoreTargetPage != null;
+}
+
+/** DOM id prefix for the active continuous-scroll surface. */
+export function pageElementPrefix(isReaderMode: boolean, fileType: string): string {
+  return isReaderMode || fileType === 'txt' ? 'text-page-' : 'page-';
+}
+

@@ -6,6 +6,8 @@ import {
   parsePageInput,
   filterLibraryBooks,
   PDF_RENDER_WINDOW,
+  shouldBlockPageObserver,
+  pageElementPrefix,
 } from './reader';
 
 describe('reader utils', () => {
@@ -49,5 +51,17 @@ describe('reader utils', () => {
     expect(filterLibraryBooks(books, 'pdf')).toHaveLength(2);
     expect(filterLibraryBooks(books, 'zzz')).toHaveLength(0);
     expect(filterLibraryBooks(books, '')).toHaveLength(2);
+  });
+
+  it('blocks page observer during restore / mode switch', () => {
+    expect(shouldBlockPageObserver(true, null)).toBe(true);
+    expect(shouldBlockPageObserver(false, 42)).toBe(true);
+    expect(shouldBlockPageObserver(false, null)).toBe(false);
+  });
+
+  it('picks page DOM prefix for reader vs pdf', () => {
+    expect(pageElementPrefix(true, 'pdf')).toBe('text-page-');
+    expect(pageElementPrefix(false, 'pdf')).toBe('page-');
+    expect(pageElementPrefix(false, 'txt')).toBe('text-page-');
   });
 });

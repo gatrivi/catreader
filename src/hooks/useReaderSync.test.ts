@@ -65,6 +65,7 @@ describe('useReaderSync', () => {
 
     // Change zoom on desktop
     act(() => {
+      result.current.setIsRestoring(false); // scroll restore finished
       result.current.changeZoom(0.1); // 1.5 -> 1.6
     });
 
@@ -95,6 +96,10 @@ describe('useReaderSync', () => {
 
     // On desktop, it should use the numeric zoom as desktop zoom
     expect(result.current.zoom).toBe(1.8);
+
+    act(() => {
+      result.current.setIsRestoring(false);
+    });
 
     // When saving, it should convert to map format
     await act(async () => {

@@ -49,7 +49,7 @@ import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
 import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath, resolveBookRoute, buildBookShareUrl } from './utils/routing';
 import { displayBookTitle } from './components/BookCover';
-import { clampPage, offsetPage } from './utils/reader';
+import { clampPage, offsetPage, shouldBlockPageObserver, pageElementPrefix } from './utils/reader';
 import { PageInput } from './components/PageInput';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
@@ -111,6 +111,7 @@ export default function App() {
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoreTargetPageRef = useRef<number | null>(null);
+  const modeSwitchPageRef = useRef<number | null>(null);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
     if (storedText.startsWith('[')) {
@@ -130,25 +131,6 @@ export default function App() {
     }
   }, []);
 
-  const toggleReaderMode = async () => {
-    const nextMode = !isReaderMode;
-    setIsReaderMode(nextMode);
-    
-    if (nextMode && fileType === 'pdf' && !textContent) {
-      const text = await coverDB.getGhostText(fileName);
-      if (text) {
-        loadGhostTextToState(text);
-      } else if (fileUrl) {
-        showToast('Extracting text...');
-        try {
-          const blob = await coverDB.getBookContent(fileName) || await fetch(fileUrl).then(r => r.blob());
-          extractGhostTextLazy(blob, fileName);
-        } catch (e) {
-          console.error('[ReaderMode] Failed to start lazy extraction:', e);
-        }
-      }
-    }
-  };
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
   const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'gaston');
@@ -165,7 +147,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.9.8';
+  const APP_VERSION = 'v2.9.9';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -616,6 +598,68 @@ export default function App() {
     }
   };
 
+  const toggleReaderMode = async () => {
+    // Freeze page before remount — observer would otherwise see top of text view (p~1–3)
+    // and saveProgress would overwrite synced progress (feature #1).
+    const keepPage = pageNumber;
+    modeSwitchPageRef.current = keepPage;
+    restoreTargetPageRef.current = keepPage;
+    setIsRestoring(true);
+
+    const nextMode = !isReaderMode;
+    setIsReaderMode(nextMode);
+
+    if (nextMode && fileType === 'pdf' && !textContent) {
+      const text = await coverDB.getGhostText(fileName);
+      if (text) {
+        loadGhostTextToState(text);
+      } else if (fileUrl) {
+        showToast('Extracting text...');
+        try {
+          const blob = await coverDB.getBookContent(fileName) || await fetch(fileUrl).then(r => r.blob());
+          extractGhostTextLazy(blob, fileName);
+        } catch (e) {
+          console.error('[ReaderMode] Failed to start lazy extraction:', e);
+        }
+      }
+    }
+  };
+
+  // After reader↔PDF switch, scroll back to frozen page once DOM exists
+  useEffect(() => {
+    const target = modeSwitchPageRef.current;
+    if (target == null || !fileUrl) return;
+    if (isReaderMode && fileType === 'pdf' && (!textContent || textContent.length === 0)) return;
+
+    let cancelled = false;
+    const settle = () => {
+      if (cancelled) return;
+      cancelled = true;
+      if (modeSwitchPageRef.current === target) modeSwitchPageRef.current = null;
+      if (restoreTargetPageRef.current === target) restoreTargetPageRef.current = null;
+      setIsRestoring(false);
+    };
+
+    const jump = () => {
+      if (cancelled) return;
+      const prefix = pageElementPrefix(isReaderMode, fileType);
+      const el = document.getElementById(`${prefix}${target}`);
+      if (el && containerRef.current) {
+        el.scrollIntoView({ behavior: 'instant' });
+        setPageNumber(target);
+      }
+      window.setTimeout(settle, 450);
+    };
+
+    const raf = requestAnimationFrame(() => requestAnimationFrame(jump));
+    const safety = window.setTimeout(settle, 3000);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      clearTimeout(safety);
+    };
+  }, [isReaderMode, textContent, fileType, fileUrl, setIsRestoring, setPageNumber]);
+
   const resolvePageTextForTts = async (): Promise<string> => {
     const fromState = textContentRef.current?.[pageNumber - 1];
     if (fromState?.trim()) return fromState;
@@ -909,7 +953,7 @@ export default function App() {
   }, [fileType, isLoaded, scrollRatio]);
 
   const scrollToPage = (targetPage: number) => {
-    const prefix = isReaderMode ? 'text-page-' : 'page-';
+    const prefix = pageElementPrefix(isReaderMode, fileType);
     const el = document.getElementById(`${prefix}${targetPage}`);
     if (el && containerRef.current) {
       el.scrollIntoView({ behavior: 'smooth' });
@@ -934,7 +978,7 @@ export default function App() {
     if (!container || !fileUrl) return;
 
     const observer = new IntersectionObserver((entries) => {
-      if (isRestoring || restoreTargetPageRef.current !== null) return;
+      if (shouldBlockPageObserver(isRestoring, restoreTargetPageRef.current)) return;
       let bestPage = pageNumber, bestRatio = -1;
       entries.forEach((entry) => {
         if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
@@ -954,7 +998,7 @@ export default function App() {
       observer.disconnect();
       mutationObserver.disconnect();
     };
-  }, [isLoaded, fileName, fileUrl, isRestoring]);
+  }, [isLoaded, fileName, fileUrl, isRestoring, isReaderMode]);
 
   const themeStyles = {
     light: 'bg-[#f8f9fa] text-stone-900',
