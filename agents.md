@@ -52,9 +52,9 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ### SESSION CONTEXT (2026-07-14)
 
-- **Version:** `v2.10.0`
+- **Version:** `v2.10.1`
 - **FEATURE #1 SACRED:** synced reading progress — see `docs/PROGRESS_SACRED.md`. NEVER clobber page on remount.
-- **READER MODE:** must be lazy from synced page — `docs/READER_MODE_LAZY.md`. Current `extractGhostTextLazy` (1..20 then rest) is WRONG.
+- **READER MODE:** lazy from synced page — `docs/READER_MODE_LAZY.md` (`ensureGhostAround` P±2).
 - Live audio: headphones btn → CATTS `100.87.252.18:59200` `/tts/live`; selection or page start; wav cache IDB `ttsAudio`.
 - See `docs/ARCHITECTURE.md`. Paper Soul bake still Node stand-in.
 

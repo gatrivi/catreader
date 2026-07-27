@@ -105,7 +105,7 @@ See `docs/perf-and-tests.md`. Run `npm test` before push.
 ## Known gaps
 
 - **FEATURE #1 (synced progress) is SACRED** — see [`docs/PROGRESS_SACRED.md`](PROGRESS_SACRED.md)
-- **READER MODE MUST BE LAZY FROM CURRENT PAGE** — see [`docs/READER_MODE_LAZY.md`](READER_MODE_LAZY.md) (full-book extract = broken)
+- **READER MODE MUST BE LAZY FROM CURRENT PAGE** — [`docs/READER_MODE_LAZY.md`](READER_MODE_LAZY.md) (`ensureGhostAround` P±2 as of v2.10.1)
 - Library view issue enum + status: [`docs/library-view-issues.md`](library-view-issues.md)
 - Shelf nesting not implemented
 - DnD has no ghost preview (opacity fade only)

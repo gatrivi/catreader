@@ -55,6 +55,12 @@ import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
 import { sentencesFromPageHtml } from './utils/sentences';
 import { useLiveAudio } from './hooks/useLiveAudio';
+import {
+  pagesNeededAround,
+  missingGhostPages,
+  emptyGhostPages,
+  applyGhostPages,
+} from './utils/ghostText';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -147,13 +153,17 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.0';
+  const APP_VERSION = 'v2.10.1';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
   const hasResumedRef = useRef(false);
   const textContentRef = useRef(textContent);
   textContentRef.current = textContent;
+  const ghostPdfRef = useRef<{ filename: string; pdf: any } | null>(null);
+  const ghostPdfLoadingRef = useRef<Promise<any> | null>(null);
+  const ghostInflightRef = useRef<Set<number>>(new Set());
+  const ghostPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Hooks Integration ---
   const liveAudio = useLiveAudio('es');
@@ -533,85 +543,122 @@ export default function App() {
     }
   };
 
-  const extractGhostText = async (fileOrBlob: File | Blob, filename: string) => {
+  const extractGhostText = async (fileOrBlob: File | Blob, filename: string, centerPage = 1) => {
     try {
       const existing = await coverDB.getGhostText(filename);
       if (existing) {
         loadGhostTextToState(existing);
+        // Still fill holes around center (partial caches)
+        await ensureGhostAround(fileOrBlob, filename, centerPage);
         return;
       }
       const remote = await syncService.loadGhostText(filename);
       if (remote) {
         await coverDB.saveGhostText(filename, remote);
         loadGhostTextToState(remote);
+        await ensureGhostAround(fileOrBlob, filename, centerPage);
         return;
       }
-      console.log(`[Ghost] Progressive extraction started for: ${filename}`);
-      extractGhostTextLazy(fileOrBlob, filename);
+      await ensureGhostAround(fileOrBlob, filename, centerPage);
     } catch (err) {
       console.error('Ghost Text Extraction Error:', err);
     }
   };
 
-  const extractGhostTextLazy = async (fileOrBlob: File | Blob, filename: string) => {
-    try {
-      console.log(`[Ghost] Lazy extraction for: ${filename}`);
+  const persistGhostPartial = (filename: string, pages: string[]) => {
+    if (ghostPersistTimerRef.current) clearTimeout(ghostPersistTimerRef.current);
+    ghostPersistTimerRef.current = setTimeout(() => {
+      const serialized = JSON.stringify(pages);
+      coverDB.saveGhostText(filename, serialized).catch(() => {});
+      syncService.saveGhostText(filename, serialized).catch(() => {});
+    }, 800);
+  };
+
+  const getGhostPdf = async (fileOrBlob: File | Blob, filename: string) => {
+    if (ghostPdfRef.current?.filename === filename && ghostPdfRef.current.pdf) {
+      return ghostPdfRef.current.pdf;
+    }
+    if (ghostPdfLoadingRef.current) return ghostPdfLoadingRef.current;
+
+    ghostPdfLoadingRef.current = (async () => {
       const data = new Uint8Array(await fileOrBlob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
-      
-      const totalPages = pdf.numPages;
-      const pagesArray = new Array(totalPages).fill('');
-      if (isReaderModeRef.current) freezePageForRemount(pageNumberRef.current);
-      setTextContent(pagesArray);
+      ghostPdfRef.current = { filename, pdf };
+      ghostPdfLoadingRef.current = null;
+      return pdf;
+    })();
 
-      // Extract first 20 pages immediately for responsiveness
-      const immediatePages = Math.min(20, totalPages);
-      for (let i = 1; i <= immediatePages; i++) {
-        const page = await pdf.getPage(i);
-        const tc = await page.getTextContent();
-        const pageHtml = await parsePdfPageSemantically(page, tc);
-        pagesArray[i - 1] = pageHtml;
-        setTextContent(prev => {
-          const next = prev ? [...prev] : new Array(totalPages).fill('');
-          next[i - 1] = pageHtml;
-          return next;
-        });
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-      console.log(`[Ghost] First ${immediatePages} pages extracted for: ${filename}`);
+    return ghostPdfLoadingRef.current;
+  };
 
-      // Continue remaining pages in background
-      (async () => {
-        for (let i = immediatePages + 1; i <= totalPages; i++) {
-          try {
-            const page = await pdf.getPage(i);
-            const tc = await page.getTextContent();
-            const pageHtml = await parsePdfPageSemantically(page, tc);
-            pagesArray[i - 1] = pageHtml;
-            setTextContent(prev => {
-              if (!prev) return new Array(totalPages).fill('');
-              const next = [...prev];
-              next[i - 1] = pageHtml;
-              return next;
-            });
-            await new Promise(resolve => setTimeout(resolve, 0));
-          } catch (e) {
-            console.warn(`[Ghost] Failed to extract page ${i}:`, e);
+  /** REAL lazy extract: synced page ± window only. docs/READER_MODE_LAZY.md */
+  const ensureGhostAround = async (
+    fileOrBlob: File | Blob,
+    filename: string,
+    centerPage: number
+  ) => {
+    try {
+      const pdf = await getGhostPdf(fileOrBlob, filename);
+      const totalPages = pdf.numPages as number;
+
+      let pages = textContentRef.current;
+      if (!pages || pages.length !== totalPages) {
+        if (isReaderModeRef.current) freezePageForRemount(pageNumberRef.current);
+        pages = emptyGhostPages(totalPages);
+        // Keep any already-loaded HTML if length matches-ish
+        if (textContentRef.current?.length) {
+          for (let i = 0; i < Math.min(textContentRef.current.length, totalPages); i++) {
+            if (textContentRef.current[i]?.trim()) pages[i] = textContentRef.current[i];
           }
         }
-        try {
-          const serialized = JSON.stringify(pagesArray);
-          await coverDB.saveGhostText(filename, serialized);
-          await syncService.saveGhostText(filename, serialized);
-          console.log(`[Ghost] Full extraction complete for: ${filename}`);
-        } catch (e) {
-          console.error('[Ghost] Failed to cache extracted text:', e);
+        setTextContent(pages);
+        textContentRef.current = pages;
+        if (numPages !== totalPages) setNumPages(totalPages);
+      }
+
+      const needed = pagesNeededAround(centerPage, totalPages);
+      const missing = missingGhostPages(pages, needed).filter((p) => !ghostInflightRef.current.has(p));
+      if (missing.length === 0) return;
+
+      missing.forEach((p) => ghostInflightRef.current.add(p));
+      const extracted: Record<number, string> = {};
+      try {
+        for (const p of missing) {
+          try {
+            const page = await pdf.getPage(p);
+            const tc = await page.getTextContent();
+            extracted[p] = await parsePdfPageSemantically(page, tc);
+          } catch (e) {
+            console.warn(`[Ghost] Failed page ${p}:`, e);
+            extracted[p] = '';
+          }
         }
-      })();
+      } finally {
+        missing.forEach((p) => ghostInflightRef.current.delete(p));
+      }
+
+      setTextContent((prev) => {
+        const base = prev && prev.length === totalPages ? prev : emptyGhostPages(totalPages);
+        const next = applyGhostPages(base, extracted);
+        textContentRef.current = next;
+        persistGhostPartial(filename, next);
+        return next;
+      });
     } catch (err) {
-      console.error('[Ghost] Lazy extraction error:', err);
+      console.error('[Ghost] ensureGhostAround error:', err);
     }
+  };
+
+  /** @deprecated name kept for callers — delegates to ensureGhostAround(current page) */
+  const extractGhostTextLazy = async (
+    fileOrBlob: File | Blob,
+    filename: string,
+    centerPage?: number
+  ) => {
+    const center = centerPage ?? pageNumberRef.current ?? 1;
+    console.log(`[Ghost] Lazy extract around page ${center} for ${filename}`);
+    await ensureGhostAround(fileOrBlob, filename, center);
   };
 
   const toggleReaderMode = async () => {
@@ -625,21 +672,42 @@ export default function App() {
     const nextMode = !isReaderMode;
     setIsReaderMode(nextMode);
 
-    if (nextMode && fileType === 'pdf' && !textContent) {
-      const text = await coverDB.getGhostText(fileName);
-      if (text) {
-        loadGhostTextToState(text);
-      } else if (fileUrl) {
-        showToast('Extracting text...');
-        try {
-          const blob = await coverDB.getBookContent(fileName) || await fetch(fileUrl).then(r => r.blob());
-          extractGhostTextLazy(blob, fileName);
-        } catch (e) {
-          console.error('[ReaderMode] Failed to start lazy extraction:', e);
+    if (nextMode && fileType === 'pdf') {
+      try {
+        const text = await coverDB.getGhostText(fileName);
+        if (text) loadGhostTextToState(text);
+
+        const blob =
+          (await coverDB.getBookContent(fileName)) ||
+          (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+        if (blob) {
+          // Fill holes around synced page — do NOT start at page 1
+          await ensureGhostAround(blob, fileName, keepPage);
+        } else if (!text) {
+          showToast('No se pudo cargar el PDF para texto');
         }
+      } catch (e) {
+        console.error('[ReaderMode] Failed lazy extraction:', e);
+        showToast('Error al extraer texto');
       }
     }
   };
+
+  // As user scrolls in reader mode, extract the new window on demand
+  useEffect(() => {
+    if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
+    let cancelled = false;
+    (async () => {
+      const blob =
+        (await coverDB.getBookContent(fileName)) ||
+        (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+      if (cancelled || !blob) return;
+      await ensureGhostAround(blob, fileName, pageNumber);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isReaderMode, fileType, fileName, fileUrl, pageNumber]);
 
   // After reader↔PDF switch, scroll back to frozen page once DOM exists
   useEffect(() => {
