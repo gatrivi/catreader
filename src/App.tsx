@@ -57,9 +57,14 @@ import { sentencesFromPageHtml } from './utils/sentences';
 import { useLiveAudio } from './hooks/useLiveAudio';
 import {
   pagesNeededAround,
-  missingGhostPages,
+  incompleteGhostPages,
   emptyGhostPages,
   applyGhostPages,
+  firstWordHtml,
+  snippetHtml,
+  yieldToUi,
+  GHOST_PREFETCH,
+  isGhostComplete,
 } from './utils/ghostText';
 
 function cn(...inputs: ClassValue[]) {
@@ -153,7 +158,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.1';
+  const APP_VERSION = 'v2.10.2';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -592,12 +597,23 @@ export default function App() {
     return ghostPdfLoadingRef.current;
   };
 
-  /** REAL lazy extract: synced page ± window only. docs/READER_MODE_LAZY.md */
+  /** Progressive: word → snippet → full page → prefetch neighbors. docs/READER_MODE_LAZY.md */
   const ensureGhostAround = async (
     fileOrBlob: File | Blob,
     filename: string,
     centerPage: number
   ) => {
+    const paint = (pageNum: number, html: string, totalPages: number) => {
+      setTextContent((prev) => {
+        const base = prev && prev.length === totalPages ? prev : emptyGhostPages(totalPages);
+        // Don't clobber a complete page with a draft
+        if (isGhostComplete(base[pageNum - 1]) && !isGhostComplete(html)) return base;
+        const next = applyGhostPages(base, { [pageNum]: html });
+        textContentRef.current = next;
+        return next;
+      });
+    };
+
     try {
       const pdf = await getGhostPdf(fileOrBlob, filename);
       const totalPages = pdf.numPages as number;
@@ -606,7 +622,6 @@ export default function App() {
       if (!pages || pages.length !== totalPages) {
         if (isReaderModeRef.current) freezePageForRemount(pageNumberRef.current);
         pages = emptyGhostPages(totalPages);
-        // Keep any already-loaded HTML if length matches-ish
         if (textContentRef.current?.length) {
           for (let i = 0; i < Math.min(textContentRef.current.length, totalPages); i++) {
             if (textContentRef.current[i]?.trim()) pages[i] = textContentRef.current[i];
@@ -617,34 +632,64 @@ export default function App() {
         if (numPages !== totalPages) setNumPages(totalPages);
       }
 
-      const needed = pagesNeededAround(centerPage, totalPages);
-      const missing = missingGhostPages(pages, needed).filter((p) => !ghostInflightRef.current.has(p));
-      if (missing.length === 0) return;
+      const center = Math.min(Math.max(1, centerPage || 1), totalPages);
 
-      missing.forEach((p) => ghostInflightRef.current.add(p));
-      const extracted: Record<number, string> = {};
-      try {
-        for (const p of missing) {
+      // --- Stage A: current page only, word → snippet → semantic ---
+      if (!isGhostComplete(textContentRef.current?.[center - 1]) && !ghostInflightRef.current.has(center)) {
+        ghostInflightRef.current.add(center);
+        try {
+          const page = await pdf.getPage(center);
+          const tc = await page.getTextContent();
+
+          if (!textContentRef.current?.[center - 1]?.trim()) {
+            paint(center, firstWordHtml(tc), totalPages);
+            await yieldToUi();
+          }
+
+          if (!isGhostComplete(textContentRef.current?.[center - 1])) {
+            paint(center, snippetHtml(tc), totalPages);
+            await yieldToUi();
+          }
+
+          if (!isGhostComplete(textContentRef.current?.[center - 1])) {
+            const full = await parsePdfPageSemantically(page, tc);
+            paint(center, full || snippetHtml(tc), totalPages);
+            persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
+          }
+        } catch (e) {
+          console.warn(`[Ghost] Failed page ${center}:`, e);
+        } finally {
+          ghostInflightRef.current.delete(center);
+        }
+      }
+
+      // --- Stage B: prefetch ±1 in background (full pages only) ---
+      const neighbors = pagesNeededAround(center, totalPages, GHOST_PREFETCH).filter((p) => p !== center);
+      const todo = incompleteGhostPages(textContentRef.current || [], neighbors)
+        .filter((p) => !ghostInflightRef.current.has(p));
+      if (todo.length === 0) return;
+
+      // Don't block UI — fire and forget neighbor fills
+      void (async () => {
+        for (const p of todo) {
+          if (ghostInflightRef.current.has(p)) continue;
+          ghostInflightRef.current.add(p);
           try {
             const page = await pdf.getPage(p);
             const tc = await page.getTextContent();
-            extracted[p] = await parsePdfPageSemantically(page, tc);
+            // Neighbors: snippet first so scroll-ahead isn't blank, then full
+            paint(p, snippetHtml(tc), totalPages);
+            await yieldToUi();
+            const full = await parsePdfPageSemantically(page, tc);
+            paint(p, full || snippetHtml(tc), totalPages);
+            persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
           } catch (e) {
-            console.warn(`[Ghost] Failed page ${p}:`, e);
-            extracted[p] = '';
+            console.warn(`[Ghost] Prefetch failed page ${p}:`, e);
+          } finally {
+            ghostInflightRef.current.delete(p);
           }
         }
-      } finally {
-        missing.forEach((p) => ghostInflightRef.current.delete(p));
-      }
-
-      setTextContent((prev) => {
-        const base = prev && prev.length === totalPages ? prev : emptyGhostPages(totalPages);
-        const next = applyGhostPages(base, extracted);
-        textContentRef.current = next;
-        persistGhostPartial(filename, next);
-        return next;
-      });
+      })();
     } catch (err) {
       console.error('[Ghost] ensureGhostAround error:', err);
     }
@@ -820,6 +865,9 @@ export default function App() {
     }
     restoreTargetPageRef.current = null;
     modeSwitchPageRef.current = null;
+    ghostPdfRef.current = null;
+    ghostPdfLoadingRef.current = null;
+    ghostInflightRef.current.clear();
     if (fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }

@@ -1,27 +1,52 @@
 import { describe, it, expect } from 'vitest';
 import {
-  GHOST_WINDOW,
   pagesNeededAround,
   missingGhostPages,
+  incompleteGhostPages,
   emptyGhostPages,
   applyGhostPages,
+  firstWordHtml,
+  snippetHtml,
+  isGhostDraft,
+  isGhostComplete,
+  joinTextItems,
+  GHOST_DRAFT_CLASS,
 } from './ghostText';
 
-describe('ghostText lazy window', () => {
-  it('windows around synced page, not page 1', () => {
-    expect(pagesNeededAround(100, 200, 2)).toEqual([98, 99, 100, 101, 102]);
-    expect(pagesNeededAround(1, 50, 2)).toEqual([1, 2, 3]);
-    expect(pagesNeededAround(50, 50, 2)).toEqual([48, 49, 50]);
+const tc = (words: string[]) => ({ items: words.map((str) => ({ str })) });
+
+describe('ghostText progressive', () => {
+  it('window 0 is only center page', () => {
+    expect(pagesNeededAround(100, 200, 0)).toEqual([100]);
   });
 
-  it('default window is GHOST_WINDOW', () => {
-    expect(pagesNeededAround(10, 20)).toHaveLength(GHOST_WINDOW * 2 + 1);
+  it('prefetch window expands', () => {
+    expect(pagesNeededAround(100, 200, 1)).toEqual([99, 100, 101]);
   });
 
-  it('missingGhostPages skips filled slots', () => {
-    const pages = emptyGhostPages(5);
-    pages[2] = '<p>x</p>';
-    expect(missingGhostPages(pages, [1, 2, 3, 4])).toEqual([1, 2, 4]);
+  it('firstWordHtml paints one word as draft', () => {
+    const html = firstWordHtml(tc(['Hello', ' world']));
+    expect(html).toContain(GHOST_DRAFT_CLASS);
+    expect(html).toContain('Hello');
+    expect(isGhostDraft(html)).toBe(true);
+    expect(isGhostComplete(html)).toBe(false);
+  });
+
+  it('snippetHtml is still draft until semantic upgrade', () => {
+    const html = snippetHtml(tc(['One', ' two', ' three']), 8);
+    expect(isGhostDraft(html)).toBe(true);
+  });
+
+  it('incomplete includes drafts; missing only empties', () => {
+    const pages = emptyGhostPages(3);
+    pages[0] = firstWordHtml(tc(['A']));
+    pages[1] = '<p>full</p>';
+    expect(missingGhostPages(pages, [1, 2, 3])).toEqual([3]);
+    expect(incompleteGhostPages(pages, [1, 2, 3])).toEqual([1, 3]);
+  });
+
+  it('joinTextItems spaces words', () => {
+    expect(joinTextItems(tc(['Cassian', 'Conferences']))).toBe('Cassian Conferences');
   });
 
   it('applyGhostPages writes 1-based keys', () => {
