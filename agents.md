@@ -34,6 +34,7 @@ Completed tasks are moved to [completed_tasks.md](file:///c:/zengatrivi/REACTJS/
 
 ### DOC MAP
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**FEATURE #1:** [docs/PROGRESS_SACRED.md](docs/PROGRESS_SACRED.md)
 
 ---
 -tldr all responses.
@@ -50,7 +51,8 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ### SESSION CONTEXT (2026-07-14)
 
-- **Version:** `v2.9.6`
+- **Version:** `v2.10.0`
+- **FEATURE #1 SACRED:** synced reading progress — see `docs/PROGRESS_SACRED.md`. NEVER clobber page on remount.
 - Live audio: headphones btn → CATTS `100.87.252.18:59200` `/tts/live`; selection or page start; wav cache IDB `ttsAudio`.
 - See `docs/ARCHITECTURE.md`. Paper Soul bake still Node stand-in.
 
