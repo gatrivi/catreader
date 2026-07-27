@@ -166,4 +166,31 @@ describe('useReaderSync', () => {
 
     expect(result.current.pageNumber).toBe(15);
   });
+
+  it('refuses to save while restoring unless force', async () => {
+    (syncService.loadProgress as any).mockResolvedValue({
+      page: 40,
+      zoom: 1,
+      updatedAt: Date.now()
+    });
+    const { result } = renderHook(() => useReaderSync(mockProps));
+
+    await act(async () => {
+      await result.current.loadProgress('test.pdf');
+    });
+    expect(result.current.isRestoring).toBe(true);
+
+    await act(async () => {
+      await result.current.saveProgress();
+    });
+    expect(syncService.saveProgress).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.saveProgress({ force: true, pageOverride: 40 });
+    });
+    expect(syncService.saveProgress).toHaveBeenCalledWith(
+      'test.pdf',
+      expect.objectContaining({ page: 40 })
+    );
+  });
 });

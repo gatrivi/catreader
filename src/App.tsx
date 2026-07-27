@@ -147,7 +147,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.9.9';
+  const APP_VERSION = 'v2.10.0';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -193,14 +193,29 @@ export default function App() {
     getDeviceCategory,
     changeZoom,
     loadProgress,
-    saveProgress
+    saveProgress,
+    commitPage,
   } = useReaderSync({
     fileName,
     isLoaded,
     containerRef,
     showToast: (msg) => showToast(msg),
-    setIsSyncing
+    setIsSyncing,
+    getRestoreTargetPage: () => restoreTargetPageRef.current,
   });
+
+  const pageNumberRef = useRef(pageNumber);
+  pageNumberRef.current = pageNumber;
+  const isReaderModeRef = useRef(isReaderMode);
+  isReaderModeRef.current = isReaderMode;
+
+  /** Freeze page across any DOM remount that would confuse IntersectionObserver. */
+  const freezePageForRemount = useCallback((keep = pageNumberRef.current) => {
+    if (keep < 1) return;
+    modeSwitchPageRef.current = keep;
+    restoreTargetPageRef.current = keep;
+    setIsRestoring(true);
+  }, [setIsRestoring]);
 
   const { googleToken, handleGoogleDrive, uploadToDrive } = useGoogleDrive({
     showToast: (msg) => showToast(msg),
@@ -236,7 +251,7 @@ export default function App() {
       const clamped = clampPage(pageNumber, numPages);
       console.warn(`[Reader] pageNumber ${pageNumber} clamped to ${clamped}`);
       setPageNumber(clamped);
-      setIsRestoring(false);
+      // do not clear isRestoring — FEATURE #1 freeze must survive clamp
     }
   }, [numPages, pageNumber]);
 
@@ -547,6 +562,7 @@ export default function App() {
       
       const totalPages = pdf.numPages;
       const pagesArray = new Array(totalPages).fill('');
+      if (isReaderModeRef.current) freezePageForRemount(pageNumberRef.current);
       setTextContent(pagesArray);
 
       // Extract first 20 pages immediately for responsiveness
@@ -658,7 +674,7 @@ export default function App() {
       cancelAnimationFrame(raf);
       clearTimeout(safety);
     };
-  }, [isReaderMode, textContent, fileType, fileUrl, setIsRestoring, setPageNumber]);
+  }, [isReaderMode, textContent, fileType, fileUrl, zoom, setIsRestoring, setPageNumber]);
 
   const resolvePageTextForTts = async (): Promise<string> => {
     const fromState = textContentRef.current?.[pageNumber - 1];
@@ -729,11 +745,13 @@ export default function App() {
   const closeBook = (skipHistory = false) => {
     if (!fileUrl) return;
     liveAudio.stop();
-    // Flush progress before tearing down reader state
+    // Force-flush FEATURE #1 progress (even mid-restore) using frozen page if any
     if (isLoaded && fileName) {
-      saveProgressRef.current?.();
+      const keep = restoreTargetPageRef.current ?? modeSwitchPageRef.current ?? pageNumberRef.current;
+      saveProgressRef.current?.({ force: true, pageOverride: keep });
     }
     restoreTargetPageRef.current = null;
+    modeSwitchPageRef.current = null;
     if (fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
@@ -785,8 +803,10 @@ export default function App() {
     setFileName(filename);
     setFileType(book.type);
     setIsReaderMode(false);
-    restoreTargetPageRef.current = null;
-    setPageNumber(1);
+    // FEATURE #1: do NOT set page to 1 before progress loads — freeze until known
+    setIsRestoring(true);
+    restoreTargetPageRef.current = forcePage ?? null;
+    modeSwitchPageRef.current = forcePage ?? null;
     setScrollRatio(0);
     
     // Clear previous timeouts
@@ -853,13 +873,18 @@ export default function App() {
 
       if (forcePage) {
         restoreTargetPageRef.current = forcePage;
+        modeSwitchPageRef.current = forcePage;
         setPageNumber(forcePage);
+        commitPage(forcePage);
         setScrollRatio(0);
         if (forceQuadrant) setQuadrant(forceQuadrant);
       } else if (progress?.page && progress.page > 1) {
         restoreTargetPageRef.current = progress.page;
+        modeSwitchPageRef.current = progress.page;
+        commitPage(progress.page);
       } else {
         restoreTargetPageRef.current = null;
+        modeSwitchPageRef.current = null;
         setPageNumber(1);
         setScrollRatio(0);
       }
@@ -958,6 +983,7 @@ export default function App() {
     if (el && containerRef.current) {
       el.scrollIntoView({ behavior: 'smooth' });
       setPageNumber(targetPage);
+      commitPage(targetPage);
     }
   };
 
@@ -1109,9 +1135,9 @@ export default function App() {
           </div>
           <div className="hidden md:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
           <div className="hidden md:flex items-center gap-0.5 shrink-0">
-            <button onClick={() => changeZoom(-0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomOut size={12}/></button>
+            <button onClick={() => { freezePageForRemount(); changeZoom(-0.1); }} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomOut size={12}/></button>
             <span className="text-[9px] font-mono w-7 text-center text-stone-400">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span>
-            <button onClick={() => changeZoom(0.1)} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomIn size={12}/></button>
+            <button onClick={() => { freezePageForRemount(); changeZoom(0.1); }} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomIn size={12}/></button>
           </div>
           {(fileType === 'pdf' || fileType === 'txt') && (
             <>
@@ -1198,9 +1224,9 @@ export default function App() {
                 <div className="px-3 py-2 flex items-center justify-between md:hidden">
                   <span className="text-[9px] font-bold text-stone-500 uppercase tracking-widest">Zoom</span>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => changeZoom(-0.1)} className="p-1.5 hover:bg-white/10 rounded-full text-stone-400"><ZoomOut size={14}/></button>
+                    <button onClick={() => { freezePageForRemount(); changeZoom(-0.1); }} className="p-1.5 hover:bg-white/10 rounded-full text-stone-400"><ZoomOut size={14}/></button>
                     <span className="text-[10px] font-mono w-8 text-center text-stone-300">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span>
-                    <button onClick={() => changeZoom(0.1)} className="p-1.5 hover:bg-white/10 rounded-full text-stone-400"><ZoomIn size={14}/></button>
+                    <button onClick={() => { freezePageForRemount(); changeZoom(0.1); }} className="p-1.5 hover:bg-white/10 rounded-full text-stone-400"><ZoomIn size={14}/></button>
                   </div>
                 </div>
                 <div className="border-t border-white/10 my-1" />

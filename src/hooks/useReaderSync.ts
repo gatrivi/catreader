@@ -1,5 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { syncService, ReadingProgress } from '../services/syncService';
+import {
+  mergeReadingProgress,
+  shouldBlockProgressSave,
+  resolvePageToPersist,
+} from '../utils/progressGuard';
 
 type Theme = 'light' | 'dim' | 'dark' | 'sepia' | 'paper';
 
@@ -9,18 +14,21 @@ interface UseReaderSyncProps {
   containerRef: React.RefObject<HTMLDivElement>;
   showToast: (msg: string) => void;
   setIsSyncing: (val: boolean) => void;
+  /** App restore freeze target — blocks false page-1 saves */
+  getRestoreTargetPage?: () => number | null;
 }
 
 /**
  * Hook to manage reading progress synchronization.
- * Handles loading/saving progress and zoom/theme persistence.
+ * FEATURE #1: synced progress is sacred — see docs/PROGRESS_SACRED.md
  */
 export function useReaderSync({
   fileName,
   isLoaded,
   containerRef,
   showToast,
-  setIsSyncing
+  setIsSyncing,
+  getRestoreTargetPage,
 }: UseReaderSyncProps) {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [zoom, setZoom] = useState<number | Record<string, number>>(1.0);
@@ -30,12 +38,13 @@ export function useReaderSync({
   const [isRestoring, setIsRestoring] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
 
-  // Keep track of the full zoom map from the last load/save to avoid flattening
   const zoomMapRef = useRef<Record<string, number>>({});
+  const lastCommittedPageRef = useRef<number>(1);
+  const pageNumberRef = useRef(pageNumber);
+  pageNumberRef.current = pageNumber;
+  const isRestoringRef = useRef(isRestoring);
+  isRestoringRef.current = isRestoring;
 
-  /**
-   * Identifies the device category based on screen width.
-   */
   const getDeviceCategory = useCallback(() => {
     const width = window.innerWidth;
     if (width < 768) return 'mobile';
@@ -43,43 +52,36 @@ export function useReaderSync({
     return 'desktop';
   }, []);
 
-  /**
-   * Updates the zoom level for the current device category.
-   */
   const changeZoom = useCallback((delta: number) => {
     const category = getDeviceCategory();
     const currentZoom = typeof zoom === 'number' ? zoom : (zoom[category] || 1.0);
     const newZoomValue = Math.min(Math.max(currentZoom + delta, 0.5), 3.0);
-    
+
     setZoom(newZoomValue);
-    // Update our internal map too
     zoomMapRef.current[category] = newZoomValue;
   }, [zoom, getDeviceCategory]);
 
-  /**
-   * Loads reading progress for a specific book.
-   *
-   * Important: opening a book must not wait indefinitely on Firestore/auth.
-   * Use local progress immediately, then let cloud progress refine it if it
-   * arrives quickly or is newer.
-   */
+  const commitPage = useCallback((page: number) => {
+    if (page > 0) lastCommittedPageRef.current = Math.max(lastCommittedPageRef.current, page);
+  }, []);
+
   const loadProgress = useCallback(async (id: string): Promise<ReadingProgress | null> => {
     setIsRestoring(true);
     const category = getDeviceCategory();
     const restoreSafetyTimeout = setTimeout(() => setIsRestoring(false), 10000);
 
     const applyProgress = (data: ReadingProgress): ReadingProgress => {
-      // Restore the full zoom map if available to ensure other device settings aren't lost
       if (data.zoom && typeof data.zoom === 'object') {
         zoomMapRef.current = { ...data.zoom };
       } else if (typeof data.zoom === 'number') {
-        // Back-fill previous format
         zoomMapRef.current = { desktop: data.zoom };
       }
 
       const targetZoom = zoomMapRef.current[category] || zoomMapRef.current.desktop || 1.0;
+      const page = data.page || 1;
 
-      setPageNumber(data.page || 1);
+      setPageNumber(page);
+      lastCommittedPageRef.current = page;
       if (data.epubCfi) setEpubCfi(data.epubCfi);
       setZoom(targetZoom);
       setTheme((data.theme as Theme) || 'sepia');
@@ -116,16 +118,19 @@ export function useReaderSync({
       });
 
       if (local) {
-        // Do not block opening. If cloud is newer, update state after open.
         cloudProgressPromise.then((cloud) => {
-          if (cloud && (cloud.updatedAt || 0) > (local?.updatedAt || 0)) {
-            applyProgress(cloud);
+          const merged = mergeReadingProgress(local, cloud);
+          if (
+            merged &&
+            cloud &&
+            ((cloud.updatedAt || 0) > (local?.updatedAt || 0) || merged.page !== local.page)
+          ) {
+            applyProgress(merged);
           }
         });
         return applyProgress(local);
       }
 
-      // No local progress: give cloud a short chance, then open at page 1.
       const cloud = await Promise.race([
         cloudProgressPromise,
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
@@ -135,6 +140,7 @@ export function useReaderSync({
 
       clearTimeout(restoreSafetyTimeout);
       setIsRestoring(false);
+      lastCommittedPageRef.current = 1;
       return null;
     } catch (err) {
       console.error('Sync load error:', err);
@@ -144,13 +150,20 @@ export function useReaderSync({
     }
   }, [getDeviceCategory]);
 
-  /**
-   * Saves the current reading progress.
-   */
-  const saveProgress = useCallback(async () => {
+  const saveProgress = useCallback(async (opts?: {
+    force?: boolean;
+    pageOverride?: number;
+  }) => {
     if (!fileName || !isLoaded || !containerRef.current) return;
-    // Never persist a transient observer page during restore / mode switch
-    if (isRestoring) return;
+    if (shouldBlockProgressSave(isRestoringRef.current, opts?.force)) return;
+
+    const restoreTarget = getRestoreTargetPage?.() ?? null;
+    const page = resolvePageToPersist(
+      opts?.pageOverride ?? pageNumberRef.current,
+      restoreTarget,
+      lastCommittedPageRef.current
+    );
+    commitPage(page);
 
     setIsSyncing(true);
     const now = Date.now();
@@ -159,12 +172,11 @@ export function useReaderSync({
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     const currentScrollRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
 
-    // Update the map with current zoom for current category
     const currentZoomValue = typeof zoom === 'number' ? zoom : (zoom[category] || 1.0);
     zoomMapRef.current[category] = currentZoomValue;
 
     const progress: ReadingProgress = {
-      page: pageNumber,
+      page,
       epubCfi,
       zoom: { ...zoomMapRef.current },
       theme,
@@ -179,12 +191,28 @@ export function useReaderSync({
 
     setLastSyncTime(now);
     setIsSyncing(false);
-  }, [fileName, isLoaded, isRestoring, zoom, theme, pageNumber, epubCfi, getDeviceCategory, containerRef, setIsSyncing]);
+  }, [
+    fileName,
+    isLoaded,
+    zoom,
+    theme,
+    epubCfi,
+    getDeviceCategory,
+    containerRef,
+    setIsSyncing,
+    getRestoreTargetPage,
+    commitPage,
+  ]);
 
-  // Handle theme changes persisting to localStorage
   useEffect(() => {
     localStorage.setItem('catreader_theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!isRestoring && pageNumber > 1) {
+      commitPage(pageNumber);
+    }
+  }, [isRestoring, pageNumber, commitPage]);
 
   return {
     pageNumber, setPageNumber,
@@ -197,6 +225,7 @@ export function useReaderSync({
     getDeviceCategory,
     changeZoom,
     loadProgress,
-    saveProgress
+    saveProgress,
+    commitPage,
   };
 }

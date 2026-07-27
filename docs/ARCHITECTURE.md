@@ -63,6 +63,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 |--------|------|
 | `routing` | `/shelf/book[/page[/quad]]`, legacy `?book=&page=`, share URLs |
 | `reader` | clamp/offset page, `PDF_RENDER_WINDOW=8`, library search filter |
+| `progressGuard` | FEATURE #1: merge/save/observer guards — never clobber page |
 | `pdfParser` | Semantic page → HTML for “Modo lector” |
 | `paperSoul` | Stain falloff, ink-variance wrappers, safe book ids |
 | `image` | Thumbnails / capture helpers |
@@ -102,6 +103,7 @@ See `docs/perf-and-tests.md`. Run `npm test` before push.
 
 ## Known gaps
 
+- **FEATURE #1 (synced progress) is SACRED** — see [`docs/PROGRESS_SACRED.md`](PROGRESS_SACRED.md)
 - Library view issue enum + status: [`docs/library-view-issues.md`](library-view-issues.md)
 - Shelf nesting not implemented
 - DnD has no ghost preview (opacity fade only)
