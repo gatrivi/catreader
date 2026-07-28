@@ -1,12 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2 } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route } from 'lucide-react';
 import { BookCover } from './BookCover';
+import { SaintsTrailView } from './SaintsTrailView';
 import { authService } from '../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Shelf } from '../hooks/useShelves';
 import { filterLibraryBooks } from '../utils/reader';
+
+const LIBRARY_MODE_KEY = 'catreader_library_mode';
+type LibraryMode = 'racks' | 'saints-trail';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -107,9 +111,18 @@ export const LibraryView = ({
   const [currentRack, setCurrentRack] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [hoverColor, setHoverColor] = useState<string | null>(null);
+  const [libraryMode, setLibraryMode] = useState<LibraryMode>(() => {
+    const stored = localStorage.getItem(LIBRARY_MODE_KEY);
+    return stored === 'saints-trail' ? 'saints-trail' : 'racks';
+  });
   const settingsRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pfp = authService.getPFP();
+
+  const setMode = (mode: LibraryMode) => {
+    setLibraryMode(mode);
+    localStorage.setItem(LIBRARY_MODE_KEY, mode);
+  };
 
   const filteredBooks = filterLibraryBooks(library, searchQuery);
   const svgDataUrl = pfp ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(pfp)))}` : null;
@@ -556,6 +569,20 @@ export const LibraryView = ({
 
                       {/* View Options */}
                       <div className="pt-2 border-t border-white/5 space-y-2">
+                        <button
+                          onClick={() => {
+                            setMode(libraryMode === 'saints-trail' ? 'racks' : 'saints-trail');
+                            setShowSettings(false);
+                          }}
+                          className="w-full flex items-center justify-between group"
+                        >
+                          <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <Route size={10} /> Sendero de Santos
+                          </span>
+                          <div className={cn("w-8 h-4 rounded-full border border-white/10 transition-all relative", libraryMode === 'saints-trail' ? "bg-amber-600" : "bg-stone-900")}>
+                            <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all", libraryMode === 'saints-trail' ? "left-4.5" : "left-0.5")} />
+                          </div>
+                        </button>
                         <button 
                           onClick={onToggleSimplified}
                           className="w-full flex items-center justify-between group"
@@ -704,6 +731,19 @@ export const LibraryView = ({
               )}
             </div>
           </div>
+        ) : libraryMode === 'saints-trail' ? (
+          <SaintsTrailView
+            library={library}
+            covers={covers}
+            onOpenBook={onOpenBook}
+            onEditBook={onEditBook}
+            onShareBook={onShareBook}
+            onGetProgress={onGetProgress}
+            isSimplified={isSimplified}
+            identifyingBookId={identifyingBookId}
+            savedBookCovers={savedBookCovers}
+            showCoverLabels={showCoverLabels}
+          />
         ) : (
           <div
             className="flex-1 relative flex flex-col items-center justify-center overflow-hidden min-h-0"

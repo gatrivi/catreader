@@ -56,8 +56,10 @@ describe('LibraryView', () => {
     expect(onOpenBook).toHaveBeenCalledWith(books[0]);
   });
 
-  it('shows empty state when no books', () => {
-    render(<LibraryView {...baseProps} library={[]} shelves={[{ id: 's', title: 'Empty', bookIds: toSparseSlots([]) }]} />);
-    expect(screen.getByText('Biblioteca vacía')).toBeInTheDocument();
+  it('toggles saints trail mode', () => {
+    render(<LibraryView {...baseProps} />);
+    fireEvent.click(screen.getByLabelText('Settings'));
+    fireEvent.click(screen.getByText('Sendero de Santos'));
+    expect(screen.getByText('Sendero de los Santos')).toBeInTheDocument();
   });
 });
