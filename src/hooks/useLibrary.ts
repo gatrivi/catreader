@@ -6,6 +6,12 @@ import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
 import { shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
+import {
+  coverMem,
+  coverMemMerge,
+  coverMemMarkHydrated,
+  coverMemSet,
+} from '../services/coverMem';
 
 export interface LibraryBook {
   id: string;
@@ -21,7 +27,7 @@ export interface LibraryBook {
   /** Path to paper-manifest.json when Paper Soul bake exists */
   paper?: string;
   coverSource?: {
-    type: 'user-custom' | 'ai-generated' | 'openlibrary';
+    type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'google-books' | 'bundled';
     url?: string;
     svgPath?: string;
     updatedAt?: number;
@@ -51,7 +57,8 @@ export function useLibrary({
 }: UseLibraryProps) {
   const [library, setLibrary] = useState<LibraryBook[]>([]);
   const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string; coverSource?: any }>>({});
-  const [covers, setCovers] = useState<Record<string, string>>({});
+  const [covers, setCovers] = useState<Record<string, string>>(() => ({ ...coverMem.map }));
+  const [coversHydrated, setCoversHydrated] = useState(() => coverMem.hydrated);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(true);
   const [isIdle, setIsIdle] = useState(false);
   const [autoCoverIndex, setAutoCoverIndex] = useState(0);
@@ -72,6 +79,15 @@ export function useLibrary({
   coversRef.current = covers;
   const autoCoverIndexRef = useRef(autoCoverIndex);
   autoCoverIndexRef.current = autoCoverIndex;
+
+  const putCover = useCallback((filename: string, cover: string) => {
+    coverMemSet(filename, cover);
+    setCovers((prev) => {
+      const next = { ...prev, [filename]: cover };
+      coverMemMerge(next);
+      return next;
+    });
+  }, []);
 
   /**
    * Fetches the list of available books from books.json and cloud metadata.
@@ -94,9 +110,14 @@ export function useLibrary({
       const deletedSet = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
       const visibleData = filterDeletedBooks(data as LibraryBook[], deletedSet);
       
-      setLibrary(visibleData);
-      setIsLoadingLibrary(false);
-      setGlobalStatus(null);
+      // Defer shelf paint until covers hydrate (unless HMR already has them)
+      if (!coverMem.hydrated) {
+        setLibrary(visibleData.map((b) => ({ ...b, svg: undefined })));
+      } else {
+        setLibrary(visibleData);
+        setCovers({ ...coverMem.map });
+        setIsLoadingLibrary(false);
+      }
 
       // Load enriched metadata in the background
       (async () => {
@@ -174,63 +195,111 @@ export function useLibrary({
           // ponytail: enrich visibleData only — mapping raw `data` resurrected deleted books
           const enriched = visibleData.map((book: LibraryBook) => {
             const meta = metadata[book.filename];
-            // If user has a custom cover source, suppress the old SVG so it doesn't flash
-            // before the real cover loads from IndexedDB.
-            const hasCustomCover = meta?.coverSource?.type === 'user-custom';
+            const src = meta?.coverSource;
+            // Suppress svg flash whenever we have a declared cover source (incl. bundled/custom)
+            const hideBundledSvg = !!src?.type && src.type !== 'ai-generated';
             return {
               ...book,
               title: meta?.title || book.title,
               author: meta?.author || '',
-              svg: hasCustomCover ? undefined : (meta?.svg ?? book.svg),
-              coverSource: meta?.coverSource || undefined
+              svg: hideBundledSvg ? undefined : (meta?.svg ?? book.svg),
+              coverSource: src || undefined
             };
           });
 
           const allBooks = filterDeletedBooks([...enriched, ...customBooks], deletedSet);
           setLibrary(allBooks);
 
-          // Load covers from IndexedDB for ALL books (both static and custom)
-          console.log(`[Covers] Loading covers for ${allBooks.length} books from IndexedDB...`);
-          const loadedCovers: Record<string, string> = {};
+          // Hydrate covers: IDB → cloud URL → seed bundled svg once
+          console.log(`[Covers] Hydrating covers for ${allBooks.length} books...`);
+          const loadedCovers: Record<string, string> = { ...coverMem.map };
+          const metaUpdates: Record<string, { title: string; author: string; svg?: string; coverSource?: any }> = { ...metadata };
+
           for (const book of allBooks) {
-            const cover = await coverDB.getCover(book.filename);
+            let cover = loadedCovers[book.filename] || (await coverDB.getCover(book.filename));
             if (cover) {
-              console.log(`[Covers] Loaded cover for ${book.title} (${book.filename})`);
               loadedCovers[book.filename] = cover;
-            } else if (book.coverSource?.type === 'user-custom' && book.coverSource?.url) {
-              console.log(`[Covers] Missing local cover for ${book.title}, starting lazy rehydration from cloud`);
-              // LAZY REHYDRATION: Fetch custom cover from Firebase Storage in background
-              console.log(`[Cover Sync] Lazy downloading cover for: ${book.title}`);
-              (async (bUrl, bFilename) => {
-                try {
-                  const r = await fetch(bUrl);
-                  if (r.ok) {
-                    const blob = await r.blob();
+              continue;
+            }
+
+            const src = book.coverSource || metaUpdates[book.filename]?.coverSource;
+            if (src?.type === 'user-custom' && src.url) {
+              try {
+                const r = await fetch(src.url);
+                if (r.ok) {
+                  const blob = await r.blob();
+                  cover = await new Promise<string>((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onloadend = async () => {
-                      const base64 = reader.result as string;
-                      await coverDB.saveCover(bFilename, base64);
-                      setCovers(prev => ({ ...prev, [bFilename]: base64 }));
-                    };
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
                     reader.readAsDataURL(blob);
-                  }
-                } catch (err) {
-                  console.error('[Cover Sync] Failed to lazy download cover:', err);
+                  });
+                  await coverDB.saveCover(book.filename, cover);
+                  loadedCovers[book.filename] = cover;
+                  continue;
                 }
-              })(book.coverSource.url, book.filename);
+              } catch (err) {
+                console.error('[Cover Sync] Failed to lazy download cover:', err);
+              }
+            }
+
+            if (src?.url && (src.type === 'openlibrary' || src.type === 'google-books')) {
+              loadedCovers[book.filename] = src.url;
+              await coverDB.saveCover(book.filename, src.url);
+              continue;
+            }
+
+            const bundledSvg = book.svg || metaUpdates[book.filename]?.svg;
+            if (bundledSvg && bundledSvg.includes('<svg')) {
+              await coverDB.saveCover(book.filename, bundledSvg);
+              loadedCovers[book.filename] = bundledSvg;
+              const prev = metaUpdates[book.filename] || {
+                title: book.title,
+                author: book.author || '',
+                svg: bundledSvg,
+              };
+              metaUpdates[book.filename] = {
+                ...prev,
+                coverSource: prev.coverSource?.type
+                  ? prev.coverSource
+                  : { type: 'bundled', updatedAt: Date.now() },
+              };
             }
           }
-          setCovers(loadedCovers);
+
+          coverMemMerge(loadedCovers);
+          coverMemMarkHydrated();
+          setCovers({ ...coverMem.map });
+          setCoversHydrated(true);
+          if (Object.keys(metaUpdates).length) {
+            setEnrichedMetadata(metaUpdates);
+            try {
+              for (const [fname, meta] of Object.entries(metaUpdates)) {
+                await coverDB.saveBookMetadata(fname, meta);
+              }
+            } catch {}
+          }
+          setIsLoadingLibrary(false);
+          setGlobalStatus(null);
         } catch (mErr) {
           console.warn('Metadata enrichment skipped:', mErr);
 
-          // Fallback if metadata load fails
-          const loadedCovers: Record<string, string> = {};
+          const loadedCovers: Record<string, string> = { ...coverMem.map };
           for (const book of data) {
             const cover = await coverDB.getCover(book.filename);
             if (cover) loadedCovers[book.filename] = cover;
+            else if ((book as LibraryBook).svg?.includes('<svg')) {
+              const svg = (book as LibraryBook).svg as string;
+              await coverDB.saveCover(book.filename, svg);
+              loadedCovers[book.filename] = svg;
+            }
           }
-          setCovers(loadedCovers);
+          coverMemMerge(loadedCovers);
+          coverMemMarkHydrated();
+          setCovers({ ...coverMem.map });
+          setCoversHydrated(true);
+          setIsLoadingLibrary(false);
+          setGlobalStatus(null);
         }
       })();
     } catch (err) {
@@ -406,7 +475,7 @@ export function useLibrary({
       ctx.fillText(book.author || 'Desconocido', 150, 240);
       const base64Image = canvas.toDataURL('image/jpeg');
       await coverDB.saveCover(book.filename, base64Image);
-      setCovers(prev => ({ ...prev, [book.filename]: base64Image }));
+      putCover(book.filename, base64Image);
     }
   };
 
@@ -448,7 +517,13 @@ export function useLibrary({
         if (thumbnail) {
           const secureThumbnail = thumbnail.replace('http://', 'https://');
           await coverDB.saveCover(book.filename, secureThumbnail);
-          setCovers(prev => ({ ...prev, [book.filename]: secureThumbnail }));
+          putCover(book.filename, secureThumbnail);
+          const src = { type: 'google-books' as const, url: secureThumbnail, updatedAt: Date.now() };
+          const prev = enrichedMetadataRef.current[book.filename] || { title: book.title, author: book.author || '' };
+          const next = { ...prev, coverSource: src };
+          const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: next };
+          setEnrichedMetadata(newMetadata);
+          try { await coverDB.saveBookMetadata(book.filename, next); } catch {}
           return;
         }
 
@@ -460,7 +535,13 @@ export function useLibrary({
           if (olCoverId) {
             const olCoverUrl = `https://covers.openlibrary.org/b/id/${olCoverId}-L.jpg`;
             await coverDB.saveCover(book.filename, olCoverUrl);
-            setCovers(prev => ({ ...prev, [book.filename]: olCoverUrl }));
+            putCover(book.filename, olCoverUrl);
+            const src = { type: 'openlibrary' as const, url: olCoverUrl, updatedAt: Date.now() };
+            const prev = enrichedMetadataRef.current[book.filename] || { title: book.title, author: book.author || '' };
+            const next = { ...prev, coverSource: src };
+            const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: next };
+            setEnrichedMetadata(newMetadata);
+            try { await coverDB.saveBookMetadata(book.filename, next); } catch {}
             return;
           }
         } catch (olErr) {}
@@ -474,7 +555,7 @@ export function useLibrary({
         }
         const svg = enrichedMetadataRef.current[book.filename].svg as string;
         await coverDB.saveCover(book.filename, svg);
-        setCovers(prev => ({ ...prev, [book.filename]: svg }));
+        putCover(book.filename, svg);
         return;
       }
 
@@ -483,12 +564,19 @@ export function useLibrary({
         const enriched = await enrichBookWithGemini(book);
         if (enriched && enriched.svg) {
            await coverDB.saveCover(book.filename, enriched.svg);
-           setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
-            const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: enriched };
+           putCover(book.filename, enriched.svg);
+            const withSrc = {
+              ...enriched,
+              coverSource: enrichedMetadataRef.current[book.filename]?.coverSource || {
+                type: 'ai-generated' as const,
+                updatedAt: Date.now(),
+              },
+            };
+            const newMetadata = { ...enrichedMetadataRef.current, [book.filename]: withSrc };
             setEnrichedMetadata(newMetadata);
             localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
             try {
-              await coverDB.saveBookMetadata(book.filename, enriched);
+              await coverDB.saveBookMetadata(book.filename, withSrc);
             } catch (dbErr) {}
             return;
         }
@@ -500,7 +588,7 @@ export function useLibrary({
     } finally {
       setTimeout(() => setIdentifyingBookId(null), 1000);
     }
-  }, [enrichBookWithGemini, setIdentifyingBookId]);
+  }, [enrichBookWithGemini, setIdentifyingBookId, putCover]);
 
   const handleCoverUpload = async (filename: string, file: File) => {
     console.log(`[CoverUpload] Starting upload for ${filename}`);
@@ -510,7 +598,7 @@ export function useLibrary({
       console.log(`[CoverUpload] Thumbnail created, size: ${thumbnail.length}`);
       await coverDB.saveCover(filename, thumbnail);
       console.log(`[CoverUpload] Saved to IndexedDB`);
-      setCovers(prev => ({ ...prev, [filename]: thumbnail }));
+      putCover(filename, thumbnail);
       markCoverAsSaved(filename);
 
       // Upload to Firebase Storage with retry — empty url = other devices lose the cover
@@ -579,6 +667,10 @@ export function useLibrary({
       await coverDB.deleteBook(filename);
       setCovers(prev => {
         const next = { ...prev };
+        delete next[filename];
+        delete coverMem.map[filename];
+        return next;
+      });
         delete next[filename];
         return next;
       });
@@ -717,22 +809,23 @@ export function useLibrary({
           
           if (enriched.svg && !isUserCustomCover(existingSource)) {
             try {
-              const existingCover = await coverDB.getCover(book.filename);
+              const existingCover =
+                coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
               if (shouldSkipCoverFetch({ existingCover, coverSource: existingSource })) {
                 // keep sacred cover
               } else {
                 await coverDB.saveCover(book.filename, enriched.svg);
-                setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+                putCover(book.filename, enriched.svg);
               }
             } catch (e) {
               await coverDB.saveCover(book.filename, enriched.svg);
-              setCovers(prev => ({ ...prev, [book.filename]: enriched.svg }));
+              putCover(book.filename, enriched.svg);
             }
           }
         }
       }
       
-      const hasCover = coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
+      const hasCover = coversRef.current[book.filename] || coverMem.map[book.filename] || (await coverDB.getCover(book.filename));
       const currentSource = enrichedMetadataRef.current[book.filename]?.coverSource;
 
       if (!shouldSkipCoverFetch({ existingCover: hasCover, coverSource: currentSource })) {
@@ -743,13 +836,14 @@ export function useLibrary({
       if (idx + 1 >= library.length) setEnrichmentProgress(null);
     }, 10000);
     return () => clearInterval(timer);
-  }, [isIdle, library.length, coverScanKey, fetchEnhancedCover, enrichBookWithGemini]);
+  }, [isIdle, library.length, coverScanKey, fetchEnhancedCover, enrichBookWithGemini, putCover]);
 
   return {
     library, setLibrary,
     enrichedMetadata,
     enrichedMetadataRef,
     covers, setCovers,
+    coversHydrated,
     isLoadingLibrary,
     enrichmentProgress,
     fetchLibrary,

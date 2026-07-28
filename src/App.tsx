@@ -159,7 +159,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.5';
+  const APP_VERSION = 'v2.10.6';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -180,6 +180,7 @@ export default function App() {
     enrichedMetadata,
     enrichedMetadataRef,
     covers, setCovers,
+    coversHydrated,
     isLoadingLibrary,
     enrichmentProgress,
     fetchLibrary,
@@ -1394,6 +1395,7 @@ export default function App() {
           <LibraryView 
             library={library} 
             covers={covers} 
+            coversHydrated={coversHydrated}
             isLoading={isLoadingLibrary} 
             onOpenBook={(book) => openFromLibrary(book)} 
             onEditBook={setEditingBook} 
@@ -1569,12 +1571,49 @@ export default function App() {
       </main>
 
       <AnimatePresence>{selectedTextMenu && (
-        <motion.div initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 10 }} className="fixed z-[100] bg-stone-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 items-center" style={{ left: `${selectedTextMenu.x}px`, top: `${selectedTextMenu.y - 50}px`, transform: 'translateX(-50%)' }}>
-          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { await updateBookMetadata(fileName, selectedTextMenu.text, book.author || ''); showToast('Título actualizado'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-white/10 rounded-lg transition-colors">Set Title</button>
-          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { await updateBookMetadata(fileName, book.title, selectedTextMenu.text); showToast('Autor actualizado'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-white/10 rounded-lg transition-colors">Set Author</button>
-          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { setIsSyncing(true); const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || ''; if (g_apiKey) { try { const ai = new GoogleGenAI({ apiKey: g_apiKey }); const result = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: [{ role: 'user', parts: [{ text: `Generate a minimalist SVG book cover for "${book.title}" by "${book.author}". Return ONLY SVG.` }] }] }); const svg = result.candidates?.[0]?.content?.parts?.[0]?.text || ''; const cleanSvg = svg.substring(svg.indexOf('<svg'), svg.lastIndexOf('</svg>') + 6); await updateBookMetadata(fileName, book.title, book.author || '', cleanSvg); showToast('Portada generada'); } catch (e) {} } setIsSyncing(false); setSelectedTextMenu(null); } }} className="px-2 py-1 text-[10px] font-bold uppercase text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors">Magic Cover</button>
-          <button onClick={async () => { const book = library.find(b => b.filename === fileName); if (book) { const newHighlight: Highlight = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, bookId: fileName, bookTitle: book.title, text: selectedTextMenu.text, page: pageNumber, createdAt: Date.now() }; const updated = [...highlights, newHighlight]; setHighlights(updated); await coverDB.saveHighlights(updated); await syncService.saveHighlights(updated); showToast('Cita guardada'); } setSelectedTextMenu(null); }} className="px-2 py-1 text-[10px] font-bold uppercase text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-colors">Save Quote</button>
-          <button onClick={() => setSelectedTextMenu(null)} className="p-1 text-stone-500 hover:text-white transition-colors"><X size={14} /></button>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 10 }}
+          onMouseDown={(e) => e.preventDefault()}
+          className="fixed z-[100] bg-stone-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 items-center"
+          style={{ left: `${selectedTextMenu.x}px`, top: `${selectedTextMenu.y - 50}px`, transform: 'translateX(-50%)' }}
+        >
+          <button
+            onClick={async () => {
+              const book = library.find(b => b.filename === fileName);
+              if (book) {
+                const newHighlight: Highlight = {
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  bookId: fileName,
+                  bookTitle: book.title,
+                  text: selectedTextMenu.text,
+                  page: pageNumber,
+                  createdAt: Date.now(),
+                };
+                const updated = [...highlights, newHighlight];
+                setHighlights(updated);
+                await coverDB.saveHighlights(updated);
+                await syncService.saveHighlights(updated);
+                showToast('Cita guardada');
+              }
+              window.getSelection()?.removeAllRanges();
+              setSelectedTextMenu(null);
+            }}
+            className="px-2 py-1 text-[10px] font-bold uppercase text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-colors"
+          >
+            Guardar cita
+          </button>
+          <button
+            onClick={() => {
+              window.getSelection()?.removeAllRanges();
+              setSelectedTextMenu(null);
+            }}
+            className="p-1 text-stone-500 hover:text-white transition-colors"
+            aria-label="Cerrar"
+          >
+            <X size={14} />
+          </button>
         </motion.div>
       )}</AnimatePresence>
 

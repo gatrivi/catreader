@@ -83,4 +83,4 @@ Never Google→OL after bundled seed without `force`.
 Art-deco API swap; saints trail UI.
 
 ## Status
-**Design ready — not implemented.** Approve to ship.
+**Shipped v2.10.6** — hydrate gate, bundled seed, coverMem HMR, idle skips any `coverSource.type`.

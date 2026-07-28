@@ -40,6 +40,7 @@ const baseProps = {
   onUpdateShelfTitle: vi.fn(),
   onMoveBook: vi.fn(),
   onReorderBook: vi.fn(),
+coversHydrated: true,
 };
 
 describe('LibraryView', () => {

@@ -1,5 +1,12 @@
 /** Cover sacredness helpers — never clobber an existing cover unless force. */
 
+export type CoverSourceType =
+  | 'user-custom'
+  | 'ai-generated'
+  | 'openlibrary'
+  | 'google-books'
+  | 'bundled';
+
 export function isUserCustomCover(coverSource?: { type?: string } | null): boolean {
   return coverSource?.type === 'user-custom';
 }
@@ -22,8 +29,8 @@ export function shouldSkipCoverFetch(opts: {
   coverSource?: { type?: string } | null;
 }): boolean {
   if (opts.force) return false;
-  if (isUserCustomCover(opts.coverSource)) return true;
-  if (opts.coverSource?.type === 'openlibrary') return true;
+  // Any declared source (bundled/catalog/custom) is sacred for idle scan
+  if (opts.coverSource?.type) return true;
   if (hasStoredCover(opts.existingCover)) return true;
   return false;
 }

@@ -67,6 +67,7 @@ interface LibraryViewProps {
   onToggleCoverLabels?: () => void;
   onAddShelf?: () => void;
   onRemoveShelf?: (shelfId: string) => { count: number; destinationIndex: number } | null | void;
+  coversHydrated?: boolean;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -104,7 +105,8 @@ export const LibraryView = ({
   showCoverLabels,
   onToggleCoverLabels,
   onAddShelf,
-  onRemoveShelf
+  onRemoveShelf,
+  coversHydrated = false,
   }: LibraryViewProps) => {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -715,6 +717,7 @@ export const LibraryView = ({
                        <BookCover 
                           book={book}
                           cover={covers[book.filename]}
+                          coversHydrated={coversHydrated}
                           onClick={() => onOpenBook(book)}
                           onEdit={() => onEditBook(book)}
                           onShare={() => onShareBook?.(book)}
@@ -735,6 +738,7 @@ export const LibraryView = ({
           <SaintsTrailView
             library={library}
             covers={covers}
+            coversHydrated={coversHydrated}
             onOpenBook={onOpenBook}
             onEditBook={onEditBook}
             onShareBook={onShareBook}
@@ -831,6 +835,7 @@ export const LibraryView = ({
                               <BookCover 
                                 book={book}
                                 cover={covers[book.filename]}
+                                coversHydrated={coversHydrated}
                                 onClick={() => {
                                   if (!suppressClickRef.current) onOpenBook(book);
                                 }}

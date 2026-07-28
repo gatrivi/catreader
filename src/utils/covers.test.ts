@@ -14,6 +14,7 @@ describe('covers lock', () => {
     expect(shouldSkipCoverFetch({ existingCover: 'https://a' })).toBe(true);
     expect(shouldSkipCoverFetch({ coverSource: { type: 'user-custom' } })).toBe(true);
     expect(shouldSkipCoverFetch({ coverSource: { type: 'openlibrary' } })).toBe(true);
+    expect(shouldSkipCoverFetch({ coverSource: { type: 'bundled' } })).toBe(true);
     expect(shouldSkipCoverFetch({})).toBe(false);
     expect(shouldSkipCoverFetch({ force: true, existingCover: 'https://a' })).toBe(false);
   });

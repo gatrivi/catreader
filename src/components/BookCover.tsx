@@ -47,6 +47,8 @@ interface BookCoverProps {
   showLabels?: boolean;
   /** Fit cover height inside a fixed grid cell (library rack) */
   fillHeight?: boolean;
+  /** After library hydrate: never fall back to book.svg (covers map is SoT) */
+  coversHydrated?: boolean;
 }
 
 export const BookCover: React.FC<BookCoverProps> = ({ 
@@ -61,7 +63,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
   isIdentifying,
   isSavedInDb,
   showLabels,
-  fillHeight = false
+  fillHeight = false,
+  coversHydrated = true,
 }) => {
   React.useEffect(() => {
     console.log(`[BookCover] Mount/update ${book.filename}: cover=${!!cover} source=${cover?.startsWith('data:') ? 'dataURL' : cover?.startsWith('http') ? 'url' : cover ? 'svg/other' : 'none'}`);
@@ -83,14 +86,15 @@ export const BookCover: React.FC<BookCoverProps> = ({
   }, [cover]);
 
   const svgDataUrl = React.useMemo(() => {
-    if (!book.svg || displayCover) return null;
+    // Post-hydrate: covers[] is sole source — no SVG flash/swap
+    if (coversHydrated || !book.svg || displayCover) return null;
     try {
       return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
     } catch (e) {
       console.error('Failed to encode book.svg:', e);
       return null;
     }
-  }, [book.svg, displayCover]);
+  }, [book.svg, displayCover, coversHydrated]);
 
   const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
 
@@ -222,6 +226,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
               {displayCover ? (
                 <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+              ) : !coversHydrated ? (
+                <div className="w-full h-full rounded-r-md bg-stone-800/80 animate-pulse" aria-hidden />
               ) : svgDataUrl && book.coverSource?.type !== 'user-custom' ? (
                 <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
               ) : (

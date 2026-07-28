@@ -37,6 +37,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 **FEATURE #1:** [docs/PROGRESS_SACRED.md](docs/PROGRESS_SACRED.md)
 **READER MODE:** [docs/READER_MODE_LAZY.md](docs/READER_MODE_LAZY.md)
 
+### CATTS / PC stack (audiolibros)
+- PC repo: `E:\zengatrivi-drive-e\catts` · Tailscale `100.87.252.18`
+- Phone: CatReader `http://100.87.252.18:3000` · API `:59200`
+- PC: `npm start` / `npm stop` / `npm run stop:heavy` · `.\scripts\start_reader_stack.ps1`
+- Cassette: `audio` + `cattsBookId` (ej. Cassian `KEEP_Cassian_Conferences`). See README § CATTS + `docs/live-audio.md`.
+
 ---
 -tldr all responses.
 -review, refactor, cleanup. if tests pass, push.
@@ -52,7 +58,7 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 ### SESSION CONTEXT (2026-07-14)
 
-- **Version:** `v2.10.4`
+- **Version:** `v2.10.6`
 - **FEATURE #1 SACRED:** synced reading progress — see `docs/PROGRESS_SACRED.md`. NEVER clobber page on remount.
 - **READER MODE:** word→snippet→page→±1 prefetch — `docs/READER_MODE_LAZY.md`.
 - Live audio: headphones btn → CATTS `100.87.252.18:59200` `/tts/live`; selection or page start; wav cache IDB `ttsAudio`.

@@ -15,6 +15,7 @@ function cn(...inputs: ClassValue[]) {
 type Props = {
   library: TrailBook[];
   covers: Record<string, string>;
+  coversHydrated?: boolean;
   onOpenBook: (book: TrailBook) => void;
   onEditBook: (book: TrailBook) => void;
   onShareBook?: (book: TrailBook) => void;
@@ -43,6 +44,7 @@ function StubCover({ title, author, yearLabel }: { title: string; author: string
 export function SaintsTrailView({
   library,
   covers,
+  coversHydrated = false,
   onOpenBook,
   onEditBook,
   onShareBook,
@@ -100,6 +102,7 @@ export function SaintsTrailView({
                       <BookCover
                         book={book}
                         cover={covers[book.filename]}
+                        coversHydrated={coversHydrated}
                         onClick={() => onOpenBook(book)}
                         onEdit={() => onEditBook(book)}
                         onShare={onShareBook ? () => onShareBook(book) : undefined}
