@@ -109,15 +109,8 @@ export function useLibrary({
       const deletedRaw = localStorage.getItem('catreader_deleted_books');
       const deletedSet = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
       const visibleData = filterDeletedBooks(data as LibraryBook[], deletedSet);
-      
-      // Defer shelf paint until covers hydrate (unless HMR already has them)
-      if (!coverMem.hydrated) {
-        setLibrary(visibleData.map((b) => ({ ...b, svg: undefined })));
-      } else {
-        setLibrary(visibleData);
-        setCovers({ ...coverMem.map });
-        setIsLoadingLibrary(false);
-      }
+      // Keep spinner until covers+library commit together (no early SVG paint)
+      setGlobalStatus('Cargando portadas...');
 
       // Load enriched metadata in the background
       (async () => {
@@ -143,31 +136,37 @@ export function useLibrary({
             } catch (e) {}
           }
 
-          // 3. Merge with Cloud Metadata (authoritative sync)
-          try {
-            const cloudMetadata = await syncService.loadMetadata();
-            if (cloudMetadata) {
+          // Cloud AFTER local paint — never block shelf (2.5s cap). Prefer local coverSource.
+          const cloudPromise = (async () => {
+            try {
+              const cloudMetadata = await Promise.race([
+                syncService.loadMetadata(),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+              ]);
+              if (!cloudMetadata) return null;
+              const merged = { ...metadata };
               for (const [key, cloudBookMeta] of Object.entries(cloudMetadata)) {
-                const localBookMeta = metadata[key];
+                const localBookMeta = merged[key];
                 if (localBookMeta) {
-                  metadata[key] = {
+                  merged[key] = {
                     ...localBookMeta,
                     ...cloudBookMeta,
-                    coverSource: cloudBookMeta.coverSource || localBookMeta.coverSource,
-                    svg: cloudBookMeta.svg || localBookMeta.svg
+                    coverSource: localBookMeta.coverSource || cloudBookMeta.coverSource,
+                    svg: localBookMeta.svg || cloudBookMeta.svg,
                   };
                 } else {
-                  metadata[key] = cloudBookMeta;
+                  merged[key] = cloudBookMeta;
                 }
               }
+              return merged;
+            } catch {
+              return null;
             }
-          } catch (cloudErr) {}
+          })();
 
           if (Object.keys(metadata).length > 0) {
             setEnrichedMetadata(metadata);
             localStorage.setItem('catreader_enriched_metadata', JSON.stringify(metadata));
-
-            // Back-fill metadata to IndexedDB to ensure robust offline persistence
             try {
               for (const [fname, meta] of Object.entries(metadata)) {
                 await coverDB.saveBookMetadata(fname, meta);
@@ -207,8 +206,12 @@ export function useLibrary({
             };
           });
 
-          const allBooks = filterDeletedBooks([...enriched, ...customBooks], deletedSet);
-          setLibrary(allBooks);
+          const withSvg = filterDeletedBooks([...enriched, ...customBooks], deletedSet);
+          const allBooks = withSvg.map((b) => ({
+            ...b,
+            // covers[] is SoT after hydrate — strip svg so BookCover can't dual-paint
+            svg: undefined as string | undefined,
+          }));
 
           // Hydrate covers: IDB → cloud URL → seed bundled svg once
           console.log(`[Covers] Hydrating covers for ${allBooks.length} books...`);
@@ -216,13 +219,28 @@ export function useLibrary({
           const metaUpdates: Record<string, { title: string; author: string; svg?: string; coverSource?: any }> = { ...metadata };
 
           for (const book of allBooks) {
+            const rawBook = withSvg.find((b) => b.filename === book.filename) || book;
             let cover = loadedCovers[book.filename] || (await coverDB.getCover(book.filename));
             if (cover) {
               loadedCovers[book.filename] = cover;
+              // Stamp source so idle never replaces orphan IDB covers
+              const prev = metaUpdates[book.filename] || {
+                title: book.title,
+                author: book.author || '',
+              };
+              if (!prev.coverSource?.type) {
+                const inferred =
+                  cover.startsWith('http')
+                    ? { type: 'openlibrary' as const, url: cover, updatedAt: Date.now() }
+                    : cover.includes('<svg') || cover.startsWith('data:image/svg')
+                      ? { type: 'bundled' as const, updatedAt: Date.now() }
+                      : { type: 'user-custom' as const, updatedAt: Date.now() };
+                metaUpdates[book.filename] = { ...prev, coverSource: inferred };
+              }
               continue;
             }
 
-            const src = book.coverSource || metaUpdates[book.filename]?.coverSource;
+            const src = rawBook.coverSource || metaUpdates[book.filename]?.coverSource;
             if (src?.type === 'user-custom' && src.url) {
               try {
                 const r = await fetch(src.url);
@@ -249,7 +267,7 @@ export function useLibrary({
               continue;
             }
 
-            const bundledSvg = book.svg || metaUpdates[book.filename]?.svg;
+            const bundledSvg = rawBook.svg || metaUpdates[book.filename]?.svg;
             if (bundledSvg && bundledSvg.includes('<svg')) {
               await coverDB.saveCover(book.filename, bundledSvg);
               loadedCovers[book.filename] = bundledSvg;
@@ -269,6 +287,7 @@ export function useLibrary({
 
           coverMemMerge(loadedCovers);
           coverMemMarkHydrated();
+          // Atomic: covers + library + hydrated in one paint window
           setCovers({ ...coverMem.map });
           setCoversHydrated(true);
           if (Object.keys(metaUpdates).length) {
@@ -279,8 +298,69 @@ export function useLibrary({
               }
             } catch {}
           }
+          setLibrary(allBooks.map((b) => ({
+            ...b,
+            coverSource: metaUpdates[b.filename]?.coverSource || b.coverSource,
+          })));
           setIsLoadingLibrary(false);
           setGlobalStatus(null);
+
+          // Background cloud: titles/custom books only — never replace existing covers
+          void cloudPromise.then(async (merged) => {
+            if (!merged) return;
+            setEnrichedMetadata((prev) => {
+              const next = { ...prev };
+              for (const [k, m] of Object.entries(merged)) {
+                next[k] = {
+                  ...next[k],
+                  ...m,
+                  coverSource: next[k]?.coverSource || m.coverSource,
+                };
+              }
+              return next;
+            });
+            setLibrary((prev) => {
+              const byId = new Set(prev.map((b) => b.filename));
+              const extras: LibraryBook[] = [];
+              for (const [fname, m] of Object.entries(merged)) {
+                if (byId.has(fname) || deletedSet.has(fname)) continue;
+                if (visibleData.some((b) => b.filename === fname)) continue;
+                extras.push({
+                  id: fname,
+                  filename: fname,
+                  type: fname.split('.').pop()?.toLowerCase() || 'pdf',
+                  title: m.title || fname,
+                  author: m.author || 'Desconocido',
+                  coverSource: m.coverSource,
+                });
+              }
+              if (!extras.length) {
+                return prev.map((b) => {
+                  const m = merged[b.filename];
+                  if (!m) return b;
+                  return {
+                    ...b,
+                    title: m.title || b.title,
+                    author: m.author || b.author,
+                    coverSource: b.coverSource || m.coverSource,
+                  };
+                });
+              }
+              return [
+                ...prev.map((b) => {
+                  const m = merged[b.filename];
+                  if (!m) return b;
+                  return {
+                    ...b,
+                    title: m.title || b.title,
+                    author: m.author || b.author,
+                    coverSource: b.coverSource || m.coverSource,
+                  };
+                }),
+                ...extras,
+              ];
+            });
+          });
         } catch (mErr) {
           console.warn('Metadata enrichment skipped:', mErr);
 
@@ -669,9 +749,6 @@ export function useLibrary({
         const next = { ...prev };
         delete next[filename];
         delete coverMem.map[filename];
-        return next;
-      });
-        delete next[filename];
         return next;
       });
       setEnrichedMetadata(prev => {

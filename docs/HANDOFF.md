@@ -1,13 +1,14 @@
 # Handoff — 2026-07-28
 
-**Version:** `v2.10.6`
+**Version:** `v2.10.7`
 
-## Shipped
-- Selection menu: quote-only + `preventDefault` keeps highlight
-- Covers sacred (`docs/COVER_SACRED.md`): hydrate gate, bundled seed, `coverMem` HMR, idle skips any `coverSource`
+## Truth
+v2.10.6 cover “fix” shipped without verify — **broken** (syntax error + cloud hang).
 
-## Unstaged (unrelated)
-`dev:local`, PORT, books.json, live-audio.md
+## v2.10.7
+- Fixed compile; local-first covers; cloud ≤2.5s gaps-only
+- Playwright: no cover src swap across 7s after paint
+- Selection still quote-only
 
 ## Don’t break
 PROGRESS_SACRED, READER_MODE_LAZY, CATTS

@@ -83,4 +83,6 @@ Never Google→OL after bundled seed without `force`.
 Art-deco API swap; saints trail UI.
 
 ## Status
-**Shipped v2.10.6** — hydrate gate, bundled seed, coverMem HMR, idle skips any `coverSource.type`.
+**Shipped v2.10.7** (verified in Playwright: no cover fingerprint swap 0–7s).
+
+v2.10.6 was broken: syntax error in `removeBook` + hydrate blocked on hanging cloud metadata → overlay/endless spinner. Fixed: local-first hydrate, cloud 2.5s timeout gaps-only, atomic commit, stamp orphan IDB `coverSource`.
