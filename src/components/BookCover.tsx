@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Share2, Sparkles, AlertCircle, GripVertical, CassetteTape } from 'lucide-react';
+import { Pencil, Share2, Sparkles, AlertCircle, CassetteTape } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -40,8 +40,6 @@ interface BookCoverProps {
   onClick: () => void;
   onEdit: () => void;
   onShare?: () => void;
-  onDragStart?: (e: React.DragEvent) => void;
-  onDragEnd?: () => void;
   onHover?: (color: string | null) => void;
   isSimplified?: boolean;
   isIdentifying?: boolean;
@@ -58,8 +56,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
   onClick, 
   onEdit, 
   onShare,
-  onDragStart,
-  onDragEnd,
   onHover,
   isSimplified,
   isIdentifying,
@@ -152,7 +148,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
       <motion.div 
         onClick={onClick}
-        title="Arrastra para mover el libro"
+        title="Abrir libro"
         className={cn(
           "relative bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
           fillHeight ? "h-full max-h-full w-auto aspect-[2/3]" : "w-full aspect-[2/3]",
@@ -311,20 +307,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
             <Share2 size={12} />
           </button>
         </div>
-
-        {/* Drag handle — only this element starts a shelf drag (keeps tap-to-open working) */}
-        {onDragStart && (
-          <div
-            draggable
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onClick={(e) => e.stopPropagation()}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-black/40 backdrop-blur-sm p-2 rounded-full border border-white/20 cursor-grab active:cursor-grabbing"
-            title="Arrastra para mover"
-          >
-            <GripVertical size={20} className="text-white shadow-xl" />
-          </div>
-        )}
       </motion.div>
     </div>
   );

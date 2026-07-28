@@ -52,7 +52,7 @@ describe('LibraryView', () => {
   it('opens book on cover click', () => {
     const onOpenBook = vi.fn();
     render(<LibraryView {...baseProps} onOpenBook={onOpenBook} />);
-    fireEvent.click(screen.getAllByTitle('Arrastra para mover el libro')[0]);
+    fireEvent.click(screen.getAllByTitle('Abrir libro')[0]);
     expect(onOpenBook).toHaveBeenCalledWith(books[0]);
   });
 

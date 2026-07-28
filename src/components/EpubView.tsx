@@ -7,7 +7,6 @@ interface EpubViewProps {
   theme: string;
   initialLocation?: string | number;
   onLocationChange?: (cfi: string) => void;
-  onTocLoaded?: (toc: any) => void;
 }
 
 type EpubUrlState = {
@@ -103,7 +102,6 @@ export const EpubView: React.FC<EpubViewProps> = ({
   theme, 
   initialLocation,
   onLocationChange,
-  onTocLoaded 
 }) => {
   const viewerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<any>(null);
@@ -249,10 +247,6 @@ export const EpubView: React.FC<EpubViewProps> = ({
     }).catch((error) => {
       console.error('[EPUB] Display failed:', error);
       setLoading(false);
-    });
-
-    book.loaded.navigation.then((nav) => {
-      if (onTocLoaded) onTocLoaded(nav.toc);
     });
 
     rendition.on('relocated', (location: any) => {

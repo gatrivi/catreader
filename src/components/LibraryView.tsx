@@ -48,8 +48,8 @@ interface LibraryViewProps {
   onMoveBook: (bookId: string, fromShelfId: string, toShelfId: string, toIndex?: number) => void;
   onReorderBook: (shelfId: string, fromIndex: number, toIndex: number) => void;
   onMagicEnrich?: () => void;
+  onOpenLibraryEnrich?: () => void;
   onProfileClick?: () => void;
-  clearProgress?: () => void;
   identifyingBookId?: string | null;
   isSyncing?: boolean;
   enrichmentProgress?: { current: number; total: number; filename?: string };
@@ -86,8 +86,8 @@ export const LibraryView = ({
   onMoveBook,
   onReorderBook,
   onMagicEnrich,
+  onOpenLibraryEnrich,
   onProfileClick,
-  clearProgress,
   identifyingBookId,
   isSyncing,
   enrichmentProgress,
@@ -579,7 +579,7 @@ export const LibraryView = ({
                       </div>
 
                       {/* AI Actions */}
-                      {(onMagicEnrich || onConsolidate) && (
+                      {(onMagicEnrich || onOpenLibraryEnrich || onConsolidate) && (
                         <div className="pt-2 border-t border-white/5 space-y-2">
                           <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Acciones AI</p>
                           {onMagicEnrich && (
@@ -590,6 +590,16 @@ export const LibraryView = ({
                             >
                               <Wand2 size={12} className={cn(isSyncing && "animate-spin")} />
                               {isSyncing ? 'Enriqueciendo...' : 'Enriquecer Biblioteca'}
+                            </button>
+                          )}
+                          {onOpenLibraryEnrich && (
+                            <button
+                              onClick={() => { onOpenLibraryEnrich(); setShowSettings(false); }}
+                              disabled={isSyncing}
+                              className="w-full flex items-center gap-2 bg-stone-900 text-stone-400 hover:text-sky-300 hover:bg-stone-800 transition-all px-3 py-2 rounded-xl text-[10px] font-bold border border-white/5 disabled:opacity-50"
+                            >
+                              <Library size={12} />
+                              Open Library
                             </button>
                           )}
                           {onConsolidate && (

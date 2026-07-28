@@ -66,6 +66,7 @@ import {
   GHOST_PREFETCH,
   isGhostComplete,
 } from './utils/ghostText';
+import { loadLocalProgressMap } from './utils/localProgress';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -158,7 +159,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.3';
+  const APP_VERSION = 'v2.10.4';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -186,6 +187,7 @@ export default function App() {
     handleCoverUpload,
     fetchEnhancedCover,
     bulkMagic,
+    enrichWithOpenLibrary,
     enrichBookWithGemini,
     savedBookCovers,
     markCoverAsSaved,
@@ -247,18 +249,19 @@ export default function App() {
 
   const { shelves, updateShelfTitle, moveBook, reorderBook, consolidateShelves, addShelf, removeShelf } = useShelves(library);
 
-  // Helper to get reading progress for Aura effect
+  // Cover aura: localStorage progress map (no cloud fan-out)
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+  const refreshProgressMap = useCallback(() => {
+    setProgressMap(loadLocalProgressMap());
+  }, []);
+  useEffect(() => {
+    refreshProgressMap();
+  }, [library, refreshProgressMap]);
+
   const getReadingProgress = useCallback((filename: string) => {
-    // This is a bit complex since progress is stored per book in Firestore or locally
-    // For the aura, we can check if we have any progress data in memory if it was recently loaded
-    // Or we can just return 0 for now until we have a central progress store
-    // Let's implement a simple version that checks if the current book matches
-    if (fileName === filename) return pageNumber / (numPages || 1);
-    
-    // For others, we might need a cache of progress. 
-    // Let's add a placeholder or simple logic for the demo.
-    return 0; 
-  }, [fileName, pageNumber, numPages]);
+    if (fileName === filename && numPages > 0) return pageNumber / numPages;
+    return progressMap[filename] ?? 0;
+  }, [fileName, pageNumber, numPages, progressMap]);
 
   // --- Persistence & Settings ---
   // Safety net: clamp pageNumber whenever numPages becomes known or changes
@@ -406,8 +409,12 @@ export default function App() {
   }, [fileUrl, showDiagnostics, editingBook, showMenu]);
 
   // --- Persistence & Sync ---
-  const saveProgressRef = useRef(saveProgress);
-  saveProgressRef.current = saveProgress;
+  const saveProgressAndAura = useCallback(async (opts?: { force?: boolean; pageOverride?: number }) => {
+    await saveProgress(opts);
+    refreshProgressMap();
+  }, [saveProgress, refreshProgressMap]);
+  const saveProgressRef = useRef(saveProgressAndAura);
+  saveProgressRef.current = saveProgressAndAura;
   
   useEffect(() => {
     if (!isLoaded || !fileName || !containerRef.current) return;
@@ -1404,9 +1411,9 @@ export default function App() {
             onReorderBook={reorderBook} 
             onConsolidate={consolidateShelves} 
             onMagicEnrich={bulkMagic} 
+            onOpenLibraryEnrich={enrichWithOpenLibrary}
             onProfileClick={() => setShowProfile(true)} 
             onGetProgress={getReadingProgress}
-            clearProgress={() => {}} 
             identifyingBookId={identifyingBookId} 
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 

@@ -32,7 +32,7 @@ describe('BookCover', () => {
     const handleClick = vi.fn();
     render(<BookCover book={mockBook} onClick={handleClick} onEdit={() => {}} />);
     
-    fireEvent.click(screen.getByTitle('Arrastra para mover el libro'));
+    fireEvent.click(screen.getByTitle('Abrir libro'));
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 
@@ -41,7 +41,7 @@ describe('BookCover', () => {
     const unsupportedBook = { ...mockBook, type: 'docx' };
     render(<BookCover book={unsupportedBook} onClick={handleClick} onEdit={() => {}} />);
 
-    fireEvent.click(screen.getByTitle('Arrastra para mover el libro'));
+    fireEvent.click(screen.getByTitle('Abrir libro'));
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 });
