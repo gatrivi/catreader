@@ -124,6 +124,25 @@ export async function cattsChapterAudio(id: string, n: number): Promise<Blob> {
   return res.blob();
 }
 
+/** GET /books/{id}/download → zip of ready mp3s. */
+export async function cattsAudiobookDownload(id: string): Promise<Blob> {
+  const res = await fetch(`${cattsBaseUrl()}/books/${encodeURIComponent(id)}/download`, {
+    headers: libHeaders(),
+  });
+  if (!res.ok) throw new Error(`CATTS download ${res.status}`);
+  return res.blob();
+}
+
+/** Trigger browser save of a blob. */
+export function saveBlobAsFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** GET chapter subtitles as raw SRT text. */
 export async function cattsChapterSubtitles(id: string, n: number): Promise<string> {
   const res = await fetch(`${cattsBaseUrl()}/books/${encodeURIComponent(id)}/chapters/${n}/subtitles`, {

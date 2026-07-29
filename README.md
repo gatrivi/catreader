@@ -35,6 +35,30 @@ npm run paper-bake -- file.pdf
 
 Env: copy `.env.example` → `.env` (`VITE_GEMINI_API_KEY`, Firebase config via `firebase-applet-config.json`).
 
+## CATTS (PC — audiolibros / cola)
+
+Backend en `E:\zengatrivi-drive-e\catts` · Tailscale **`100.87.252.18`**
+
+| App | URL |
+|-----|-----|
+| **CatReader** | http://100.87.252.18:3000 |
+| Rosario | http://100.87.252.18:3001 |
+| CatTS API | http://100.87.252.18:59200 |
+
+En la PC (`cd` catts):
+
+```bash
+npm start                 # API :59200 (Edge lean; sin STT warm)
+npm run health
+npm stop                  # liberar RAM
+npm run stop:heavy        # API + Kokoro/STT/XTTS
+.\scripts\start_reader_stack.ps1   # API + este CatReader :3000 + Rosario :3001
+```
+
+`.env`: `VITE_CATTS_URL=http://100.87.252.18:59200` · `VITE_CATTS_API_KEY=` (o `catts-local`).  
+Audiolibro: `audio` + `cattsBookId` → cassette (stream + zip DL). Ready ids in `docs/audiobook-bake.md`.  
+Public (Vercel): Funnel → `.\scripts\catts-funnel.ps1` then set Vercel `VITE_CATTS_URL`. Docs: `docs/live-audio.md`.
+
 ## Deploy
 
 Static Vite site (`npm run build` → `dist`). Works on Vercel/Netlify. Books must be in `public/books/` so they ship with the build (PWA caches PDFs at runtime; not precached).

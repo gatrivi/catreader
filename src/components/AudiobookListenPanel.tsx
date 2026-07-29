@@ -1,10 +1,16 @@
 /**
  * Pre-baked CatTS chapter player (blob fetch — auth header required).
- * ponytail: no subtitle sync yet; chapter list + play/pause/next.
+ * Polls /books/{id} so progressive Pocket/Edge bakes appear while listening.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CassetteTape, ChevronLeft, ChevronRight, Pause, Play, X } from 'lucide-react';
-import { cattsAudiobook, cattsChapterAudio, type AudiobookChapter } from '../services/catts';
+import { CassetteTape, ChevronLeft, ChevronRight, Download, Pause, Play, X } from 'lucide-react';
+import {
+  cattsAudiobook,
+  cattsAudiobookDownload,
+  cattsChapterAudio,
+  saveBlobAsFile,
+  type AudiobookChapter,
+} from '../services/catts';
 
 type Props = {
   cattsBookId: string;
@@ -12,14 +18,26 @@ type Props = {
   onClose: () => void;
 };
 
+const POLL_MS = 20_000;
+
 export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
   const [chapters, setChapters] = useState<AudiobookChapter[]>([]);
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [waitingNext, setWaitingNext] = useState(false);
+  const [dlBusy, setDlBusy] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
+  const chaptersRef = useRef<AudiobookChapter[]>([]);
+  const idxRef = useRef(0);
+  const playingRef = useRef(false);
+  const playChapterRef = useRef<(i: number) => Promise<void>>(async () => {});
+
+  chaptersRef.current = chapters;
+  idxRef.current = idx;
+  playingRef.current = playing;
 
   const revoke = () => {
     if (urlRef.current) {
@@ -28,32 +46,59 @@ export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
     }
   };
 
+  const refreshChapters = useCallback(async (quiet = false) => {
+    try {
+      const meta = await cattsAudiobook(cattsBookId);
+      const next = meta.chapters_detail || [];
+      setChapters(next);
+      if (!quiet) setErr(null);
+      return next;
+    } catch (e: any) {
+      if (!quiet) setErr(e?.message || 'No se pudo cargar el audiolibro');
+      return null;
+    }
+  }, [cattsBookId]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setErr(null);
-      try {
-        const meta = await cattsAudiobook(cattsBookId);
-        if (!cancelled) setChapters(meta.chapters_detail || []);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message || 'No se pudo cargar el audiolibro');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      await refreshChapters(false);
+      if (!cancelled) setLoading(false);
     })();
+    const t = window.setInterval(() => {
+      void refreshChapters(true).then((next) => {
+        if (!next) return;
+        // if ended last known chapter and a new one appeared, keep going
+        if (
+          waitingNext ||
+          (playingRef.current === false &&
+            idxRef.current >= chaptersRef.current.length - 1 &&
+            next.length > chaptersRef.current.length)
+        ) {
+          const i = idxRef.current + 1;
+          if (i < next.length) {
+            setWaitingNext(false);
+            void playChapterRef.current(i);
+          }
+        }
+      });
+    }, POLL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(t);
       audioRef.current?.pause();
       revoke();
     };
-  }, [cattsBookId]);
+  }, [cattsBookId, refreshChapters, waitingNext]);
 
   const playChapter = useCallback(
     async (i: number) => {
-      const ch = chapters[i];
+      const list = chaptersRef.current;
+      const ch = list[i];
       if (!ch?.n) return;
       setErr(null);
+      setWaitingNext(false);
       setIdx(i);
       try {
         const blob = await cattsChapterAudio(cattsBookId, ch.n);
@@ -64,8 +109,13 @@ export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
         const a = audioRef.current;
         a.src = url;
         a.onended = () => {
-          if (i + 1 < chapters.length) void playChapter(i + 1);
-          else setPlaying(false);
+          const cur = chaptersRef.current;
+          if (i + 1 < cur.length) {
+            void playChapterRef.current(i + 1);
+          } else {
+            setPlaying(false);
+            setWaitingNext(true); // bake may still be writing next track
+          }
         };
         await a.play();
         setPlaying(true);
@@ -74,8 +124,9 @@ export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
         setPlaying(false);
       }
     },
-    [cattsBookId, chapters]
+    [cattsBookId]
   );
+  playChapterRef.current = playChapter;
 
   const toggle = () => {
     const a = audioRef.current;
@@ -91,6 +142,19 @@ export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
     void playChapter(idx);
   };
 
+  const downloadZip = async () => {
+    setDlBusy(true);
+    setErr(null);
+    try {
+      const blob = await cattsAudiobookDownload(cattsBookId);
+      saveBlobAsFile(blob, `${cattsBookId}.zip`);
+    } catch (e: any) {
+      setErr(e?.message || 'Error al descargar');
+    } finally {
+      setDlBusy(false);
+    }
+  };
+
   const ch = chapters[idx];
 
   return (
@@ -99,15 +163,31 @@ export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
         <div className="flex items-center gap-2 px-4 pt-3 pb-2">
           <CassetteTape size={16} className="text-amber-400 shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-widest text-amber-500/80">Audiolibro CatTS</div>
+            <div className="text-[10px] uppercase tracking-widest text-amber-500/80">Audiolibro CatTS · Pocket</div>
             <div className="truncate text-sm font-medium">{title || cattsBookId}</div>
           </div>
+          <button
+            type="button"
+            onClick={() => void downloadZip()}
+            disabled={dlBusy || loading || chapters.length === 0}
+            className="p-1.5 rounded-lg hover:bg-stone-800 text-stone-400 disabled:opacity-30"
+            aria-label="Descargar zip"
+            title="Descargar mp3 (zip)"
+          >
+            <Download size={16} className={dlBusy ? 'animate-pulse' : ''} />
+          </button>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-800 text-stone-400" aria-label="Cerrar">
             <X size={16} />
           </button>
         </div>
 
         {loading && <div className="px-4 pb-4 text-xs text-stone-400">Cargando capítulos…</div>}
+        {!loading && chapters.length === 0 && (
+          <div className="px-4 pb-4 text-xs text-amber-200/80">Bake en curso — aún no hay tracks. Reintenta en ~1 min.</div>
+        )}
+        {waitingNext && (
+          <div className="px-4 pb-2 text-xs text-amber-400/90">Esperando siguiente capítulo (poll 20s)…</div>
+        )}
         {err && <div className="px-4 pb-3 text-xs text-rose-400">{err}</div>}
 
         {!loading && chapters.length > 0 && (
@@ -129,7 +209,7 @@ export function AudiobookListenPanel({ cattsBookId, title, onClose }: Props) {
               </button>
               <button
                 type="button"
-                disabled={idx >= chapters.length - 1}
+                disabled={idx >= chapters.length - 1 && !waitingNext}
                 onClick={() => void playChapter(idx + 1)}
                 className="p-2 rounded-full bg-stone-800 disabled:opacity-30"
               >

@@ -55,6 +55,7 @@ import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
 import { sentencesFromPageHtml } from './utils/sentences';
 import { useLiveAudio } from './hooks/useLiveAudio';
+import { detectBookLang } from './utils/bookLang';
 import {
   pagesNeededAround,
   incompleteGhostPages,
@@ -159,7 +160,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.8';
+  const APP_VERSION = 'v2.10.9';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -172,8 +173,18 @@ export default function App() {
   const ghostPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Hooks Integration ---
-  const liveAudio = useLiveAudio('es');
+  const liveLang = detectBookLang(fileName);
+  const liveAudio = useLiveAudio(liveLang);
   const [showAudiobook, setShowAudiobook] = useState(false);
+  const prevFileForLiveRef = useRef(fileName);
+
+  // Stop live TTS only when switching books (not on first open / HMR noise)
+  useEffect(() => {
+    const prev = prevFileForLiveRef.current;
+    prevFileForLiveRef.current = fileName;
+    if (prev && fileName && prev !== fileName) liveAudio.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileName]);
 
   const {
     library, setLibrary,
@@ -854,7 +865,11 @@ export default function App() {
       window.getSelection()?.toString().trim() ||
       selectedTextMenu?.text?.trim() ||
       '';
-    const queue = sentencesFromPageHtml(pageHtml, sel || null);
+    const book = library.find((b) => b.filename === fileName);
+    const queue = sentencesFromPageHtml(pageHtml, sel || null, {
+      title: book?.title,
+      author: book?.author,
+    });
     if (queue.length === 0) {
       showToast('Sin oraciones');
       return;
@@ -1288,8 +1303,8 @@ export default function App() {
                       ? "bg-emerald-700 text-white"
                       : "text-stone-400 hover:text-white hover:bg-white/10"
                 )}
-                title={liveAudio.status === 'playing' ? 'Pausar audio' : 'Leer en voz alta (CATTS)'}
-                aria-label="Audio en vivo"
+                title={liveAudio.status === 'playing' ? 'Pausar audio' : `Leer en voz alta (CATTS · ${liveLang.toUpperCase()})`}
+                aria-label={`Audio en vivo ${liveLang}`}
               >
                 {liveAudio.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <Headphones size={16} />}
               </button>
