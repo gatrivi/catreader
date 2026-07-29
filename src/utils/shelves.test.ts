@@ -13,6 +13,8 @@ import {
   migrateShelvesToSparse,
   packIntoShelves,
   filterDeletedBooks,
+  placeOnNamedShelf,
+  BOOK_SHELF_PREFS,
   type ShelfSlots,
 } from './shelves';
 
@@ -106,5 +108,14 @@ describe('shelves sparse utils', () => {
       { filename: 'gone.pdf', title: 'Gone' },
     ];
     expect(filterDeletedBooks(books, ['gone.pdf']).map((b) => b.filename)).toEqual(['keep.pdf']);
+  });
+
+  it('placeOnNamedShelf creates shelf and seeds book', () => {
+    const shelves: ShelfSlots[] = [{ id: 's0', title: 'Church', bookIds: emptySlots() }];
+    const next = placeOnNamedShelf(shelves, 'Cats_Cloud_Crusader-Starter_Canon.txt', "Cat's Cloud Crusader");
+    expect(next).toHaveLength(2);
+    expect(next[1].title).toBe("Cat's Cloud Crusader");
+    expect(next[1].bookIds[0]).toBe('Cats_Cloud_Crusader-Starter_Canon.txt');
+    expect(BOOK_SHELF_PREFS['Cats_Cloud_Crusader-Starter_Canon.txt']).toBe("Cat's Cloud Crusader");
   });
 });

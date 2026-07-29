@@ -131,3 +131,37 @@ export function filterDeletedBooks<T extends { filename: string }>(
   const set = deletedFilenames instanceof Set ? deletedFilenames : new Set(deletedFilenames);
   return books.filter((b) => !set.has(b.filename));
 }
+
+/** Find shelf by title (case-insensitive) or append one; place book in first hole. */
+export function placeOnNamedShelf(
+  shelves: ShelfSlots[],
+  bookId: string,
+  title: string
+): ShelfSlots[] {
+  if (shelves.some((s) => s.bookIds.includes(bookId))) return shelves;
+  const want = title.toLowerCase();
+  let next = shelves.map((s) => ({ ...s, bookIds: [...s.bookIds] as SlotId[] }));
+  let target = next.find((s) => s.title.toLowerCase() === want);
+  if (!target) {
+    target = {
+      id: `shelf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      bookIds: emptySlots(),
+    };
+    next = [...next, target];
+  }
+  const placed = placeInFirstNull(target, bookId);
+  if (!placed) {
+    // ponytail: named shelf full → spill to emptiest (caller may prefer append)
+    const open = emptiestWithHole(next);
+    if (!open) return next;
+    const again = placeInFirstNull(open, bookId);
+    return again ? next.map((s) => (s.id === open.id ? again.shelf : s)) : next;
+  }
+  return next.map((s) => (s.id === target!.id ? placed.shelf : s));
+}
+
+/** ponytail: seed known books onto named shelves (localStorage only). */
+export const BOOK_SHELF_PREFS: Record<string, string> = {
+  'Cats_Cloud_Crusader-Starter_Canon.txt': "Cat's Cloud Crusader",
+};

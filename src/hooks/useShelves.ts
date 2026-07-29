@@ -13,6 +13,8 @@ import {
   reorderSparse,
   migrateShelvesToSparse,
   packIntoShelves,
+  placeOnNamedShelf,
+  BOOK_SHELF_PREFS,
   type SlotId,
 } from '../utils/shelves';
 
@@ -144,7 +146,8 @@ export function useShelves(library: Array<{ id: string }>) {
         bookIds: s.bookIds.map((id) => (id != null && libraryIds.has(id) ? id : null)),
       }));
       for (const book of unassigned) {
-        next = spillBook(next, book.id);
+        const pref = BOOK_SHELF_PREFS[book.id];
+        next = pref ? placeOnNamedShelf(next, book.id, pref) : spillBook(next, book.id);
       }
       return next;
     });
