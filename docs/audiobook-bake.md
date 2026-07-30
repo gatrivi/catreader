@@ -4,7 +4,7 @@
 
 | cattsBookId | book | notes |
 |-------------|------|-------|
-| KEEP_Cassian_Pocket | Cassian Conferences | progressive bake |
+| KEEP_Cassian_Conferences | Cassian Conferences | full Edge album (23 ch) |
 | KEEP_Entering_Jhana | Entering Jhana | |
 | KEEP_Right_Concentration | Right Concentration | |
 | KEEP_Reality_of_Being | Reality of Being | was mislabeled Salzmann_* |
@@ -15,7 +15,7 @@ Cassette only when album has ≥1 non-empty mp3. Stream + **Download zip** (`GET
 
 ## Orphans (album exists, not wired)
 
-KEEP_Cassian_Conferences (full), KEEP_Cassian_Conferences_VV, KEEP_Bakeoff_Smoke.
+KEEP_Cassian_Pocket (progressive Edge/Pocket bake), KEEP_Cassian_Conferences_VV, KEEP_Bakeoff_Smoke.
 
 ## Names fixed (earlier)
 
