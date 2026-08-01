@@ -40,7 +40,11 @@ const baseProps = {
   onUpdateShelfTitle: vi.fn(),
   onMoveBook: vi.fn(),
   onReorderBook: vi.fn(),
-coversHydrated: true,
+  coversHydrated: true,
+  pwaUpdate: { status: 'idle' as const, onCheckForUpdate: vi.fn() },
+  releaseNotesVersion: 'v2.10.15',
+  releaseNotesUnread: true,
+  onOpenReleaseNotes: vi.fn(),
 };
 
 describe('LibraryView', () => {
@@ -62,5 +66,12 @@ describe('LibraryView', () => {
     fireEvent.click(screen.getByLabelText('Settings'));
     fireEvent.click(screen.getByText('Sendero de Santos'));
     expect(screen.getByText('Sendero de los Santos')).toBeInTheDocument();
+  });
+
+  it('shows update and release-note actions in Settings', () => {
+    render(<LibraryView {...baseProps} />);
+    fireEvent.click(screen.getByLabelText('Settings'));
+    expect(screen.getByText('Descargar actualización')).toBeInTheDocument();
+    expect(screen.getByText('Novedades v2.10.15')).toBeInTheDocument();
   });
 });

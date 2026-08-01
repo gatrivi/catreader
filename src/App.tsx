@@ -55,6 +55,7 @@ import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
 import { sentencesFromPageHtml } from './utils/sentences';
 import { useLiveAudio } from './hooks/useLiveAudio';
+import { usePwaUpdate } from './hooks/usePwaUpdate';
 import { detectBookLang } from './utils/bookLang';
 import {
   pagesNeededAround,
@@ -68,6 +69,8 @@ import {
   isGhostComplete,
 } from './utils/ghostText';
 import { loadLocalProgressMap } from './utils/localProgress';
+import { ReleaseNotesModal } from './components/ReleaseNotesModal';
+import { APP_VERSION, RELEASE_NOTES_SEEN_KEY } from './utils/releaseNotes';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -102,7 +105,7 @@ declare var gapi: any;
 
 /**
  * CatReader - Main Application Component
- * v2.4.1 (Modularized)
+ * v2.10.15
  */
 export default function App() {
   // --- State Management ---
@@ -160,7 +163,21 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.14';
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const [releaseNotesUnread, setReleaseNotesUnread] = useState(
+    () => localStorage.getItem(RELEASE_NOTES_SEEN_KEY) !== 'true',
+  );
+  const pwaUpdate = usePwaUpdate();
+
+  useEffect(() => {
+    if (releaseNotesUnread) setShowReleaseNotes(true);
+  }, [releaseNotesUnread]);
+
+  const closeReleaseNotes = useCallback(() => {
+    localStorage.setItem(RELEASE_NOTES_SEEN_KEY, 'true');
+    setReleaseNotesUnread(false);
+    setShowReleaseNotes(false);
+  }, []);
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1435,6 +1452,10 @@ export default function App() {
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 
             savedBookCovers={savedBookCovers}
+            pwaUpdate={{ status: pwaUpdate.status, onCheckForUpdate: pwaUpdate.checkForUpdate }}
+            releaseNotesVersion={APP_VERSION}
+            releaseNotesUnread={releaseNotesUnread}
+            onOpenReleaseNotes={() => setShowReleaseNotes(true)}
             onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); navigator.clipboard.writeText(buildBookShareUrl(shelf?.title || 'library', book.filename)); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={(id) => {
               const result = removeShelf(id);
               if (result && result.count > 0) {
@@ -1689,6 +1710,7 @@ export default function App() {
         isSyncing={isSyncing}
       />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
+      <ReleaseNotesModal isOpen={showReleaseNotes} onClose={closeReleaseNotes} />
     </div>
   );
 }

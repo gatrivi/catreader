@@ -1,5 +1,10 @@
 # Completed Tasks for Review
 
+## PWA Updates & Release Notes (v2.10.15)
+- [x] Android/PWA service worker keeps `autoUpdate`; Settings can trigger an explicit update check/download.
+- [x] New-version notes open once after an update, close by clicking outside, and remain available from Settings.
+- [x] Added regression coverage for the Settings actions and modal outside-click behavior.
+
 The following features and fixes have been implemented and are ready for review:
 
 ## PDF Performance & Scrolling (The "Hell on Earth" Fix)

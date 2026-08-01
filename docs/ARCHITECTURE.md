@@ -1,4 +1,4 @@
-# CatReader architecture (v2.9.3)
+# CatReader architecture (v2.10.15)
 
 TLDR map of the live app. Prefer this over README fluff / old session notes.
 
@@ -33,6 +33,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `useGoogleDrive` | Drive picker + upload |
 | `usePaperTexture` | Load paper manifest + prefetch stains for nearby pages |
 | `useLiveAudio` | Page/selection → CATTS `/tts/live`, play + IDB cache |
+| `usePwaUpdate` | Service worker registration + manual update check |
 
 ## Components (`src/components/`)
 
@@ -47,6 +48,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `ProfileModal` | Portable profile (username/PIN → SHA-256 uid) |
 | `PaperLayer` | Grain + stain overlay when theme=`paper` |
 | `SadMonkIcon` | Empty / error art |
+| `ReleaseNotesModal` | Version notes; auto-opens after an update and remains in Settings |
 
 ## Services
 

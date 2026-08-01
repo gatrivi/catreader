@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route, Download, RefreshCw } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { SaintsTrailView } from './SaintsTrailView';
 import { authService } from '../services/authService';
@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Shelf } from '../hooks/useShelves';
+import type { PwaUpdateStatus } from '../hooks/usePwaUpdate';
 import { filterLibraryBooks } from '../utils/reader';
 
 const LIBRARY_MODE_KEY = 'catreader_library_mode';
@@ -68,6 +69,13 @@ interface LibraryViewProps {
   onAddShelf?: () => void;
   onRemoveShelf?: (shelfId: string) => { count: number; destinationIndex: number } | null | void;
   coversHydrated?: boolean;
+  pwaUpdate?: {
+    status: PwaUpdateStatus;
+    onCheckForUpdate: () => void | Promise<void>;
+  };
+  releaseNotesVersion?: string;
+  releaseNotesUnread?: boolean;
+  onOpenReleaseNotes?: () => void;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -107,6 +115,10 @@ export const LibraryView = ({
   onAddShelf,
   onRemoveShelf,
   coversHydrated = false,
+  pwaUpdate,
+  releaseNotesVersion,
+  releaseNotesUnread = false,
+  onOpenReleaseNotes,
   }: LibraryViewProps) => {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -606,6 +618,38 @@ export const LibraryView = ({
                           </button>
                         )}
                       </div>
+
+                      {(pwaUpdate || onOpenReleaseNotes) && (
+                        <div className="pt-2 border-t border-white/5 space-y-2">
+                          <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">CatReader</p>
+                          {pwaUpdate && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={pwaUpdate.onCheckForUpdate}
+                                disabled={pwaUpdate.status === 'checking'}
+                                className="w-full flex items-center gap-2 bg-emerald-900/30 text-emerald-200 hover:bg-emerald-800/50 hover:text-white transition-all px-3 py-2 rounded-xl text-[10px] font-bold border border-emerald-400/10 disabled:opacity-50"
+                              >
+                                {pwaUpdate.status === 'checking' ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+                                {pwaUpdate.status === 'checking' ? 'Buscando actualización...' : 'Descargar actualización'}
+                              </button>
+                              {pwaUpdate.status === 'up-to-date' && <p className="text-[9px] text-emerald-400">CatReader ya está al día.</p>}
+                              {pwaUpdate.status === 'unavailable' && <p className="text-[9px] text-stone-500">Disponible cuando la PWA esté instalada.</p>}
+                              {pwaUpdate.status === 'error' && <p className="text-[9px] text-red-300">No se pudo comprobar. Intenta de nuevo.</p>}
+                            </>
+                          )}
+                          {onOpenReleaseNotes && (
+                            <button
+                              type="button"
+                              onClick={() => { onOpenReleaseNotes(); setShowSettings(false); }}
+                              className="w-full flex items-center justify-between gap-2 bg-stone-900 text-stone-300 hover:bg-stone-800 hover:text-white transition-all px-3 py-2 rounded-xl text-[10px] font-bold border border-white/5"
+                            >
+                              <span className="flex items-center gap-2"><Sparkles size={12} /> Novedades {releaseNotesVersion}</span>
+                              {releaseNotesUnread && <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-white">Nuevo</span>}
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* AI Actions */}
                       {(onMagicEnrich || onOpenLibraryEnrich || onConsolidate) && (
