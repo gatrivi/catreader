@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route, Download, RefreshCw } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route, ScrollText, Download, RefreshCw, Flag } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { SaintsTrailView } from './SaintsTrailView';
 import { authService } from '../services/authService';
@@ -76,6 +76,9 @@ interface LibraryViewProps {
   releaseNotesVersion?: string;
   releaseNotesUnread?: boolean;
   onOpenReleaseNotes?: () => void;
+  onOpenFeed?: () => void;
+  onOpenReports?: () => void;
+  fragmentReportCount?: number;
 }
 
 const RACKS_PER_PAGE = 4; // Not used anymore but kept for compatibility if needed
@@ -119,6 +122,9 @@ export const LibraryView = ({
   releaseNotesVersion,
   releaseNotesUnread = false,
   onOpenReleaseNotes,
+  onOpenFeed,
+  onOpenReports,
+  fragmentReportCount = 0,
   }: LibraryViewProps) => {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -504,6 +510,17 @@ export const LibraryView = ({
           
           <div className="flex items-center gap-1.5">
             <div className="flex items-center gap-1.5 pr-1.5 border-r border-white/5">
+              {onOpenFeed && (
+                <button
+                  onClick={onOpenFeed}
+                  className="flex items-center gap-1.5 bg-indigo-900/60 text-indigo-200 hover:bg-indigo-800 hover:text-white transition-all px-2.5 py-1.5 rounded-xl text-[10px] font-bold border border-indigo-400/20 shrink-0"
+                  aria-label="Descubrir fragmentos"
+                  title="Descubrir fragmentos"
+                >
+                  <ScrollText size={12} />
+                  <span className="hidden md:inline">Descubrir</span>
+                </button>
+              )}
               <button 
                 onClick={onGoogleDrive}
                 className="flex items-center gap-1.5 bg-stone-900 text-stone-400 hover:text-white hover:bg-stone-800 transition-all px-2.5 py-1.5 rounded-xl text-[10px] font-bold border border-white/5 shrink-0"
@@ -648,6 +665,19 @@ export const LibraryView = ({
                               {releaseNotesUnread && <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-white">Nuevo</span>}
                             </button>
                           )}
+                        </div>
+                      )}
+
+                      {onOpenReports && (
+                        <div className="pt-2 border-t border-white/5 space-y-2">
+                          <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Mantenimiento</p>
+                          <button
+                            onClick={() => { onOpenReports(); setShowSettings(false); }}
+                            className="w-full flex items-center justify-between gap-2 bg-stone-900 text-stone-300 hover:bg-stone-800 hover:text-white transition-all px-3 py-2 rounded-xl text-[10px] font-bold border border-white/5"
+                          >
+                            <span className="flex items-center gap-2"><Flag size={12} /> Reportes</span>
+                            <span className={cn("text-[9px] uppercase tracking-widest", fragmentReportCount ? "text-amber-400" : "text-stone-600")}>{fragmentReportCount || 'Ninguno'}</span>
+                          </button>
                         </div>
                       )}
 
@@ -1141,4 +1171,3 @@ function ShelfTitle({ title, onChange }: { title: string; onChange: (title: stri
     </button>
   );
 }
-
