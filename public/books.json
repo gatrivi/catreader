@@ -390,6 +390,18 @@
     "svg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 600'>\n  <defs>\n    <linearGradient id='bgGrad' x1='0%' y1='0%' x2='100%' y2='100%'>\n      <stop offset='0%' style='stop-color:#1a2521;stop-opacity:1' />\n      <stop offset='100%' style='stop-color:#0d1412;stop-opacity:1' />\n    </linearGradient>\n    <linearGradient id='goldGrad' x1='0%' y1='0%' x2='100%' y2='100%'>\n      <stop offset='0%' style='stop-color:#bf953f;stop-opacity:1' />\n      <stop offset='25%' style='stop-color:#fcf6ba;stop-opacity:1' />\n      <stop offset='50%' style='stop-color:#b38728;stop-opacity:1' />\n      <stop offset='75%' style='stop-color:#fbf5b7;stop-opacity:1' />\n      <stop offset='100%' style='stop-color:#aa771c;stop-opacity:1' />\n    </linearGradient>\n    <radialGradient id='halo' cx='50%' cy='35%' r='50%'>\n      <stop offset='0%' style='stop-color:#d4af37;stop-opacity:0.15' />\n      <stop offset='100%' style='stop-color:#000000;stop-opacity:0' />\n    </radialGradient>\n  </defs>\n\n  <!-- Background -->\n  <rect width='400' height='600' fill='url(#bgGrad)' />\n  <rect width='400' height='600' fill='url(#halo)' />\n\n  <!-- Decorative Border Arch -->\n  <path d='M40,560 V200 C40,100 120,40 200,40 S360,100 360,200 V560' fill='none' stroke='url(#goldGrad)' stroke-width='1.5' opacity='0.6' />\n  <path d='M50,550 V205 C50,115 125,55 200,55 S350,115 350,205 V550' fill='none' stroke='url(#goldGrad)' stroke-width='0.5' opacity='0.4' />\n\n  <!-- Monastic Motif (Stylized Greek Cross) -->\n  <g transform='translate(200, 140)' opacity='0.8'>\n    <path d='M-30,-5 L-5,-5 L-5,-30 L5,-30 L5,-5 L30,-5 L30,5 L5,5 L5,35 L-5,35 L-5,5 L-30,5 Z' fill='url(#goldGrad)' />\n    <circle cx='0' cy='0' r='40' fill='none' stroke='url(#goldGrad)' stroke-width='1' stroke-dasharray='2,4' />\n  </g>\n\n  <!-- Typography -->\n  <text x='200' y='280' text-anchor='middle' fill='url(#goldGrad)' font-family='serif' font-size='32' font-weight='bold' style='letter-spacing: 2px;'>ST. BASIL</text>\n  <text x='200' y='320' text-anchor='middle' fill='url(#goldGrad)' font-family='serif' font-size='18' font-style='italic' style='letter-spacing: 4px;'>AND HIS RULE</text>\n  \n  <line x1='150' y1='350' x2='250' y2='350' stroke='url(#goldGrad)' stroke-width='0.5' />\n\n  <text x='200' y='385' text-anchor='middle' fill='#d1d1d1' font-family='serif' font-size='14' style='letter-spacing: 1px;'>A STUDY IN EARLY</text>\n  <text x='200' y='405' text-anchor='middle' fill='#d1d1d1' font-family='serif' font-size='14' style='letter-spacing: 1px;'>MONASTICISM</text>\n\n  <g transform='translate(200, 520)'>\n    <text x='0' y='0' text-anchor='middle' fill='url(#goldGrad)' font-family='serif' font-size='16' font-weight='300' style='letter-spacing: 3px;'>E. F. MORISON</text>\n    <path d='M-40,10 H40' stroke='url(#goldGrad)' stroke-width='0.5' />\n  </g>\n\n  <!-- Texture Overlays -->\n  <rect width='400' height='600' fill='url(#goldGrad)' opacity='0.03' style='mix-blend-mode:overlay' />\n</svg>"
   },
   {
+    "id": "Saint_Louis_de_Montfort_Collection-7_Books.pdf",
+    "filename": "Saint_Louis_de_Montfort_Collection-7_Books.pdf",
+    "type": "pdf",
+    "title": "The Saint Louis de Montfort Collection (7 Books)",
+    "author": "St. Louis de Montfort",
+    "coverSource": {
+      "type": "openlibrary",
+      "url": "https://covers.openlibrary.org/b/id/2114298-L.jpg",
+      "updatedAt": 1785543983383
+    }
+  },
+  {
     "id": "Sermons_for_All_Sundays-Liguori.pdf",
     "filename": "Sermons_for_All_Sundays-Liguori.pdf",
     "type": "pdf",
@@ -557,5 +569,17 @@
     "type": "pdf",
     "title": "Unravelling the Mysteries of Mind and Body Through Abhidhamma",
     "author": "Sayalay Susila"
+  },
+  {
+    "id": "Visits_to_the_Most_Holy_Sacrament-Liguori.pdf",
+    "filename": "Visits_to_the_Most_Holy_Sacrament-Liguori.pdf",
+    "type": "pdf",
+    "title": "Visits to the Most Holy Sacrament and to Most Holy Mary",
+    "author": "St. Alphonsus Liguori",
+    "coverSource": {
+      "type": "openlibrary",
+      "url": "https://covers.openlibrary.org/b/id/9659631-L.jpg",
+      "updatedAt": 1785543983383
+    }
   }
 ]
