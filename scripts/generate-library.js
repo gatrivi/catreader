@@ -40,6 +40,8 @@ const books = files
       author: existing?.author,
       svg: existing?.svg,
       ...(existing?.audio ? { audio: existing.audio } : {}),
+      ...(existing?.cattsBookId ? { cattsBookId: existing.cattsBookId } : {}),
+      ...(existing?.coverSource ? { coverSource: existing.coverSource } : {}),
       ...(paper ? { paper } : {})
     };
   });

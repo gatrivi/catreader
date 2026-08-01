@@ -160,7 +160,7 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const APP_VERSION = 'v2.10.10';
+  const APP_VERSION = 'v2.10.11';
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
