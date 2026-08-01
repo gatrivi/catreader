@@ -232,6 +232,18 @@
     }
   },
   {
+    "id": "La_Obediencia-San_Ignacio_de_Loyola.pdf",
+    "filename": "La_Obediencia-San_Ignacio_de_Loyola.pdf",
+    "type": "pdf",
+    "title": "La Obediencia de San Ignacio de Loyola",
+    "author": "San Ignacio de Loyola",
+    "coverSource": {
+      "type": "openlibrary",
+      "url": "https://covers.openlibrary.org/b/id/11890382-L.jpg",
+      "updatedAt": 1785544522224
+    }
+  },
+  {
     "id": "Life_of_Antony-Athanasius.txt",
     "filename": "Life_of_Antony-Athanasius.txt",
     "type": "txt",
@@ -329,6 +341,18 @@
     "type": "pdf",
     "title": "Psychological Commentaries on Gurdjieff & Ouspensky, Vol. 6",
     "author": "Maurice Nicoll"
+  },
+  {
+    "id": "Obras_Completas-San_Ignacio_de_Loyola.pdf",
+    "filename": "Obras_Completas-San_Ignacio_de_Loyola.pdf",
+    "type": "pdf",
+    "title": "Obras Completas de San Ignacio de Loyola",
+    "author": "San Ignacio de Loyola",
+    "coverSource": {
+      "type": "openlibrary",
+      "url": "https://covers.openlibrary.org/b/id/13555097-L.jpg",
+      "updatedAt": 1785544522224
+    }
   },
   {
     "id": "passiontide and holy week.pdf",
