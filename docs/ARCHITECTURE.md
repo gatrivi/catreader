@@ -1,4 +1,4 @@
-# CatReader architecture (v2.10.16)
+# CatReader architecture (v2.10.17)
 
 TLDR map of the live app. Prefer this over README fluff / old session notes.
 
@@ -20,6 +20,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `src/firebase.ts` | Firestore / Auth / Storage |
 | `public/books.json` | Build-time library index |
 | `public/books/*` | Static book files |
+| `public/reader/*.json` | Build-time page text; fetched before the original PDF |
 | `public/books/paper/<id>/` | Paper Soul bake assets |
 | `public/paper/grain.svg` | Shared paper grain |
 
@@ -42,7 +43,8 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `LibraryView` | Paged 4×4 racks, DnD, search (`/`), wallpaper, highlights strip |
 | `BookCover` | Cover render, format badge, open |
 | `ReadingFeedView` | `/feed` Discover stream of book fragments; opens the source locator |
-| `ReaderView` | Virtualized PDF scroll, TXT/ghost text, PaperLayer |
+| `ReaderView` | Lazy PDF/EPUB viewer, PaperLayer |
+| `TextReaderView` | Lightweight page-text reader; used before PDF.js |
 | `EpubView` | EPUB.js continuous/scroll + CFI |
 | `PageInput` | Jump-to-page |
 | `EditModal` | Title/author/cover edit |
@@ -80,7 +82,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 |------------|------|
 | `predev` / `prebuild` | `generate-library.js` → `public/books.json` (+ `paper` path if baked) |
 | `dev` | Express+Vite |
-| `generate-feed.js` | Build-time `public/feed.json` from readable book passages |
+| `generate-feed.js` | Build-time `public/feed.json` + `public/reader/*.json` |
 | `build` | Vite build + `post-build.js` |
 | `enrich` | Gemini OCR + SVG covers CLI |
 | `paper-bake` | Stand-in Paper Soul bake → `public/books/paper/<id>/` |
@@ -89,7 +91,8 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 
 ## Data model (short)
 
-- **Book (books.json):** `{ id, filename, type, title?, author?, svg?, paper? }`
+- **Book (books.json):** `{ id, filename, type, title?, author?, svg?, paper?, reader? }`
+- `reader` points to a small `{ version, type, pages[] }` JSON asset generated from PDFs.
 - **Shelf:** `{ id, title, bookIds: string[] }` — ids = filenames
 - **Progress:** `{ page, zoom: number|{mobile,tablet,desktop}, theme, scrollRatio, epubCfi?, updatedAt }`
 - **Auth path:** portable hash if logged in, else Firebase anonymous uid

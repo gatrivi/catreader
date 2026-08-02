@@ -2,7 +2,7 @@
 
 Distraction-free PDF / EPUB / TXT reader. Progress syncs across devices (Firebase). No login required (anonymous + optional portable profile).
 
-**Version:** see badge in app UI (`APP_VERSION` in `src/utils/releaseNotes.ts`) — currently **v2.10.16**.
+**Version:** see badge in app UI (`APP_VERSION` in `src/utils/releaseNotes.ts`) — currently **v2.10.17**.
 
 ## Docs map
 
@@ -72,5 +72,6 @@ Static Vite site (`npm run build` → `dist`). Works on Vercel/Netlify. Books mu
 - Zoom per device class (mobile / tablet / desktop)
 - Deep links + share URLs
 - **Descubrir**: feed de fragmentos de PDF/EPUB/TXT con retorno al libro
+- PDF: abre primero en **Modo lector**; el original solo se descarga al elegirlo
 - Google Drive pick/upload
 - Cover edit: Google Books / AI / paste / page crop

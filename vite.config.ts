@@ -44,7 +44,15 @@ export default defineConfig(({mode}) => {
         workbox: {
           // Exclude books from precache to avoid build errors and huge initial downloads
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
-          globIgnores: ['**/books/*.pdf', '**/books/*.epub', '**/feed.json'],
+          globIgnores: [
+            '**/books/*.pdf',
+            '**/books/*.epub',
+            '**/feed.json',
+            '**/reader/*.json',
+            '**/*pdfjs*.js',
+            '**/ReaderView-*.js',
+            '**/pdf-*.js',
+          ],
           // Use runtime caching for books instead
           runtimeCaching: [
             {
@@ -76,6 +84,20 @@ export default defineConfig(({mode}) => {
                 },
               },
             },
+            {
+              urlPattern: /\/reader\/.*\.json$/,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'reader-text',
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
           ],
         }
       })
@@ -85,7 +107,9 @@ export default defineConfig(({mode}) => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
-              if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
+              // Keep the reader's heavy document engines out of the startup graph.
+              // They are loaded only when a book is opened or the user requests PDF.
+              if (id.includes('pdfjs-dist') || id.includes('react-pdf') || id.includes('epubjs')) return;
               if (id.includes('motion') || id.includes('framer-motion')) return 'vendor-motion';
               if (id.includes('lucide-react')) return 'vendor-lucide';
               if (id.includes('react')) return 'vendor-react';

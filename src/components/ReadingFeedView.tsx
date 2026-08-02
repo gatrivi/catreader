@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
-  Flag,
   Library,
   Loader2,
+  RotateCcw,
   RefreshCw,
-  SkipForward,
   X,
 } from 'lucide-react';
 import type { LibraryBook } from '../hooks/useLibrary';
 import {
+  dedupeFeedItems,
+  reorderFeedIdsByBook,
   shuffleFeedIds,
   type ReadingFeedItem,
 } from '../utils/readingFeed';
@@ -25,19 +26,20 @@ interface ReadingFeedViewProps {
   library: LibraryBook[];
   covers?: Record<string, string>;
   onOpenItem: (item: ReadingFeedItem, book: LibraryBook) => void;
-  onWarmBook: (book: LibraryBook) => void;
   onBack: () => void;
   appVersion?: string;
   onReportSaved?: () => void;
 }
 
-const ORDER_KEY = 'catreader_reading_feed_order';
-const SCROLL_KEY = 'catreader_reading_feed_scroll';
+const FEED_STATE_VERSION = 2;
+const ORDER_KEY = `catreader_reading_feed_order_v${FEED_STATE_VERSION}`;
+const SCROLL_KEY = `catreader_reading_feed_scroll_v${FEED_STATE_VERSION}`;
 const PREFERENCES_KEY = 'catreader_reading_feed_preferences';
 const INITIAL_ITEMS = 18;
 const LOAD_MORE = 12;
 
 type FeedPreferences = {
+  version?: number;
   boostedBooks: string[];
   deprioritizedBooks: string[];
   savedItems: string[];
@@ -46,6 +48,9 @@ type FeedPreferences = {
 function readFeedPreferences(): FeedPreferences {
   try {
     const parsed = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}') as Partial<FeedPreferences>;
+    if (parsed.version !== FEED_STATE_VERSION) {
+      return { boostedBooks: [], deprioritizedBooks: [], savedItems: [] };
+    }
     const strings = (value: unknown) => (
       Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
     );
@@ -61,22 +66,10 @@ function readFeedPreferences(): FeedPreferences {
 
 function writeFeedPreferences(preferences: FeedPreferences) {
   try {
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ version: FEED_STATE_VERSION, ...preferences }));
   } catch {
     // Private browsing or a full store should not block reading.
   }
-}
-
-function reorderBookIds(
-  order: string[],
-  catalog: ReadingFeedItem[],
-  filename: string,
-  direction: 'more' | 'less'
-) {
-  const bookIds = new Set(catalog.filter((item) => item.filename === filename).map((item) => item.id));
-  const matching = order.filter((id) => bookIds.has(id));
-  const rest = order.filter((id) => !bookIds.has(id));
-  return direction === 'more' ? [...matching, ...rest] : [...rest, ...matching];
 }
 
 function applyFeedPreferences(
@@ -86,10 +79,10 @@ function applyFeedPreferences(
 ) {
   let nextOrder = order;
   preferences.boostedBooks.forEach((filename) => {
-    nextOrder = reorderBookIds(nextOrder, catalog, filename, 'more');
+    nextOrder = reorderFeedIdsByBook(nextOrder, catalog, filename, 'more');
   });
   preferences.deprioritizedBooks.forEach((filename) => {
-    nextOrder = reorderBookIds(nextOrder, catalog, filename, 'less');
+    nextOrder = reorderFeedIdsByBook(nextOrder, catalog, filename, 'less');
   });
   return nextOrder;
 }
@@ -111,13 +104,11 @@ export function ReadingFeedView({
   library,
   covers = {},
   onOpenItem,
-  onWarmBook,
   onBack,
   appVersion = 'unknown',
   onReportSaved,
 }: ReadingFeedViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const warmedBooksRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<ReadingFeedItem[]>([]);
   const [order, setOrder] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
@@ -146,7 +137,7 @@ export function ReadingFeedView({
       })
       .then((payload: { items?: ReadingFeedItem[] }) => {
         if (cancelled) return;
-        const nextCatalog = (payload.items || []).filter((item) => bookMap.has(item.filename));
+        const nextCatalog = dedupeFeedItems((payload.items || []).filter((item) => bookMap.has(item.filename)));
         const byId = new Map(nextCatalog.map((item) => [item.id, item]));
         const storedOrder = sessionStorage.getItem(ORDER_KEY);
         let nextOrder: string[];
@@ -213,12 +204,6 @@ export function ReadingFeedView({
     }
   };
 
-  const warmOnce = (book: LibraryBook) => {
-    if (warmedBooksRef.current.has(book.filename)) return;
-    warmedBooksRef.current.add(book.filename);
-    onWarmBook(book);
-  };
-
   const updatePreferences = (update: (current: FeedPreferences) => FeedPreferences) => {
     const next = update(preferencesRef.current);
     preferencesRef.current = next;
@@ -244,7 +229,7 @@ export function ReadingFeedView({
       };
     });
     setOrder((currentOrder) => {
-      const nextOrder = reorderBookIds(currentOrder, catalog, item.filename, direction);
+      const nextOrder = reorderFeedIdsByBook(currentOrder, catalog, item.filename, direction);
       sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
       return nextOrder;
     });
@@ -257,10 +242,10 @@ export function ReadingFeedView({
     setOrder((currentOrder) => {
       const nextOrder = currentOrder.filter((id) => id !== item.id);
       sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
+      if (nextOrder.length === 0) setError('No quedan fragmentos. Mezclá para empezar de nuevo.');
       return nextOrder;
     });
-    if (order.length <= 1) setError('No quedan fragmentos. Mezclá para empezar de nuevo.');
-    setReportMessage('Fragmento salteado.');
+    setReportMessage('Siguiente fragmento. No cambiaste tus preferencias.');
   };
 
   const toggleSaved = (item: ReadingFeedItem) => {
@@ -273,6 +258,14 @@ export function ReadingFeedView({
   };
 
   const refresh = () => {
+    sessionStorage.removeItem(ORDER_KEY);
+    sessionStorage.removeItem(`${ORDER_KEY}:seed`);
+    sessionStorage.removeItem(SCROLL_KEY);
+    window.location.reload();
+  };
+
+  const resetFeedPreferences = () => {
+    localStorage.removeItem(PREFERENCES_KEY);
     sessionStorage.removeItem(ORDER_KEY);
     sessionStorage.removeItem(`${ORDER_KEY}:seed`);
     sessionStorage.removeItem(SCROLL_KEY);
@@ -325,6 +318,15 @@ export function ReadingFeedView({
           >
             <RefreshCw size={16} />
           </button>
+          <button
+            type="button"
+            onClick={resetFeedPreferences}
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-stone-400 hover:bg-white/10 hover:text-amber-300"
+            aria-label="Restablecer preferencias del feed"
+            title="Restablecer preferencias del feed"
+          >
+            <RotateCcw size={16} />
+          </button>
         </div>
       </header>
       {reportMessage && <p role="status" className="absolute bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-full border border-emerald-500/20 bg-stone-900/95 px-4 py-2 text-center text-xs text-emerald-300 shadow-xl">{reportMessage}</p>}
@@ -357,7 +359,6 @@ export function ReadingFeedView({
                     shareUrl={shareUrl}
                     saved={preferences.savedItems.includes(item.id)}
                     onOpenItem={onOpenItem}
-                    onWarmBook={warmOnce}
                     onMore={(nextItem) => setBookTaste(nextItem, 'more')}
                     onSkip={skipItem}
                     onLess={(nextItem) => setBookTaste(nextItem, 'less')}

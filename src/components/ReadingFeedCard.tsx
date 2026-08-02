@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   ArrowUpRight,
   BookOpen,
@@ -29,7 +29,6 @@ export interface ReadingFeedCardProps {
   shareUrl?: string;
   saved: boolean;
   onOpenItem: (item: ReadingFeedItem, book: LibraryBook) => void;
-  onWarmBook: (book: LibraryBook) => void;
   onMore: (item: ReadingFeedItem) => void;
   onSkip: (item: ReadingFeedItem) => void;
   onLess: (item: ReadingFeedItem) => void;
@@ -45,7 +44,6 @@ export function ReadingFeedCard({
   shareUrl,
   saved,
   onOpenItem,
-  onWarmBook,
   onMore,
   onSkip,
   onLess,
@@ -57,14 +55,7 @@ export function ReadingFeedCard({
   const { manifest, active, grainUrl } = usePaperTexture(book.paper, paperPage, true);
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
-  const warmedRef = useRef(false);
   const artSource = resolveArtSource(coverSrc || book.svg);
-
-  const warmBook = () => {
-    if (warmedRef.current) return;
-    warmedRef.current = true;
-    onWarmBook(book);
-  };
 
   const copyFragment = async () => {
     if (copying) return;
@@ -108,7 +99,7 @@ export function ReadingFeedCard({
               <p className='truncate text-xs font-semibold'>{item.author || 'Autor desconocido'}</p>
               <p className='feed-paper-hint'>Usá Abrir para leer en el libro</p>
             </div>
-            <button type='button' className='feed-paper-open' onPointerDown={warmBook} onMouseEnter={warmBook} onClick={(event) => { event.stopPropagation(); onOpenItem(item, book); }} aria-label={'Abrir ' + item.title + ' en el libro'}>
+            <button type='button' className='feed-paper-open' onClick={(event) => { event.stopPropagation(); onOpenItem(item, book); }} aria-label={'Abrir ' + item.title + ' en el libro'}>
               <span>Abrir</span>
               <ArrowUpRight size={16} />
             </button>
@@ -117,11 +108,11 @@ export function ReadingFeedCard({
         <div className='feed-paper-actions'>
           <button type='button' onClick={() => onMore(item)} aria-label='Más fragmentos de este libro' title='Ver más fragmentos de este libro'>
             <ThumbsUp size={14} />
-            <span>Más así</span>
+            <span>Más libro</span>
           </button>
-          <button type='button' onClick={() => onSkip(item)} aria-label='Otro fragmento' title='Saltar este fragmento'>
+          <button type='button' onClick={() => onSkip(item)} aria-label='Ver siguiente fragmento' title='Ver el siguiente fragmento; no cambia tus preferencias'>
             <SkipForward size={14} />
-            <span>Otro</span>
+            <span>Siguiente</span>
           </button>
           <button type='button' onClick={() => onToggleSaved(item)} aria-label={saved ? 'Quitar de guardados' : 'Guardar fragmento'} aria-pressed={saved} title='Guardar en este dispositivo'>
             {saved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
@@ -133,7 +124,7 @@ export function ReadingFeedCard({
           </button>
           <button type='button' onClick={() => onLess(item)} aria-label='Menos fragmentos de este libro' title='Poner este libro al final del feed'>
             <ThumbsDown size={14} />
-            <span>Menos</span>
+            <span>Menos libro</span>
           </button>
         </div>
         <div className='feed-paper-report'>
