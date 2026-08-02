@@ -43,6 +43,57 @@ export function shuffleFeedIds(items: ReadingFeedItem[], seed: number): string[]
   return ids;
 }
 
+/** Drop exact repeated passages from the same source book. */
+export function dedupeFeedItems(items: ReadingFeedItem[]): ReadingFeedItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const text = item.text.trim().replace(/\s+/g, ' ');
+    if (!text) return false;
+    const key = `${item.filename}\u0000${text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Apply a book preference without creating a long same-book run.
+ * “More” promotes one passage and then spaces the rest roughly one in four.
+ */
+export function reorderFeedIdsByBook(
+  order: string[],
+  catalog: ReadingFeedItem[],
+  filename: string,
+  direction: 'more' | 'less'
+): string[] {
+  const itemsById = new Map(catalog.map((item) => [item.id, item]));
+  const matching = order.filter((id) => itemsById.get(id)?.filename === filename);
+  const rest = order.filter((id) => itemsById.get(id)?.filename !== filename);
+
+  if (direction === 'less' || matching.length === 0 || rest.length === 0) {
+    return direction === 'less' ? [...rest, ...matching] : [...matching, ...rest];
+  }
+
+  const result = [matching[0]];
+  let matchingIndex = 1;
+  let restIndex = 0;
+  let restSinceMatch = 0;
+
+  while (matchingIndex < matching.length || restIndex < rest.length) {
+    if (matchingIndex < matching.length && restIndex < rest.length && restSinceMatch >= 3) {
+      result.push(matching[matchingIndex++]);
+      restSinceMatch = 0;
+    } else if (restIndex < rest.length) {
+      result.push(rest[restIndex++]);
+      restSinceMatch += 1;
+    } else {
+      result.push(matching[matchingIndex++]);
+    }
+  }
+
+  return result;
+}
+
 export function feedLocationLabel(locator: FeedLocator): string {
   if (locator.kind === 'pdf') return locator.page ? `p. ${locator.page}` : 'PDF';
   if (locator.kind === 'epub') return locator.label || 'capítulo';

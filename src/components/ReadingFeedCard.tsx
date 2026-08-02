@@ -108,11 +108,11 @@ export function ReadingFeedCard({
         <div className='feed-paper-actions'>
           <button type='button' onClick={() => onMore(item)} aria-label='Más fragmentos de este libro' title='Ver más fragmentos de este libro'>
             <ThumbsUp size={14} />
-            <span>Más así</span>
+            <span>Más libro</span>
           </button>
-          <button type='button' onClick={() => onSkip(item)} aria-label='Otro fragmento' title='Saltar este fragmento'>
+          <button type='button' onClick={() => onSkip(item)} aria-label='Ver siguiente fragmento' title='Ver el siguiente fragmento; no cambia tus preferencias'>
             <SkipForward size={14} />
-            <span>Otro</span>
+            <span>Siguiente</span>
           </button>
           <button type='button' onClick={() => onToggleSaved(item)} aria-label={saved ? 'Quitar de guardados' : 'Guardar fragmento'} aria-pressed={saved} title='Guardar en este dispositivo'>
             {saved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
@@ -124,7 +124,7 @@ export function ReadingFeedCard({
           </button>
           <button type='button' onClick={() => onLess(item)} aria-label='Menos fragmentos de este libro' title='Poner este libro al final del feed'>
             <ThumbsDown size={14} />
-            <span>Menos</span>
+            <span>Menos libro</span>
           </button>
         </div>
         <div className='feed-paper-report'>

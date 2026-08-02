@@ -1,5 +1,18 @@
 # Handoff — 2026-08-02
 
+## v2.10.18 — Discover feed recovery
+
+- Renamed the ambiguous `Otro` action to `Siguiente`; it skips only the current
+  fragment and never changes book preferences.
+- `Más libro` now applies a soft, interleaved promotion instead of moving every
+  passage from that book to the front.
+- Feed order and taste state are versioned so the previous beta's poisoned
+  session/local state is ignored automatically after update.
+- Exact duplicate passages from the same book are filtered at feed load.
+- Added a visible reset-preferences control to the Discover header.
+
+Validation: `npm run lint`, `npm test -- --run`, `npm run build`.
+
 ## v2.10.17 — text-first reader
 
 Shipped on branch `agent/text-first-reader` and based on `main` at the current

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReadingFeedView } from './ReadingFeedView';
 import { loadFragmentReports } from '../utils/fragmentReports';
@@ -83,6 +83,53 @@ describe('ReadingFeedView', () => {
     );
   });
 
+  it('uses Siguiente to skip one fragment without changing book taste', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [
+          {
+            id: 'feed-1',
+            bookId: 'book-1',
+            filename: 'book.pdf',
+            type: 'pdf',
+            title: 'Libro de prueba',
+            author: 'Autor',
+            text: 'Primer fragmento.',
+            locator: { kind: 'pdf', page: 12 },
+          },
+          {
+            id: 'feed-2',
+            bookId: 'book-1',
+            filename: 'book.pdf',
+            type: 'pdf',
+            title: 'Libro de prueba',
+            author: 'Autor',
+            text: 'Segundo fragmento.',
+            locator: { kind: 'pdf', page: 13 },
+          },
+        ],
+      }),
+    }));
+
+    render(
+      <ReadingFeedView
+        library={library}
+        onOpenItem={vi.fn()}
+        onBack={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Primer fragmento.')).toBeInTheDocument());
+    const firstCard = screen.getByText('Primer fragmento.').closest('article');
+    expect(firstCard).not.toBeNull();
+    fireEvent.click(within(firstCard as HTMLElement).getByRole('button', { name: 'Ver siguiente fragmento' }));
+
+    expect(screen.queryByText('Primer fragmento.')).not.toBeInTheDocument();
+    expect(screen.getByText('Segundo fragmento.')).toBeInTheDocument();
+    expect(localStorage.getItem('catreader_reading_feed_preferences')).toBeNull();
+  });
+
   it('changes feed taste and saves a fragment locally', async () => {
     render(
       <ReadingFeedView
@@ -92,7 +139,7 @@ describe('ReadingFeedView', () => {
       />
     );
 
-    await waitFor(() => expect(screen.getByText('Más así')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Más libro')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Más fragmentos de este libro' }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar fragmento' }));
 
