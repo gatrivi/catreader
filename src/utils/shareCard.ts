@@ -1,11 +1,11 @@
 import type { LibraryBook } from '../hooks/useLibrary';
-import { stainsForPage, type PaperManifest } from './paperSoul';
+import { resolveFeedManifest, stainsForPage, type PaperManifest } from './paperSoul';
 import type { ReadingFeedItem } from './readingFeed';
 
 const SHARE_WIDTH = 1080;
 const SHARE_HEIGHT = 1350;
-const PAPER_BG = '#cbb892';
-const PAPER_INK = '#2f2418';
+const PAPER_BG = '#f4ead5';
+const PAPER_INK = '#4a3f35';
 
 export type FragmentShareCardInput = {
   item: ReadingFeedItem;
@@ -125,7 +125,14 @@ export async function renderFragmentShareCard(input: FragmentShareCardInput): Pr
   context.fillStyle = PAPER_BG;
   context.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
 
-  const active = stainsForPage(input.manifest, input.paperPage || 1);
+  const manifest = resolveFeedManifest(
+    input.manifest,
+    input.item.filename || input.item.bookId || input.item.id
+  );
+  context.fillStyle = manifest.paletteTint || PAPER_BG;
+  context.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
+
+  const active = stainsForPage(manifest, input.paperPage || 1);
   const coverSource = canvasSafeSource(input.coverSrc || resolveArtSource(input.book.svg));
   const stainSources = active.map(({ stain }) => canvasSafeSource(stain.src));
   const [grain, cover, ...stains] = await Promise.all([
@@ -138,23 +145,13 @@ export async function renderFragmentShareCard(input: FragmentShareCardInput): Pr
     const pattern = context.createPattern(grain, 'repeat');
     if (pattern) {
       context.save();
-      context.globalAlpha = 0.42;
+      context.globalAlpha = 0.28;
       context.globalCompositeOperation = 'multiply';
       context.fillStyle = pattern;
       context.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
       context.restore();
     }
   }
-
-  // Soft aged vignette — matches Discover card wash when stains are sparse.
-  const wash = context.createRadialGradient(
-    SHARE_WIDTH * 0.5, SHARE_HEIGHT * 0.45, SHARE_HEIGHT * 0.15,
-    SHARE_WIDTH * 0.5, SHARE_HEIGHT * 0.5, SHARE_HEIGHT * 0.72
-  );
-  wash.addColorStop(0, 'rgba(55, 36, 18, 0)');
-  wash.addColorStop(1, 'rgba(55, 36, 18, 0.28)');
-  context.fillStyle = wash;
-  context.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
 
   context.save();
   context.globalCompositeOperation = 'multiply';
@@ -167,6 +164,14 @@ export async function renderFragmentShareCard(input: FragmentShareCardInput): Pr
   });
   context.restore();
 
+  const wash = context.createRadialGradient(
+    SHARE_WIDTH * 0.5, SHARE_HEIGHT * 0.45, SHARE_HEIGHT * 0.2,
+    SHARE_WIDTH * 0.5, SHARE_HEIGHT * 0.5, SHARE_HEIGHT * 0.75
+  );
+  wash.addColorStop(0, 'rgba(90, 60, 30, 0)');
+  wash.addColorStop(1, 'rgba(90, 60, 30, 0.14)');
+  context.fillStyle = wash;
+  context.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
   const artX = 72;
   const artY = 78;
   const artWidth = 168;
@@ -181,7 +186,7 @@ export async function renderFragmentShareCard(input: FragmentShareCardInput): Pr
   } else {
     context.fillStyle = '#8a6b46';
     context.fillRect(artX, artY, artWidth, artHeight);
-    context.fillStyle = '#e8d5ae';
+    context.fillStyle = '#f4ead5';
     context.font = 'bold 28px Georgia, serif';
     context.fillText('CAT', artX + 34, artY + 112);
     context.font = '18px Georgia, serif';

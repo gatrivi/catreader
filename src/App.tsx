@@ -118,7 +118,7 @@ declare var gapi: any;
 
 /**
  * CatReader - Main Application Component
- * v2.10.18
+ * v2.10.19
  */
 export default function App() {
   // --- State Management ---

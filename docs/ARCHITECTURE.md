@@ -1,4 +1,4 @@
-# CatReader architecture (v2.10.18)
+# CatReader architecture (v2.10.19)
 
 TLDR map of the live app. Prefer this over README fluff / old session notes.
 

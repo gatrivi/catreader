@@ -7,6 +7,8 @@ import {
   wrapInkVarianceHtml,
   applyInkVariance,
   paperSafeId,
+  buildProceduralManifest,
+  resolveFeedManifest,
   type PaperManifest,
 } from './paperSoul';
 
@@ -67,5 +69,27 @@ describe('paperSoul', () => {
 
   it('paperSafeId sanitizes', () => {
     expect(paperSafeId('Foo Bar (1).txt')).toBe('Foo_Bar__1_.txt');
+  });
+
+  it('buildProceduralManifest is deterministic and yields active stains', () => {
+    const a = buildProceduralManifest('Cassian.pdf');
+    const b = buildProceduralManifest('Cassian.pdf');
+    expect(a.seed).toBe(b.seed);
+    expect(a.stains.length).toBeGreaterThanOrEqual(5);
+    expect(a.stains[0].src.startsWith('data:image/svg+xml')).toBe(true);
+    expect(stainsForPage(a, a.stains[0].page_center).length).toBeGreaterThan(0);
+  });
+
+  it('resolveFeedManifest prefers baked stains', () => {
+    const baked: PaperManifest = {
+      seed: 'baked',
+      bookId: 'x',
+      paletteTint: '#f4ead5',
+      stains: [
+        { id: 'a', page_center: 1, radius_pages: 2, x: 0.5, y: 0.5, r_px: 80, intensity: 0.4, src: 'a.svg' },
+      ],
+    };
+    expect(resolveFeedManifest(baked, 'other.pdf').seed).toBe('baked');
+    expect(resolveFeedManifest(null, 'other.pdf').bookId).toBe('other.pdf');
   });
 });

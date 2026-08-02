@@ -2,7 +2,7 @@
 
 Distraction-free PDF / EPUB / TXT reader. Progress syncs across devices (Firebase). No login required (anonymous + optional portable profile).
 
-**Version:** see badge in app UI (`APP_VERSION` in `src/utils/releaseNotes.ts`) — currently **v2.10.18**.
+**Version:** see badge in app UI (`APP_VERSION` in `src/utils/releaseNotes.ts`) — currently **v2.10.19**.
 
 ## Docs map
 

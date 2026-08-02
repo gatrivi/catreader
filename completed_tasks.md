@@ -1,5 +1,9 @@
 # Completed Tasks for Review
 
+## Discover real Paper Soul stack (v2.10.19)
+- [x] Procedural stain fallback when bake missing (was CSS-only parchment).
+- [x] Ink variance on quote; reader palette #f4ead5 + grain/stains.
+
 ## Discover Paper Soul dim (v2.10.18)
 - [x] Aged parchment palette + vignette (was glare-cream `#f4ead5`).
 - [x] Stronger Discover grain (`grainOpacity` 0.42); share card matches.

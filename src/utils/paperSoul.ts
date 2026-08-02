@@ -97,3 +97,88 @@ function escapeHtml(ch: string): string {
 export function paperSafeId(filename: string): string {
   return filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 96);
 }
+
+function mulberry32(seed: number) {
+  return () => {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Stable hex seed from book id (Discover fallback when bake missing). */
+export function paperSeedFromId(bookId: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < bookId.length; i++) {
+    h ^= bookId.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let out = '';
+  for (let i = 0; i < 8; i++) {
+    let n = h ^ (i * 0x9e3779b9);
+    n = Math.imul(n ^ (n >>> 16), 0x85ebca6b);
+    out += (n >>> 0).toString(16).padStart(8, '0');
+  }
+  return out;
+}
+
+/** Same SVG recipe as scripts/paper-bake.js — data URI so no on-disk bake required. */
+export function proceduralStainDataUri(seedChunk: string, intensity: number): string {
+  const n = parseInt(seedChunk.slice(0, 8), 16) || 1;
+  const hue = 25 + (n % 20);
+  const sat = 30 + (n % 25);
+  const light = 35 + (n % 20);
+  const c = `hsl(${hue} ${sat}% ${light}%)`;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">` +
+    `<defs><radialGradient id="g" cx="45%" cy="40%" r="55%">` +
+    `<stop offset="0%" stop-color="${c}" stop-opacity="${Math.min(0.85, intensity + 0.3)}"/>` +
+    `<stop offset="55%" stop-color="${c}" stop-opacity="${intensity * 0.45}"/>` +
+    `<stop offset="100%" stop-color="${c}" stop-opacity="0"/>` +
+    `</radialGradient>` +
+    `<filter id="w"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="${n % 9999}" result="n"/>` +
+    `<feDisplacementMap in="SourceGraphic" in2="n" scale="18"/></filter></defs>` +
+    `<circle cx="128" cy="128" r="110" fill="url(#g)" filter="url(#w)"/></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+/**
+ * Runtime Paper Soul stand-in for books without a baked manifest.
+ * Deterministic per bookId so Discover cards stay stable across remounts.
+ */
+export function buildProceduralManifest(bookId: string, estimatedPages = 40): PaperManifest {
+  const seed = paperSeedFromId(bookId || 'unknown');
+  const rng = mulberry32(parseInt(seed.slice(0, 8), 16) || 1);
+  const pages = Math.max(1, estimatedPages);
+  const k = 5 + Math.floor(rng() * 11);
+  const stains: PaperStain[] = [];
+  for (let i = 0; i < k; i++) {
+    const stainSeed = seed.slice(i * 2, i * 2 + 8) || seed.slice(0, 8);
+    const intensity = 0.18 + rng() * 0.38;
+    stains.push({
+      id: `p${i}`,
+      page_center: 1 + Math.floor(rng() * pages),
+      radius_pages: 2 + rng() * 5,
+      x: 0.12 + rng() * 0.76,
+      y: 0.12 + rng() * 0.76,
+      r_px: 70 + Math.floor(rng() * 110),
+      intensity,
+      src: proceduralStainDataUri(stainSeed + String(i), intensity),
+    });
+  }
+  return {
+    seed,
+    bookId,
+    paletteTint: '#f4ead5',
+    stains,
+  };
+}
+
+/** Prefer baked manifest; otherwise procedural stand-in. */
+export function resolveFeedManifest(
+  baked: PaperManifest | null | undefined,
+  bookId: string
+): PaperManifest {
+  return baked?.stains?.length ? baked : buildProceduralManifest(bookId);
+}

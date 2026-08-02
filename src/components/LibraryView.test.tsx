@@ -42,7 +42,7 @@ const baseProps = {
   onReorderBook: vi.fn(),
   coversHydrated: true,
   pwaUpdate: { status: 'idle' as const, onCheckForUpdate: vi.fn() },
-  releaseNotesVersion: 'v2.10.18',
+  releaseNotesVersion: 'v2.10.19',
   releaseNotesUnread: true,
   onOpenReleaseNotes: vi.fn(),
 };
@@ -72,6 +72,6 @@ describe('LibraryView', () => {
     render(<LibraryView {...baseProps} />);
     fireEvent.click(screen.getByLabelText('Settings'));
     expect(screen.getByText('Descargar actualización')).toBeInTheDocument();
-    expect(screen.getByText('Novedades v2.10.18')).toBeInTheDocument();
+    expect(screen.getByText('Novedades v2.10.19')).toBeInTheDocument();
   });
 });
