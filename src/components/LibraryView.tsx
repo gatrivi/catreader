@@ -937,14 +937,14 @@ export const LibraryView = ({
             </div>
 
             {/* Navigation / Move Targets */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 z-[60] max-w-[94vw]">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[94vw] max-w-[94vw] overflow-x-auto scrollbar-none">
               <AnimatePresence mode="wait">
                 {dragState ? (
                   <motion.div 
                     initial={{ y: 50, opacity: 0, scale: 0.9 }}
                     animate={{ y: 0, opacity: 1, scale: 1 }}
                     exit={{ y: 50, opacity: 0, scale: 0.9 }}
-                    className="flex gap-2 p-2 bg-stone-900/95 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50 overflow-x-auto max-w-[90vw]"
+                    className="flex w-max min-w-full flex-nowrap gap-2 p-2 bg-stone-900/95 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/50"
                   >
                     {shelves.map((shelf) => (
                       <div
@@ -966,7 +966,7 @@ export const LibraryView = ({
                   <motion.div 
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    className="flex flex-wrap items-center justify-center gap-2 bg-stone-950/50 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/5 shadow-xl max-w-[94vw]"
+                    className="flex w-max min-w-full flex-nowrap items-center justify-start sm:justify-center gap-2 bg-stone-950/50 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/5 shadow-xl"
                   >
                     <button
                       onClick={() => flipRack('prev')}
