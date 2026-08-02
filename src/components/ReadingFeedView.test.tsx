@@ -40,7 +40,7 @@ describe('ReadingFeedView', () => {
         onOpenItem={vi.fn()}
         onWarmBook={vi.fn()}
         onBack={vi.fn()}
-        appVersion="v2.10.17"
+        appVersion="v2.10.18"
       />
     );
 
@@ -52,7 +52,7 @@ describe('ReadingFeedView', () => {
     expect(loadFragmentReports()).toHaveLength(1);
     expect(loadFragmentReports()[0]).toMatchObject({
       reason: 'destination',
-      appVersion: 'v2.10.17',
+      appVersion: 'v2.10.18',
       locator: { kind: 'pdf', page: 12 },
     });
   });

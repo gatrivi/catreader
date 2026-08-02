@@ -93,7 +93,7 @@ export function ReadingFeedCard({
   return (
     <article className='feed-paper-article'>
       <div className='feed-paper-card'>
-        <PaperLayer active={active} grainUrl={grainUrl} className='z-0' />
+        <PaperLayer active={active} grainUrl={grainUrl} grainOpacity={0.42} className='z-0' />
         <div className='feed-paper-content'>
           <div className='feed-paper-meta'>
             <span className='feed-paper-source'>

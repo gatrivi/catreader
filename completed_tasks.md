@@ -1,5 +1,9 @@
 # Completed Tasks for Review
 
+## Discover Paper Soul dim (v2.10.18)
+- [x] Aged parchment palette + vignette (was glare-cream `#f4ead5`).
+- [x] Stronger Discover grain (`grainOpacity` 0.42); share card matches.
+
 ## Feed diversify + TTS chrome strip (v2.10.17)
 - [x] Discover interleaves books (`diversifyFeedIds`) so one title cannot monopolize the first screen.
 - [x] Live TTS strips repeating PDF title/author chrome; pdfParser header band tightened.

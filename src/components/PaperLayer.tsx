@@ -6,6 +6,8 @@ interface PaperLayerProps {
   grainUrl: string;
   /** Show shared grain tile (layer 1). */
   showGrain?: boolean;
+  /** Discover cards need denser grain so cream parchment does not glare. */
+  grainOpacity?: number;
   className?: string;
 }
 
@@ -17,6 +19,7 @@ export function PaperLayer({
   active,
   grainUrl,
   showGrain = true,
+  grainOpacity = 0.18,
   className = '',
 }: PaperLayerProps) {
   return (
@@ -26,8 +29,9 @@ export function PaperLayer({
     >
       {showGrain && (
         <div
-          className="absolute inset-0 opacity-[0.18]"
+          className="absolute inset-0"
           style={{
+            opacity: grainOpacity,
             backgroundImage: `url(${grainUrl})`,
             backgroundRepeat: 'repeat',
             backgroundSize: '256px 256px',
