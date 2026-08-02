@@ -71,5 +71,6 @@ Static Vite site (`npm run build` → `dist`). Works on Vercel/Netlify. Books mu
 - Themes: light / sepia / **paper** / dim / dark
 - Zoom per device class (mobile / tablet / desktop)
 - Deep links + share URLs
+- **Descubrir**: feed de fragmentos de PDF/EPUB/TXT con retorno al libro
 - Google Drive pick/upload
 - Cover edit: Google Books / AI / paste / page crop

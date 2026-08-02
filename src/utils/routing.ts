@@ -4,6 +4,11 @@ export function getLibraryPath(): string {
   return base.endsWith('/') ? base : `${base}/`;
 }
 
+export function getFeedPath(): string {
+  const base = getLibraryPath();
+  return base.endsWith('/') ? base + 'feed' : base + '/feed';
+}
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -91,6 +96,11 @@ function stripBasePath(pathname: string): string {
     return pathname.slice(basePath.length) || '/';
   }
   return pathname;
+}
+
+export function isFeedPath(pathname: string): boolean {
+  const normalized = stripBasePath(pathname);
+  return normalized === '/feed' || normalized === '/feed/';
 }
 
 export function resolveBookRoute(pathname: string, search: string) {
