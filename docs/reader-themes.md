@@ -39,7 +39,7 @@ Toggle: BookText button in reader header (desktop) or More → “Modo lector”
 **Ghost text pipeline** (`App.tsx`):
 1. IndexedDB `coverDB.getGhostText(filename)`
 2. else cloud `syncService.loadGhostText`
-3. else lazy pdf.js extract (`extractGhostTextLazy`): first 20 pages ASAP, rest in background → `parsePdfPageSemantically` → JSON array cached local + cloud.
+3. else lazy pdf.js extract (`extractGhostTextLazy`): the synced page first, then nearby pages in the background → `parsePdfPageSemantically` → JSON array cached local + cloud.
 
 TXT files always use the text view (no toggle needed).
 

@@ -1,5 +1,10 @@
 # Completed Tasks for Review
 
+## Discover Paper Soul + social copy (v2.10.16)
+- [x] Discover cards use cached Paper Soul grain and up to three per-book stains without PDF work.
+- [x] Paragraphs are inert; only the explicit `Abrir` action navigates to the book.
+- [x] `Copiar` creates a social card with art + paragraph and falls back to text when mixed clipboard formats are unsupported.
+
 ## PWA Updates & Release Notes (v2.10.15)
 - [x] Android/PWA service worker keeps `autoUpdate`; Settings can trigger an explicit update check/download.
 - [x] New-version notes open once after an update, close by clicking outside, and remain available from Settings.

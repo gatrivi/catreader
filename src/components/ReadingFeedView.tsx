@@ -1,24 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUpRight,
   BookOpen,
-  Bookmark,
-  BookmarkCheck,
   Flag,
   Library,
   Loader2,
   RefreshCw,
   SkipForward,
-  ThumbsDown,
-  ThumbsUp,
   X,
 } from 'lucide-react';
 import type { LibraryBook } from '../hooks/useLibrary';
 import {
-  feedLocationLabel,
   shuffleFeedIds,
   type ReadingFeedItem,
 } from '../utils/readingFeed';
+import { ReadingFeedCard } from './ReadingFeedCard';
 import {
   buildFragmentReport,
   REPORT_REASON_LABELS,
@@ -28,6 +23,7 @@ import {
 
 interface ReadingFeedViewProps {
   library: LibraryBook[];
+  covers?: Record<string, string>;
   onOpenItem: (item: ReadingFeedItem, book: LibraryBook) => void;
   onWarmBook: (book: LibraryBook) => void;
   onBack: () => void;
@@ -113,6 +109,7 @@ function readSeed() {
 
 export function ReadingFeedView({
   library,
+  covers = {},
   onOpenItem,
   onWarmBook,
   onBack,
@@ -132,6 +129,7 @@ export function ReadingFeedView({
   const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<FeedPreferences>(() => readFeedPreferences());
   const preferencesRef = useRef(preferences);
+  const shareUrl = typeof window === 'undefined' ? undefined : window.location.href;
 
   const bookMap = useMemo(
     () => new Map(library.map((book) => [book.filename, book])),
@@ -294,6 +292,13 @@ export function ReadingFeedView({
     }
   };
 
+  const openReport = (item: ReadingFeedItem) => {
+    setReportingItem(item);
+    setReportReason('cut');
+    setReportNote('');
+    setReportMessage(null);
+  };
+
   return (
     <div className="h-full bg-stone-950 text-stone-100 flex flex-col">
       <header className="shrink-0 z-20 border-b border-white/10 bg-stone-950/90 backdrop-blur-md px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
@@ -344,96 +349,23 @@ export function ReadingFeedView({
               const book = bookMap.get(item.filename);
               if (!book) return null;
               return (
-                <article key={item.id} className="min-h-[calc(100dvh-5rem)] snap-start px-3 py-3 sm:px-6 sm:py-6">
-                  <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-[2rem] border border-white/10 bg-stone-900/75 p-4 text-left shadow-2xl shadow-black/20 sm:min-h-[calc(100dvh-8rem)] sm:p-7">
-                    <div className="group flex min-h-0 flex-1 flex-col justify-between text-left">
-                      <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-stone-500">
-                        <span className="flex min-w-0 items-center gap-2 truncate">
-                          <BookOpen size={13} className="shrink-0 text-amber-500" />
-                          <span className="truncate">{item.title}</span>
-                        </span>
-                        <span className="shrink-0">{feedLocationLabel(item.locator)}</span>
-                      </div>
-                      <p className="my-6 line-clamp-8 font-serif text-[clamp(1.35rem,4vw,2.55rem)] leading-[1.3] text-stone-100 sm:my-8 sm:line-clamp-12">
-                        {item.text}
-                      </p>
-                      <div className="flex items-end justify-between gap-4 border-t border-white/10 pt-4">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-stone-300">{item.author || 'Autor desconocido'}</p>
-                          <p className="mt-1 text-[9px] uppercase tracking-widest text-stone-600">Tocá para leer en el libro</p>
-                        </div>
-                        <button
-                          type="button"
-                          onPointerDown={() => warmOnce(book)}
-                          onMouseEnter={() => warmOnce(book)}
-                          onClick={() => onOpenItem(item, book)}
-                          className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-amber-600 px-3 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-amber-500"
-                          aria-label={'Abrir ' + item.title + ' en el libro'}
-                        >
-                          <span>Abrir</span>
-                          <ArrowUpRight size={16} />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-2 grid grid-cols-4 gap-1 border-t border-white/5 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setBookTaste(item, 'more')}
-                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-emerald-300 sm:flex-row sm:gap-1"
-                        title="Ver más fragmentos de este libro"
-                        aria-label="Más fragmentos de este libro"
-                      >
-                        <ThumbsUp size={14} />
-                        <span>Más así</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => skipItem(item)}
-                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-amber-300 sm:flex-row sm:gap-1"
-                        title="Saltar este fragmento"
-                        aria-label="Otro fragmento"
-                      >
-                        <SkipForward size={14} />
-                        <span>Otro</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleSaved(item)}
-                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-amber-300 sm:flex-row sm:gap-1"
-                        title="Guardar en este dispositivo"
-                        aria-label={preferences.savedItems.includes(item.id) ? 'Quitar de guardados' : 'Guardar fragmento'}
-                        aria-pressed={preferences.savedItems.includes(item.id)}
-                      >
-                        {preferences.savedItems.includes(item.id) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
-                        <span>{preferences.savedItems.includes(item.id) ? 'Guardado' : 'Guardar'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBookTaste(item, 'less')}
-                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-rose-300 sm:flex-row sm:gap-1"
-                        title="Poner este libro al final del feed"
-                        aria-label="Menos fragmentos de este libro"
-                      >
-                        <ThumbsDown size={14} />
-                        <span>Menos</span>
-                      </button>
-                    </div>
-                    <div className="mt-3 flex justify-end border-t border-white/5 pt-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReportingItem(item);
-                          setReportReason('cut');
-                          setReportNote('');
-                          setReportMessage(null);
-                        }}
-                        className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-stone-600 hover:bg-white/5 hover:text-amber-300"
-                      >
-                        <Flag size={12} /> Reportar fragmento
-                      </button>
-                    </div>
-                  </div>
-                </article>
+                <div key={item.id}>
+                  <ReadingFeedCard
+                    item={item}
+                    book={book}
+                    coverSrc={covers[book.filename] || book.svg}
+                    shareUrl={shareUrl}
+                    saved={preferences.savedItems.includes(item.id)}
+                    onOpenItem={onOpenItem}
+                    onWarmBook={warmOnce}
+                    onMore={(nextItem) => setBookTaste(nextItem, 'more')}
+                    onSkip={skipItem}
+                    onLess={(nextItem) => setBookTaste(nextItem, 'less')}
+                    onToggleSaved={toggleSaved}
+                    onReport={openReport}
+                    onMessage={setReportMessage}
+                  />
+                </div>
               );
             })}
             {visibleCount < order.length && (

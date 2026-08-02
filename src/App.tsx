@@ -118,7 +118,7 @@ declare var gapi: any;
 
 /**
  * CatReader - Main Application Component
- * v2.10.15
+ * v2.10.16
  */
 export default function App() {
   // --- State Management ---
@@ -1527,6 +1527,7 @@ export default function App() {
           isFeedView ? (
             <ReadingFeedView
               library={library}
+              covers={covers}
               onOpenItem={openFeedItem}
               onWarmBook={warmBook}
               onBack={closeFeed}

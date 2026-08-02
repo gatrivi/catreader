@@ -40,7 +40,7 @@ describe('ReadingFeedView', () => {
         onOpenItem={vi.fn()}
         onWarmBook={vi.fn()}
         onBack={vi.fn()}
-        appVersion="v2.10.15"
+        appVersion="v2.10.16"
       />
     );
 
@@ -52,7 +52,7 @@ describe('ReadingFeedView', () => {
     expect(loadFragmentReports()).toHaveLength(1);
     expect(loadFragmentReports()[0]).toMatchObject({
       reason: 'destination',
-      appVersion: 'v2.10.15',
+      appVersion: 'v2.10.16',
       locator: { kind: 'pdf', page: 12 },
     });
   });
@@ -70,6 +70,7 @@ describe('ReadingFeedView', () => {
 
     await waitFor(() => expect(screen.getByText('Un fragmento de prueba.')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Un fragmento de prueba.'));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar fragmento' }));
     expect(onOpenItem).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /Abrir/ }));

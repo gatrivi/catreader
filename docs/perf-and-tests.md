@@ -5,6 +5,7 @@
 - Library: one rack visible at a time (carousel); search filters client-side.
 - Idle cover/AI enrichment every 10s can spike CPU/network while idle.
 - Paper Soul: stain prefetch via `usePaperTexture`; grain SVG cached; ink CSS once.
+- Discover: Paper Soul manifests are fetched once per visible baked book; share PNG is rendered only after `Copiar`.
 
 ## Critical tests
 

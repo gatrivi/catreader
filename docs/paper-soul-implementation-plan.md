@@ -53,6 +53,12 @@ In `ReaderView.tsx`, `<PaperLayer>` as an absolutely-positioned sibling **behind
 
 Prefetch: warm stain assets for page n / n+1 in `usePaperTexture`.
 
+## Discover / social card (v2.10.16)
+
+- Discover cards reuse the cached grain tile and at most three active per-book stains; no PDF extraction or per-character spans run in the feed.
+- `ReadingFeedCard` uses hydrated cover art when available and keeps the paragraph inert; only the explicit `Abrir` button opens the book.
+- `Copiar` renders a 1080×1350 PNG only on demand and writes `image/png` + `text/plain` through `ClipboardItem`. Browsers that reject mixed clipboard types fall back to text.
+
 ## Phase 4 — Shared static assets (one-time, cheap)
 Don't procedurally generate paper-fiber grain from noise. Photograph 2–3 real blank aged/plain paper scraps once, seamless-tile them, ship as static assets. Current stand-in: `public/paper/grain.svg` (feTurbulence).
 

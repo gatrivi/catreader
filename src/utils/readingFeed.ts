@@ -48,3 +48,15 @@ export function feedLocationLabel(locator: FeedLocator): string {
   if (locator.kind === 'epub') return locator.label || 'capítulo';
   return locator.label || 'texto';
 }
+
+/** Maps non-PDF feed locators onto the stand-in Paper Soul depth (about 40 pages). */
+export function paperPageForFeedItem(locator: FeedLocator): number {
+  if (locator.kind === 'pdf') return Math.max(1, locator.page || 1);
+  if (locator.kind === 'txt' && locator.sourceLength && locator.offset != null) {
+    return Math.max(1, Math.min(40, Math.round((locator.offset / locator.sourceLength) * 39) + 1));
+  }
+  if (locator.kind === 'epub' && locator.paragraph != null) {
+    return Math.max(1, Math.min(40, Math.round(locator.paragraph / 25) + 1));
+  }
+  return 1;
+}
