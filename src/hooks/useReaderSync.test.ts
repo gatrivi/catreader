@@ -193,4 +193,31 @@ describe('useReaderSync', () => {
       expect.objectContaining({ page: 40 })
     );
   });
+
+  it('resets the page guard when switching to another book', async () => {
+    (syncService.loadProgress as any).mockResolvedValue(null);
+    const { result, rerender } = renderHook(
+      ({ fileName }) => useReaderSync({ ...mockProps, fileName }),
+      { initialProps: { fileName: 'first.pdf' } }
+    );
+
+    act(() => {
+      result.current.commitPage(20);
+    });
+    rerender({ fileName: 'second.pdf' });
+    act(() => {
+      result.current.setPageNumber(1);
+      result.current.setIsRestoring(false);
+    });
+
+    await act(async () => {
+      await result.current.saveProgress();
+    });
+
+    expect(syncService.saveProgress).toHaveBeenCalledWith(
+      'second.pdf',
+      expect.objectContaining({ page: 1 })
+    );
+  });
 });
+

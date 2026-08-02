@@ -56,4 +56,47 @@ describe('ReadingFeedView', () => {
       locator: { kind: 'pdf', page: 12 },
     });
   });
+
+  it('opens only from the explicit action, not from paragraph text', async () => {
+    const onOpenItem = vi.fn();
+    render(
+      <ReadingFeedView
+        library={library}
+        onOpenItem={onOpenItem}
+        onWarmBook={vi.fn()}
+        onBack={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Un fragmento de prueba.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Un fragmento de prueba.'));
+    expect(onOpenItem).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Abrir/ }));
+    expect(onOpenItem).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'feed-1' }),
+      expect.objectContaining({ filename: 'book.pdf' })
+    );
+  });
+
+  it('changes feed taste and saves a fragment locally', async () => {
+    render(
+      <ReadingFeedView
+        library={library}
+        onOpenItem={vi.fn()}
+        onWarmBook={vi.fn()}
+        onBack={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('MÃ¡s asÃ­')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'MÃ¡s fragmentos de este libro' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar fragmento' }));
+
+    expect(JSON.parse(localStorage.getItem('catreader_reading_feed_preferences') || '{}')).toMatchObject({
+      boostedBooks: ['book.pdf'],
+      savedItems: ['feed-1'],
+    });
+  });
 });
+

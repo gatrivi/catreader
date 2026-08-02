@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, BookOpen, Flag, Library, Loader2, RefreshCw, X } from 'lucide-react';
+import {
+  ArrowUpRight,
+  BookOpen,
+  Bookmark,
+  BookmarkCheck,
+  Flag,
+  Library,
+  Loader2,
+  RefreshCw,
+  SkipForward,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from 'lucide-react';
 import type { LibraryBook } from '../hooks/useLibrary';
 import {
   feedLocationLabel,
@@ -24,8 +37,66 @@ interface ReadingFeedViewProps {
 
 const ORDER_KEY = 'catreader_reading_feed_order';
 const SCROLL_KEY = 'catreader_reading_feed_scroll';
+const PREFERENCES_KEY = 'catreader_reading_feed_preferences';
 const INITIAL_ITEMS = 18;
 const LOAD_MORE = 12;
+
+type FeedPreferences = {
+  boostedBooks: string[];
+  deprioritizedBooks: string[];
+  savedItems: string[];
+};
+
+function readFeedPreferences(): FeedPreferences {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}') as Partial<FeedPreferences>;
+    const strings = (value: unknown) => (
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+    );
+    return {
+      boostedBooks: strings(parsed.boostedBooks),
+      deprioritizedBooks: strings(parsed.deprioritizedBooks),
+      savedItems: strings(parsed.savedItems),
+    };
+  } catch {
+    return { boostedBooks: [], deprioritizedBooks: [], savedItems: [] };
+  }
+}
+
+function writeFeedPreferences(preferences: FeedPreferences) {
+  try {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+  } catch {
+    // Private browsing or a full store should not block reading.
+  }
+}
+
+function reorderBookIds(
+  order: string[],
+  catalog: ReadingFeedItem[],
+  filename: string,
+  direction: 'more' | 'less'
+) {
+  const bookIds = new Set(catalog.filter((item) => item.filename === filename).map((item) => item.id));
+  const matching = order.filter((id) => bookIds.has(id));
+  const rest = order.filter((id) => !bookIds.has(id));
+  return direction === 'more' ? [...matching, ...rest] : [...rest, ...matching];
+}
+
+function applyFeedPreferences(
+  order: string[],
+  catalog: ReadingFeedItem[],
+  preferences: FeedPreferences
+) {
+  let nextOrder = order;
+  preferences.boostedBooks.forEach((filename) => {
+    nextOrder = reorderBookIds(nextOrder, catalog, filename, 'more');
+  });
+  preferences.deprioritizedBooks.forEach((filename) => {
+    nextOrder = reorderBookIds(nextOrder, catalog, filename, 'less');
+  });
+  return nextOrder;
+}
 
 function feedUrl() {
   const base = import.meta.env.BASE_URL || '/';
@@ -59,6 +130,8 @@ export function ReadingFeedView({
   const [reportReason, setReportReason] = useState<FragmentReportReason>('cut');
   const [reportNote, setReportNote] = useState('');
   const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<FeedPreferences>(() => readFeedPreferences());
+  const preferencesRef = useRef(preferences);
 
   const bookMap = useMemo(
     () => new Map(library.map((book) => [book.filename, book])),
@@ -96,6 +169,7 @@ export function ReadingFeedView({
           nextOrder.push(...shuffleFeedIds(nextCatalog, 17).filter((id) => !included.has(id)));
         }
 
+        nextOrder = applyFeedPreferences(nextOrder, nextCatalog, preferencesRef.current);
         sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
         setCatalog(nextCatalog);
         setOrder(nextOrder);
@@ -147,6 +221,59 @@ export function ReadingFeedView({
     onWarmBook(book);
   };
 
+  const updatePreferences = (update: (current: FeedPreferences) => FeedPreferences) => {
+    const next = update(preferencesRef.current);
+    preferencesRef.current = next;
+    setPreferences(next);
+    writeFeedPreferences(next);
+  };
+
+  const setBookTaste = (item: ReadingFeedItem, direction: 'more' | 'less') => {
+    updatePreferences((current) => {
+      const boostedBooks = new Set(current.boostedBooks);
+      const deprioritizedBooks = new Set(current.deprioritizedBooks);
+      if (direction === 'more') {
+        boostedBooks.add(item.filename);
+        deprioritizedBooks.delete(item.filename);
+      } else {
+        deprioritizedBooks.add(item.filename);
+        boostedBooks.delete(item.filename);
+      }
+      return {
+        ...current,
+        boostedBooks: [...boostedBooks],
+        deprioritizedBooks: [...deprioritizedBooks],
+      };
+    });
+    setOrder((currentOrder) => {
+      const nextOrder = reorderBookIds(currentOrder, catalog, item.filename, direction);
+      sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
+      return nextOrder;
+    });
+    setReportMessage(direction === 'more'
+      ? 'MÃ¡s fragmentos de ' + item.title + '.'
+      : item.title + ' queda al final del feed.');
+  };
+
+  const skipItem = (item: ReadingFeedItem) => {
+    setOrder((currentOrder) => {
+      const nextOrder = currentOrder.filter((id) => id !== item.id);
+      sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
+      return nextOrder;
+    });
+    if (order.length <= 1) setError('No quedan fragmentos. MezclÃ¡ para empezar de nuevo.');
+    setReportMessage('Fragmento salteado.');
+  };
+
+  const toggleSaved = (item: ReadingFeedItem) => {
+    const savedItems = new Set(preferencesRef.current.savedItems);
+    const wasSaved = savedItems.has(item.id);
+    if (wasSaved) savedItems.delete(item.id);
+    else savedItems.add(item.id);
+    updatePreferences((current) => ({ ...current, savedItems: [...savedItems] }));
+    setReportMessage(wasSaved ? 'Quitado de guardados.' : 'Fragmento guardado en este dispositivo.');
+  };
+
   const refresh = () => {
     sessionStorage.removeItem(ORDER_KEY);
     sessionStorage.removeItem(`${ORDER_KEY}:seed`);
@@ -163,7 +290,7 @@ export function ReadingFeedView({
       setReportNote('');
       setReportMessage('Reporte guardado en este dispositivo.');
     } catch {
-      setReportMessage('No se pudo guardar. Liberá espacio del navegador y probá de nuevo.');
+      setReportMessage('No se pudo guardar. LiberÃ¡ espacio del navegador y probÃ¡ de nuevo.');
     }
   };
 
@@ -217,15 +344,9 @@ export function ReadingFeedView({
               const book = bookMap.get(item.filename);
               if (!book) return null;
               return (
-                <article key={item.id} className="min-h-[calc(100dvh-5rem)] snap-start px-4 py-8 sm:px-8 sm:py-14">
-                  <div className="rounded-[2rem] border border-white/10 bg-stone-900/75 p-6 text-left shadow-2xl shadow-black/20 sm:p-10">
-                    <button
-                      type="button"
-                      onPointerDown={() => warmOnce(book)}
-                      onMouseEnter={() => warmOnce(book)}
-                      onClick={() => onOpenItem(item, book)}
-                      className="group flex min-h-[min(62dvh,39rem)] w-full flex-col justify-between text-left"
-                    >
+                <article key={item.id} className="min-h-[calc(100dvh-5rem)] snap-start px-3 py-3 sm:px-6 sm:py-6">
+                  <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-[2rem] border border-white/10 bg-stone-900/75 p-4 text-left shadow-2xl shadow-black/20 sm:min-h-[calc(100dvh-8rem)] sm:p-7">
+                    <div className="group flex min-h-0 flex-1 flex-col justify-between text-left">
                       <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-stone-500">
                         <span className="flex min-w-0 items-center gap-2 truncate">
                           <BookOpen size={13} className="shrink-0 text-amber-500" />
@@ -233,17 +354,70 @@ export function ReadingFeedView({
                         </span>
                         <span className="shrink-0">{feedLocationLabel(item.locator)}</span>
                       </div>
-                      <p className="my-10 font-serif text-[clamp(1.5rem,4vw,2.55rem)] leading-[1.3] text-stone-100 transition group-hover:text-amber-50">
+                      <p className="my-6 line-clamp-8 font-serif text-[clamp(1.35rem,4vw,2.55rem)] leading-[1.3] text-stone-100 sm:my-8 sm:line-clamp-12">
                         {item.text}
                       </p>
                       <div className="flex items-end justify-between gap-4 border-t border-white/10 pt-4">
                         <div className="min-w-0">
                           <p className="truncate text-xs font-semibold text-stone-300">{item.author || 'Autor desconocido'}</p>
-                          <p className="mt-1 text-[9px] uppercase tracking-widest text-stone-600">Tocá para leer en el libro</p>
+                          <p className="mt-1 text-[9px] uppercase tracking-widest text-stone-600">TocÃ¡ para leer en el libro</p>
                         </div>
-                        <ArrowUpRight size={18} className="shrink-0 text-amber-500 transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+                        <button
+                          type="button"
+                          onPointerDown={() => warmOnce(book)}
+                          onMouseEnter={() => warmOnce(book)}
+                          onClick={() => onOpenItem(item, book)}
+                          className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-amber-600 px-3 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-amber-500"
+                          aria-label={'Abrir ' + item.title + ' en el libro'}
+                        >
+                          <span>Abrir</span>
+                          <ArrowUpRight size={16} />
+                        </button>
                       </div>
-                    </button>
+                    </div>
+                    <div className="mt-2 grid grid-cols-4 gap-1 border-t border-white/5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setBookTaste(item, 'more')}
+                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-emerald-300 sm:flex-row sm:gap-1"
+                        title="Ver mÃ¡s fragmentos de este libro"
+                        aria-label="MÃ¡s fragmentos de este libro"
+                      >
+                        <ThumbsUp size={14} />
+                        <span>MÃ¡s asÃ­</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => skipItem(item)}
+                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-amber-300 sm:flex-row sm:gap-1"
+                        title="Saltar este fragmento"
+                        aria-label="Otro fragmento"
+                      >
+                        <SkipForward size={14} />
+                        <span>Otro</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSaved(item)}
+                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-amber-300 sm:flex-row sm:gap-1"
+                        title="Guardar en este dispositivo"
+                        aria-label={preferences.savedItems.includes(item.id) ? 'Quitar de guardados' : 'Guardar fragmento'}
+                        aria-pressed={preferences.savedItems.includes(item.id)}
+                      >
+                        {preferences.savedItems.includes(item.id) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                        <span>{preferences.savedItems.includes(item.id) ? 'Guardado' : 'Guardar'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBookTaste(item, 'less')}
+                        className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-rose-300 sm:flex-row sm:gap-1"
+                        title="Poner este libro al final del feed"
+                        aria-label="Menos fragmentos de este libro"
+                      >
+                        <ThumbsDown size={14} />
+                        <span>Menos</span>
+                      </button>
+                    </div>
                     <div className="mt-3 flex justify-end border-t border-white/5 pt-3">
                       <button
                         type="button"
@@ -263,7 +437,7 @@ export function ReadingFeedView({
               );
             })}
             {visibleCount < order.length && (
-              <div className="pb-12 text-center text-[9px] uppercase tracking-widest text-stone-700">Más fragmentos abajo</div>
+              <div className="pb-12 text-center text-[9px] uppercase tracking-widest text-stone-700">MÃ¡s fragmentos abajo</div>
             )}
           </div>
         )}
@@ -281,7 +455,7 @@ export function ReadingFeedView({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-500">Control de calidad</p>
-                <h2 id="report-fragment-title" className="mt-1 font-serif text-xl font-bold">¿Qué está mal?</h2>
+                <h2 id="report-fragment-title" className="mt-1 font-serif text-xl font-bold">Â¿QuÃ© estÃ¡ mal?</h2>
                 <p className="mt-1 line-clamp-2 text-xs text-stone-500">{reportingItem.text}</p>
               </div>
               <button type="button" onClick={() => setReportingItem(null)} aria-label="Cerrar reporte" className="rounded-full p-2 text-stone-500 hover:bg-white/10 hover:text-white"><X size={18} /></button>
@@ -297,7 +471,7 @@ export function ReadingFeedView({
             <textarea
               value={reportNote}
               onChange={(event) => setReportNote(event.target.value)}
-              placeholder="Detalle opcional…"
+              placeholder="Detalle opcionalâ€¦"
               rows={3}
               className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-stone-900 p-3 text-xs text-white outline-none placeholder:text-stone-600 focus:border-amber-500/50"
             />
@@ -311,3 +485,4 @@ export function ReadingFeedView({
     </div>
   );
 }
+
