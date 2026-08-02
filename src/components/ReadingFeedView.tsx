@@ -251,7 +251,7 @@ export function ReadingFeedView({
       return nextOrder;
     });
     setReportMessage(direction === 'more'
-      ? 'MÃ¡s fragmentos de ' + item.title + '.'
+      ? 'Más fragmentos de ' + item.title + '.'
       : item.title + ' queda al final del feed.');
   };
 
@@ -261,7 +261,7 @@ export function ReadingFeedView({
       sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
       return nextOrder;
     });
-    if (order.length <= 1) setError('No quedan fragmentos. MezclÃ¡ para empezar de nuevo.');
+    if (order.length <= 1) setError('No quedan fragmentos. Mezclá para empezar de nuevo.');
     setReportMessage('Fragmento salteado.');
   };
 
@@ -290,7 +290,7 @@ export function ReadingFeedView({
       setReportNote('');
       setReportMessage('Reporte guardado en este dispositivo.');
     } catch {
-      setReportMessage('No se pudo guardar. LiberÃ¡ espacio del navegador y probÃ¡ de nuevo.');
+      setReportMessage('No se pudo guardar. Liberá espacio del navegador y probá de nuevo.');
     }
   };
 
@@ -360,7 +360,7 @@ export function ReadingFeedView({
                       <div className="flex items-end justify-between gap-4 border-t border-white/10 pt-4">
                         <div className="min-w-0">
                           <p className="truncate text-xs font-semibold text-stone-300">{item.author || 'Autor desconocido'}</p>
-                          <p className="mt-1 text-[9px] uppercase tracking-widest text-stone-600">TocÃ¡ para leer en el libro</p>
+                          <p className="mt-1 text-[9px] uppercase tracking-widest text-stone-600">Tocá para leer en el libro</p>
                         </div>
                         <button
                           type="button"
@@ -380,11 +380,11 @@ export function ReadingFeedView({
                         type="button"
                         onClick={() => setBookTaste(item, 'more')}
                         className="flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[9px] font-bold text-stone-500 hover:bg-white/5 hover:text-emerald-300 sm:flex-row sm:gap-1"
-                        title="Ver mÃ¡s fragmentos de este libro"
-                        aria-label="MÃ¡s fragmentos de este libro"
+                        title="Ver más fragmentos de este libro"
+                        aria-label="Más fragmentos de este libro"
                       >
                         <ThumbsUp size={14} />
-                        <span>MÃ¡s asÃ­</span>
+                        <span>Más así</span>
                       </button>
                       <button
                         type="button"
@@ -437,7 +437,7 @@ export function ReadingFeedView({
               );
             })}
             {visibleCount < order.length && (
-              <div className="pb-12 text-center text-[9px] uppercase tracking-widest text-stone-700">MÃ¡s fragmentos abajo</div>
+              <div className="pb-12 text-center text-[9px] uppercase tracking-widest text-stone-700">Más fragmentos abajo</div>
             )}
           </div>
         )}
@@ -455,7 +455,7 @@ export function ReadingFeedView({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-500">Control de calidad</p>
-                <h2 id="report-fragment-title" className="mt-1 font-serif text-xl font-bold">Â¿QuÃ© estÃ¡ mal?</h2>
+                <h2 id="report-fragment-title" className="mt-1 font-serif text-xl font-bold">¿Qué está mal?</h2>
                 <p className="mt-1 line-clamp-2 text-xs text-stone-500">{reportingItem.text}</p>
               </div>
               <button type="button" onClick={() => setReportingItem(null)} aria-label="Cerrar reporte" className="rounded-full p-2 text-stone-500 hover:bg-white/10 hover:text-white"><X size={18} /></button>
@@ -471,7 +471,7 @@ export function ReadingFeedView({
             <textarea
               value={reportNote}
               onChange={(event) => setReportNote(event.target.value)}
-              placeholder="Detalle opcionalâ€¦"
+              placeholder="Detalle opcional…"
               rows={3}
               className="mt-4 w-full resize-none rounded-xl border border-white/10 bg-stone-900 p-3 text-xs text-white outline-none placeholder:text-stone-600 focus:border-amber-500/50"
             />
@@ -485,4 +485,3 @@ export function ReadingFeedView({
     </div>
   );
 }
-

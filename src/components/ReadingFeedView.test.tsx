@@ -89,8 +89,8 @@ describe('ReadingFeedView', () => {
       />
     );
 
-    await waitFor(() => expect(screen.getByText('MÃ¡s asÃ­')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'MÃ¡s fragmentos de este libro' }));
+    await waitFor(() => expect(screen.getByText('Más así')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Más fragmentos de este libro' }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar fragmento' }));
 
     expect(JSON.parse(localStorage.getItem('catreader_reading_feed_preferences') || '{}')).toMatchObject({
@@ -99,4 +99,3 @@ describe('ReadingFeedView', () => {
     });
   });
 });
-

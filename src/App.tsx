@@ -318,7 +318,7 @@ export default function App() {
       const clamped = clampPage(pageNumber, numPages);
       console.warn(`[Reader] pageNumber ${pageNumber} clamped to ${clamped}`);
       setPageNumber(clamped);
-      // do not clear isRestoring â€” FEATURE #1 freeze must survive clamp
+      // do not clear isRestoring — FEATURE #1 freeze must survive clamp
     }
   }, [numPages, pageNumber]);
 
@@ -505,7 +505,7 @@ export default function App() {
   const handleLogout = () => {
     authService.logout();
     fetchLibrary();
-    showToast('SesiÃ³n cerrada');
+    showToast('Sesión cerrada');
   };
 
   const handleGeneratePFP = async () => {
@@ -517,7 +517,943 @@ export default function App() {
       const titles = library.slice(0, 5).map(b => b.title).join(', ');
       const result = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: [{ role: 'user', parts: [{ text: `Create a unique, artistic, and mi…10454 tokens truncated…w-2xl py-1 min-w-[160px] z-[70]">
+        contents: [{ role: 'user', parts: [{ text: `Create a unique, artistic, and minimalist SVG profile picture (circular design) that represents a reader of: ${titles}. Return ONLY the SVG code.` }] }]
+      });
+      const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const cleanSvg = responseText.substring(responseText.indexOf('<svg'), responseText.lastIndexOf('</svg>') + 6);
+      authService.setPFP(cleanSvg);
+      showToast('¡Avatar generado!');
+    } catch (e) {
+      console.error(e);
+      showToast('Error al generar avatar');
+    }
+    setIsSyncing(false);
+  };
+
+  // --- Book Operations ---
+  const getBookBlob = (book: LibraryBook): Promise<Blob> => {
+    const existing = bookBlobPromisesRef.current.get(book.filename);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const cached = await coverDB.getBookContent(book.filename);
+      if (cached && cached.size > 0) return cached;
+
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
+      const fetchUrl = `${booksDirPath}${encodeURIComponent(book.filename)}`;
+      const response = await fetch(fetchUrl);
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
+      void coverDB.saveBookContent(book.filename, blob);
+      return blob;
+    })();
+
+    bookBlobPromisesRef.current.set(book.filename, promise);
+    promise.catch(() => bookBlobPromisesRef.current.delete(book.filename));
+    return promise;
+  };
+
+  const warmBook = (book: LibraryBook) => {
+    void getBookBlob(book).catch(() => {});
+  };
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      openRequestRef.current += 1;
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+      setFileName(file.name);
+      setFileType(ext);
+      await coverDB.saveBookContent(file.name, file);
+      const url = URL.createObjectURL(file);
+      setFileUrl(url);
+      pushReaderHistory(buildBookPath('library', file.name), file.name);
+      setIsFeedView(false);
+      
+      if (ext === 'txt') {
+        const text = await file.text();
+        setTextContent([text]);
+        setNumPages(1);
+        await coverDB.saveGhostText(file.name, text);
+        await syncService.saveGhostText(file.name, text);
+      } else if (ext === 'epub') {
+        setTextContent(null);
+      } else {
+        setTextContent(null);
+        extractGhostText(file, file.name);
+      }
+
+      await loadProgress(file.name);
+      if (ext === 'txt' || ext === 'epub') setIsLoaded(true);
+      else {
+        setIsLoaded(false);
+        if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = setTimeout(() => setIsLoaded(true), 10000);
+      }
+
+      const isNew = !library.some(b => b.filename === file.name);
+      if (isNew) {
+        const newBook: LibraryBook = {
+          id: file.name,
+          filename: file.name,
+          type: ext,
+          title: file.name.replace(/\.[^/.]+$/, "")
+        };
+        setLibrary(prev => [newBook, ...prev]);
+
+        // Stamp foundational metadata directly into IndexedDB for instant, indestructible offline resilience
+        const foundationalMeta = {
+          title: newBook.title,
+          author: 'Desconocido',
+          svg: ''
+        };
+        coverDB.saveBookMetadata(file.name, foundationalMeta).catch(dbErr => {
+          console.error('[Upload] Failed to stamp foundational metadata:', dbErr);
+        });
+
+        const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
+        if (g_apiKey) {
+          setTimeout(async () => {
+            const enriched = await enrichBookWithGemini(newBook);
+            if (enriched) {
+              setLibrary(prev => prev.map(b => b.filename === file.name ? { ...b, ...enriched } : b));
+              const currentMeta = enrichedMetadataRef.current[file.name] || {};
+              const merged = { ...currentMeta, ...enriched };
+              const newMeta = { ...enrichedMetadataRef.current, [file.name]: merged };
+              localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMeta));
+              try {
+                await coverDB.saveBookMetadata(file.name, merged);
+              } catch (dbErr) {}
+              await syncService.saveMetadata(newMeta);
+            }
+          }, 1000);
+        }
+      }
+      if (googleToken) await uploadToDrive(file, googleToken);
+    }
+  };
+
+  const extractGhostText = async (fileOrBlob: File | Blob, filename: string, centerPage = 1) => {
+    try {
+      const existing = await coverDB.getGhostText(filename);
+      if (existing) {
+        loadGhostTextToState(existing);
+        // Still fill holes around center (partial caches)
+        await ensureGhostAround(fileOrBlob, filename, centerPage);
+        return;
+      }
+      const remote = await syncService.loadGhostText(filename);
+      if (remote) {
+        await coverDB.saveGhostText(filename, remote);
+        loadGhostTextToState(remote);
+        await ensureGhostAround(fileOrBlob, filename, centerPage);
+        return;
+      }
+      await ensureGhostAround(fileOrBlob, filename, centerPage);
+    } catch (err) {
+      console.error('Ghost Text Extraction Error:', err);
+    }
+  };
+
+  const persistGhostPartial = (filename: string, pages: string[]) => {
+    if (ghostPersistTimerRef.current) clearTimeout(ghostPersistTimerRef.current);
+    ghostPersistTimerRef.current = setTimeout(() => {
+      const serialized = JSON.stringify(pages);
+      coverDB.saveGhostText(filename, serialized).catch(() => {});
+      syncService.saveGhostText(filename, serialized).catch(() => {});
+    }, 800);
+  };
+
+  const getGhostPdf = async (fileOrBlob: File | Blob, filename: string) => {
+    if (ghostPdfRef.current?.filename === filename && ghostPdfRef.current.pdf) {
+      return ghostPdfRef.current.pdf;
+    }
+    if (ghostPdfLoadingRef.current) return ghostPdfLoadingRef.current;
+
+    ghostPdfLoadingRef.current = (async () => {
+      const data = new Uint8Array(await fileOrBlob.arrayBuffer());
+      const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
+      const pdf = await loadingTask.promise;
+      ghostPdfRef.current = { filename, pdf };
+      ghostPdfLoadingRef.current = null;
+      return pdf;
+    })();
+
+    return ghostPdfLoadingRef.current;
+  };
+
+  /** Progressive: word → snippet → full page → prefetch neighbors. docs/READER_MODE_LAZY.md */
+  const ensureGhostAround = async (
+    fileOrBlob: File | Blob,
+    filename: string,
+    centerPage: number
+  ) => {
+    const paint = (pageNum: number, html: string, totalPages: number) => {
+      setTextContent((prev) => {
+        const base = prev && prev.length === totalPages ? prev : emptyGhostPages(totalPages);
+        // Don't clobber a complete page with a draft
+        if (isGhostComplete(base[pageNum - 1]) && !isGhostComplete(html)) return base;
+        const next = applyGhostPages(base, { [pageNum]: html });
+        textContentRef.current = next;
+        return next;
+      });
+    };
+
+    try {
+      const pdf = await getGhostPdf(fileOrBlob, filename);
+      const totalPages = pdf.numPages as number;
+
+      let pages = textContentRef.current;
+      if (!pages || pages.length !== totalPages) {
+        if (isReaderModeRef.current) freezePageForRemount(pageNumberRef.current);
+        pages = emptyGhostPages(totalPages);
+        if (textContentRef.current?.length) {
+          for (let i = 0; i < Math.min(textContentRef.current.length, totalPages); i++) {
+            if (textContentRef.current[i]?.trim()) pages[i] = textContentRef.current[i];
+          }
+        }
+        setTextContent(pages);
+        textContentRef.current = pages;
+        if (numPages !== totalPages) setNumPages(totalPages);
+      }
+
+      const center = Math.min(Math.max(1, centerPage || 1), totalPages);
+
+      // --- Stage A: current page only, word → snippet → semantic ---
+      if (!isGhostComplete(textContentRef.current?.[center - 1]) && !ghostInflightRef.current.has(center)) {
+        ghostInflightRef.current.add(center);
+        try {
+          const page = await pdf.getPage(center);
+          const tc = await page.getTextContent();
+
+          if (!textContentRef.current?.[center - 1]?.trim()) {
+            paint(center, firstWordHtml(tc), totalPages);
+            await yieldToUi();
+          }
+
+          if (!isGhostComplete(textContentRef.current?.[center - 1])) {
+            paint(center, snippetHtml(tc), totalPages);
+            await yieldToUi();
+          }
+
+          if (!isGhostComplete(textContentRef.current?.[center - 1])) {
+            const full = await parsePdfPageSemantically(page, tc);
+            paint(center, full || snippetHtml(tc), totalPages);
+            persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
+          }
+        } catch (e) {
+          console.warn(`[Ghost] Failed page ${center}:`, e);
+        } finally {
+          ghostInflightRef.current.delete(center);
+        }
+      }
+
+      // --- Stage B: prefetch ±1 in background (full pages only) ---
+      const neighbors = pagesNeededAround(center, totalPages, GHOST_PREFETCH).filter((p) => p !== center);
+      const todo = incompleteGhostPages(textContentRef.current || [], neighbors)
+        .filter((p) => !ghostInflightRef.current.has(p));
+      if (todo.length === 0) return;
+
+      // Don't block UI — fire and forget neighbor fills
+      void (async () => {
+        for (const p of todo) {
+          if (ghostInflightRef.current.has(p)) continue;
+          ghostInflightRef.current.add(p);
+          try {
+            const page = await pdf.getPage(p);
+            const tc = await page.getTextContent();
+            // Neighbors: snippet first so scroll-ahead isn't blank, then full
+            paint(p, snippetHtml(tc), totalPages);
+            await yieldToUi();
+            const full = await parsePdfPageSemantically(page, tc);
+            paint(p, full || snippetHtml(tc), totalPages);
+            persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
+          } catch (e) {
+            console.warn(`[Ghost] Prefetch failed page ${p}:`, e);
+          } finally {
+            ghostInflightRef.current.delete(p);
+          }
+        }
+      })();
+    } catch (err) {
+      console.error('[Ghost] ensureGhostAround error:', err);
+    }
+  };
+
+  /** @deprecated name kept for callers — delegates to ensureGhostAround(current page) */
+  const extractGhostTextLazy = async (
+    fileOrBlob: File | Blob,
+    filename: string,
+    centerPage?: number
+  ) => {
+    const center = centerPage ?? pageNumberRef.current ?? 1;
+    console.log(`[Ghost] Lazy extract around page ${center} for ${filename}`);
+    await ensureGhostAround(fileOrBlob, filename, center);
+  };
+
+  const toggleReaderMode = async () => {
+    // Freeze page before remount — observer would otherwise see top of text view (p~1–3)
+    // and saveProgress would overwrite synced progress (feature #1).
+    const keepPage = pageNumber;
+    modeSwitchPageRef.current = keepPage;
+    restoreTargetPageRef.current = keepPage;
+    setIsRestoring(true);
+
+    const nextMode = !isReaderMode;
+    setIsReaderMode(nextMode);
+
+    if (nextMode && fileType === 'pdf') {
+      try {
+        const text = await coverDB.getGhostText(fileName);
+        if (text) loadGhostTextToState(text);
+
+        const blob =
+          (await coverDB.getBookContent(fileName)) ||
+          (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+        if (blob) {
+          // Fill holes around synced page — do NOT start at page 1
+          await ensureGhostAround(blob, fileName, keepPage);
+        } else if (!text) {
+          showToast('No se pudo cargar el PDF para texto');
+        }
+      } catch (e) {
+        console.error('[ReaderMode] Failed lazy extraction:', e);
+        showToast('Error al extraer texto');
+      }
+    }
+  };
+
+  // As user scrolls in reader mode, extract the new window on demand
+  useEffect(() => {
+    if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
+    let cancelled = false;
+    (async () => {
+      const blob =
+        (await coverDB.getBookContent(fileName)) ||
+        (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+      if (cancelled || !blob) return;
+      await ensureGhostAround(blob, fileName, pageNumber);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isReaderMode, fileType, fileName, fileUrl, pageNumber]);
+
+  // After reader↔PDF switch, scroll back to frozen page once DOM exists
+  useEffect(() => {
+    const target = modeSwitchPageRef.current;
+    if (target == null || !fileUrl) return;
+    if (isReaderMode && fileType === 'pdf' && (!textContent || textContent.length === 0)) return;
+
+    let cancelled = false;
+    const settle = () => {
+      if (cancelled) return;
+      cancelled = true;
+      if (modeSwitchPageRef.current === target) modeSwitchPageRef.current = null;
+      if (restoreTargetPageRef.current === target) restoreTargetPageRef.current = null;
+      setIsRestoring(false);
+    };
+
+    const jump = () => {
+      if (cancelled) return;
+      const prefix = pageElementPrefix(isReaderMode, fileType);
+      const el = document.getElementById(`${prefix}${target}`);
+      if (el && containerRef.current) {
+        el.scrollIntoView({ behavior: 'instant' });
+        setPageNumber(target);
+      }
+      window.setTimeout(settle, 450);
+    };
+
+    const raf = requestAnimationFrame(() => requestAnimationFrame(jump));
+    const safety = window.setTimeout(settle, 3000);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      clearTimeout(safety);
+    };
+  }, [isReaderMode, textContent, fileType, fileUrl, zoom, setIsRestoring, setPageNumber]);
+
+  const resolvePageTextForTts = async (): Promise<string> => {
+    const fromState = textContentRef.current?.[pageNumber - 1];
+    if (fromState?.trim()) return fromState;
+    try {
+      const stored = await coverDB.getGhostText(fileName);
+      if (stored?.startsWith('[')) {
+        const pages = JSON.parse(stored);
+        if (Array.isArray(pages) && pages[pageNumber - 1]?.trim()) return pages[pageNumber - 1];
+      }
+    } catch { /* ignore */ }
+    const textPage = document.getElementById(`text-page-${pageNumber}`);
+    if (textPage) {
+      const body = textPage.querySelector('.semantic-page-content');
+      const html = body?.innerHTML || textPage.innerText || '';
+      if (html.trim()) return html;
+    }
+    const pdfPage = document.querySelector(`.react-pdf__Page[data-page-number="${pageNumber}"]`);
+    return pdfPage?.textContent || '';
+  };
+
+  const toggleLiveAudio = async () => {
+    if (liveAudio.status === 'playing' || liveAudio.status === 'paused') {
+      liveAudio.togglePause();
+      return;
+    }
+    if (liveAudio.status === 'loading') {
+      liveAudio.stop();
+      return;
+    }
+    if (fileType === 'epub') {
+      showToast('Audio: PDF/TXT por ahora');
+      return;
+    }
+    let pageHtml = await resolvePageTextForTts();
+    if (!pageHtml.trim() && fileType === 'pdf' && fileUrl) {
+      showToast('Extrayendo texto…');
+      try {
+        const blob = (await coverDB.getBookContent(fileName)) || (await fetch(fileUrl).then((r) => r.blob()));
+        void extractGhostTextLazy(blob, fileName);
+        for (let n = 0; n < 50; n++) {
+          await new Promise((r) => setTimeout(r, 120));
+          pageHtml = await resolvePageTextForTts();
+          if (pageHtml.trim()) break;
+        }
+      } catch (e) {
+        console.error('[LiveAudio] extract failed', e);
+      }
+    }
+    if (!pageHtml.trim()) {
+      showToast('Sin texto — probá Modo lector');
+      return;
+    }
+    const sel =
+      window.getSelection()?.toString().trim() ||
+      selectedTextMenu?.text?.trim() ||
+      '';
+    const queue = sentencesFromPageHtml(pageHtml, sel || null);
+    if (queue.length === 0) {
+      showToast('Sin oraciones');
+      return;
+    }
+    showToast(sel ? 'Audio desde selección' : 'Audio desde inicio de página');
+    setSelectedTextMenu(null);
+    await liveAudio.start(queue);
+  };
+
+  const closeBook = (skipHistory = false) => {
+    openRequestRef.current += 1;
+    if (!fileUrl) return;
+    liveAudio.stop();
+    // Force-flush FEATURE #1 progress (even mid-restore) using frozen page if any
+    if (isLoaded && fileName) {
+      const keep = restoreTargetPageRef.current ?? modeSwitchPageRef.current ?? pageNumberRef.current;
+      saveProgressRef.current?.({ force: true, pageOverride: keep });
+    }
+    restoreTargetPageRef.current = null;
+    modeSwitchPageRef.current = null;
+    ghostPdfRef.current = null;
+    ghostPdfLoadingRef.current = null;
+    ghostInflightRef.current.clear();
+    if (fileUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(fileUrl);
+    }
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
+    setFileUrl(null);
+    setFileName('');
+    setNumPages(0);
+    setIsLoaded(false);
+    setIsRestoring(false);
+    setTextContent(null);
+    setIsReaderMode(false);
+    setQuadrant(1);
+    setShowUI(true);
+    setIsManualHide(false);
+    localStorage.removeItem('catreader_last_book');
+    if (!skipHistory) {
+      if (window.history.state?.view === 'reader' && window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.history.replaceState({ view: 'library' }, '', libraryUrl());
+        setIsFeedView(false);
+      }
+    } else {
+      setIsFeedView(isFeedPath(window.location.pathname));
+    }
+  };
+
+  const openFeed = () => {
+    openRequestRef.current += 1;
+    if (isFeedPath(window.location.pathname)) {
+      setIsFeedView(true);
+      return;
+    }
+    window.history.pushState({ view: 'feed', from: 'library' }, '', feedUrl());
+    setIsFeedView(true);
+  };
+
+  const closeFeed = () => {
+    openRequestRef.current += 1;
+    if (window.history.state?.view === 'feed' && window.history.state?.from === 'library') {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState({ view: 'library' }, '', libraryUrl());
+    setIsFeedView(false);
+  };
+
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openFromLibrary = async (
+    book: LibraryBook,
+    forcePage?: number,
+    forceQuadrant?: number,
+    skipHistory = false,
+    initialEpubLocation?: string,
+    initialScrollRatio?: number,
+    fallbackPage?: number
+  ) => {
+    const filename = book.filename;
+    
+    // If book is already open, just jump to page/quadrant if specified
+    if (filename === fileName && fileUrl) {
+      if (forcePage || fallbackPage) scrollToPage(forcePage || fallbackPage || 1);
+      return;
+    }
+
+    const requestId = ++openRequestRef.current;
+    resetCommittedPage();
+
+    console.log(`[Reader] Opening book: ${filename}`);
+    
+    // Revoke previous URL if opening a different book
+    if (fileUrl && fileUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(fileUrl);
+    }
+
+    setFileName(filename);
+    setFileType(book.type);
+    setIsReaderMode(false);
+    setEpubCfi(initialEpubLocation || '');
+    // FEATURE #1: do NOT set page to 1 before progress loads — freeze until known
+    setIsRestoring(true);
+    const hasForcedPage = forcePage != null;
+    restoreTargetPageRef.current = hasForcedPage ? forcePage : null;
+    modeSwitchPageRef.current = hasForcedPage ? forcePage : null;
+    setScrollRatio(initialScrollRatio ?? 0);
+    
+    // Clear previous timeouts
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
+    const shelf = shelves.find(s => s.bookIds.includes(book.id));
+    const shelfTitle = shelf?.title || 'library';
+    const bookPath = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
+    localStorage.setItem('catreader_last_book', filename);
+
+    const progressPromise = hasForcedPage
+      ? Promise.resolve(null)
+      : loadProgress(filename);
+
+    const blobPromise = getBookBlob(book);
+
+    try {
+      const [blob, progress] = await Promise.all([blobPromise, progressPromise]);
+      if (requestId !== openRequestRef.current) return;
+      const url = URL.createObjectURL(blob);
+      setFileUrl(url);
+      setIsFeedView(false);
+
+      if (skipHistory) {
+        const onBookUrl = !!resolveBookRoute(window.location.pathname, window.location.search);
+        const hasReaderState = window.history.state?.view === 'reader';
+        if (!onBookUrl || !hasReaderState || window.history.length <= 1) {
+          seedReaderHistoryStack(bookPath, filename);
+        }
+      } else {
+        pushReaderHistory(bookPath, filename);
+      }
+      if (book.type === 'txt') {
+        const text = await blob.text();
+        if (requestId !== openRequestRef.current) return;
+        setTextContent([text]);
+        setNumPages(1);
+        if (initialScrollRatio != null) setScrollRatio(initialScrollRatio);
+        coverDB.saveGhostText(filename, text).catch(() => {});
+        syncService.saveGhostText(filename, text).catch(() => {});
+      } else if (book.type === 'epub') {
+        setTextContent(null);
+      } else {
+        setTextContent(null);
+      }
+
+      if (hasForcedPage) {
+        restoreTargetPageRef.current = forcePage;
+        modeSwitchPageRef.current = forcePage;
+        setPageNumber(forcePage);
+        commitPage(forcePage);
+        setScrollRatio(0);
+        if (forceQuadrant) setQuadrant(forceQuadrant);
+      } else if (progress?.page != null) {
+        restoreTargetPageRef.current = progress.page;
+        modeSwitchPageRef.current = progress.page;
+        commitPage(progress.page);
+      } else if (fallbackPage != null && fallbackPage > 0) {
+        restoreTargetPageRef.current = fallbackPage;
+        modeSwitchPageRef.current = fallbackPage;
+        setPageNumber(fallbackPage);
+        commitPage(fallbackPage);
+        setScrollRatio(0);
+      } else {
+        restoreTargetPageRef.current = null;
+        modeSwitchPageRef.current = null;
+        setPageNumber(1);
+        // A Discover item may target a position inside a TXT file. Keep that
+        // locator when there is no prior progress to restore.
+        if (initialScrollRatio == null) setScrollRatio(0);
+      }
+      
+      // Safety timeout for the "Restoring position" overlay
+      restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), 5000);
+    } catch (err: any) {
+      if (requestId !== openRequestRef.current) return;
+      console.error('[Reader] Failed to open book:', err);
+      setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
+      showToast('Error al abrir el libro.');
+    }
+    if (requestId !== openRequestRef.current) return;
+    if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
+    else {
+      setIsLoaded(false);
+      // Safety timeout for "Preparando páginas" (5s for heavy PDFs)
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.warn('[Reader] Loading timeout reached for:', filename);
+        setIsLoaded(true);
+      }, 5000);
+    }
+  };
+
+  // --- Browser Navigation ---
+  useEffect(() => {
+    if (window.history.state?.view) return;
+    if (isFeedView) {
+      window.history.replaceState({ view: 'feed', direct: true }, '', window.location.href);
+    } else if (!resolveBookRoute(window.location.pathname, window.location.search)) {
+      window.history.replaceState({ view: 'library' }, '', window.location.href);
+    }
+  }, [isFeedView]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const parsed = resolveBookRoute(window.location.pathname, window.location.search);
+      if (parsed) {
+        setIsFeedView(false);
+        const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
+        if (book) {
+          openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
+        }
+      } else if (isFeedPath(window.location.pathname)) {
+        closeBook(true);
+        setIsFeedView(true);
+      } else {
+        closeBook(true);
+        setIsFeedView(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [library, fileUrl]);
+
+  useEffect(() => {
+    if (editingBook) return;
+    if (library.length > 0 && !fileUrl && !hasResumedRef.current) {
+      hasResumedRef.current = true; // Mark as resumed immediately to prevent any subsequent auto-resumes
+      const parsed = resolveBookRoute(window.location.pathname, window.location.search);
+      if (parsed) {
+        const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
+        if (book) {
+          openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
+        }
+      }
+      // Land on gallery when no deep link — user picks a book
+    }
+  }, [library, fileUrl, editingBook]);
+
+  useEffect(() => {
+    const loadHighlights = async () => {
+      const local = await coverDB.getHighlights();
+      const remote = await syncService.loadHighlights();
+      const merged = remote && remote.length > (local?.length || 0) ? remote : (local || []);
+      setHighlights(merged);
+      if (merged.length > 0) {
+        const random = merged[Math.floor(Math.random() * merged.length)];
+        setDailyHighlight(random);
+      }
+    };
+    loadHighlights();
+  }, []);
+
+  useEffect(() => {
+    if (fileName && fileUrl) {
+      const book = library.find(b => b.filename === fileName);
+      const shelf = book ? shelves.find(s => s.bookIds.includes(book.id)) : null;
+      const shelfTitle = shelf?.title || 'library';
+      const url = new URL(window.location.href);
+      url.pathname = buildBookPath(shelfTitle, fileName, pageNumber, quadrant);
+      url.search = '';
+      window.history.replaceState(
+        { view: 'reader', filename: fileName, ...(typeof window.history.state === 'object' ? window.history.state : {}) },
+        '',
+        url.toString()
+      );
+    }
+  }, [pageNumber, quadrant, fileName, fileUrl, library, shelves]);
+
+  useEffect(() => {
+    if (fileType === 'txt' && isLoaded && scrollRatio > 0 && containerRef.current) {
+      const { scrollHeight, clientHeight } = containerRef.current;
+      containerRef.current.scrollTo({ top: scrollRatio * (scrollHeight - clientHeight), behavior: 'instant' });
+      setScrollRatio(0);
+    }
+  }, [fileType, isLoaded, scrollRatio]);
+
+  const scrollToPage = (targetPage: number) => {
+    const prefix = pageElementPrefix(isReaderMode, fileType);
+    const el = document.getElementById(`${prefix}${targetPage}`);
+    if (el && containerRef.current) {
+      el.scrollIntoView({ behavior: 'smooth' });
+      setPageNumber(targetPage);
+      commitPage(targetPage);
+    }
+  };
+
+  const changePage = (offset: number) => {
+    const newPage = offsetPage(pageNumber, offset, numPages);
+    if (newPage !== pageNumber) scrollToPage(newPage);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const width = window.innerWidth;
+    if (e.clientX > width * 0.7) changePage(1);
+    else if (e.clientX < width * 0.3) changePage(-1);
+    resetUITimer();
+  };
+
+  const openFeedItem = (item: ReadingFeedItem, book: LibraryBook) => {
+    const locator = item.locator;
+    const scrollRatio = locator.kind === 'txt' && locator.offset != null && locator.sourceLength
+      ? Math.min(0.999, Math.max(0, locator.offset / locator.sourceLength))
+      : undefined;
+    void openFromLibrary(
+      book,
+      undefined,
+      undefined,
+      false,
+      locator.kind === 'epub' ? locator.href : undefined,
+      scrollRatio,
+      locator.kind === 'pdf' ? locator.page : undefined
+    );
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !fileUrl) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (shouldBlockPageObserver(isRestoring, restoreTargetPageRef.current)) return;
+      let bestPage = pageNumber, bestRatio = -1;
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+          bestRatio = entry.intersectionRatio;
+          bestPage = parseInt(entry.target.getAttribute('data-page') || '1');
+        }
+      });
+      if (bestRatio >= 0) setPageNumber(bestPage);
+    }, { threshold: [0, 0.25, 0.5, 0.75, 1], root: container });
+
+    const updateObserver = () => container.querySelectorAll('.page-wrapper, .text-page-wrapper').forEach((p) => observer.observe(p));
+    const mutationObserver = new MutationObserver(updateObserver);
+    mutationObserver.observe(container, { childList: true, subtree: true });
+    updateObserver();
+
+    return () => {
+      observer.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [isLoaded, fileName, fileUrl, isRestoring, isReaderMode]);
+
+  const themeStyles = {
+    light: 'bg-[#f8f9fa] text-stone-900',
+    dim: 'bg-[#334155] text-[#cbd5e1]',
+    dark: 'bg-[#121212] text-[#a3a3a3]',
+    sepia: 'bg-[#e8dcc7] text-[#5c4b37]',
+    paper: 'bg-[#f4ead5] text-[#4a3f35]'
+  };
+
+  const pdfFilter = {
+    light: 'contrast(0.95)',
+    dim: 'invert(0.8) hue-rotate(180deg) brightness(1.2) contrast(0.85)',
+    dark: 'invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.8)',
+    sepia: 'sepia(0.4) contrast(0.9) brightness(0.9)',
+    paper: 'sepia(0.2) contrast(1.1) brightness(0.95) saturate(1.1) drop-shadow(0 0 0px #f4ead5)'
+  };
+
+  return (
+    <div className={cn("fixed inset-0 overflow-hidden flex flex-col transition-colors duration-500", themeStyles[theme])} onMouseMove={resetUITimer} onTouchStart={resetUITimer}>
+      <button onClick={() => setShowDiagnostics(true)} className="fixed top-2 right-4 z-40 text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help">{APP_VERSION}</button>
+
+      <AnimatePresence>{showDiagnostics && (
+
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-stone-950/95 backdrop-blur-xl p-6 sm:p-12 overflow-auto">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center justify-between mb-8 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /><h2 className="text-xl font-mono text-white font-bold">CatReader Diagnostics</h2></div>
+                <button onClick={() => setShowDiagnostics(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"><X size={20} /></button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono text-sm">
+                <div className="bg-stone-900/50 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-stone-500 uppercase text-xs mb-3 font-bold">Core State</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Version</span><span className="text-emerald-400">{APP_VERSION}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Device</span><span className="text-amber-400 capitalize">{getDeviceCategory()}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Active Book</span><span className="text-indigo-400 truncate max-w-[200px]">{fileName || 'None'}</span></div>
+                  </div>
+                </div>
+                <div className="bg-stone-900/50 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-stone-500 uppercase text-xs mb-3 font-bold">Metrics</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Page</span><span className="text-emerald-400">{pageNumber} / {numPages || 0}</span></div>
+                    <div className="flex justify-between border-b border-white/5 py-1"><span>Zoom</span><span className="text-white">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>{globalStatus && (
+        <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-amber-600 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold flex items-center gap-3 border-2 border-amber-400">
+          <Loader2 className="animate-spin" size={20} /><span>{globalStatus}</span>
+        </motion.div>
+      )}</AnimatePresence>
+
+      <AnimatePresence>{globalError && (
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="fixed inset-0 z-[200] bg-stone-950/90 backdrop-blur-xl flex items-center justify-center p-6">
+          <div className="bg-red-900/20 border-2 border-red-500/50 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl">
+            <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20"><X className="text-white" size={32} /></div>
+            <h2 className="text-2xl font-bold text-white mb-2">{globalError.message}</h2>
+            <p className="text-red-200/70 text-sm mb-8 font-mono">{globalError.details || 'Error desconocido'}</p>
+            <button onClick={() => { setGlobalError(null); window.location.reload(); }} className="w-full bg-white text-stone-950 font-bold py-4 rounded-xl hover:bg-stone-200 transition-colors shadow-lg">Recargar</button>
+          </div>
+        </motion.div>
+      )}</AnimatePresence>
+
+      <AnimatePresence>{showUI && !isManualHide && fileUrl && (
+        <motion.header
+          initial={{ y: -100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -100, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed left-0 right-0 z-50 flex items-center gap-2 bg-stone-950/90 text-stone-200 px-3 py-2 shadow-lg backdrop-blur-md border-b border-white/5"
+          style={{
+            top: 0,
+            paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
+            paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+            paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+          }}
+        >
+          <button
+            onClick={() => closeBook()}
+            className="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-full hover:bg-white/10 text-amber-400 hover:text-amber-300 transition-colors"
+            aria-label="Volver a la biblioteca"
+          >
+            <Library size={18} />
+            <span className="text-[10px] font-bold uppercase tracking-wide hidden sm:inline">Biblioteca</span>
+          </button>
+          <div className="flex items-center gap-1 group/title cursor-pointer min-w-0 flex-1" onClick={() => {
+            const book = library.find(b => b.filename === fileName);
+            if (book) setEditingBook(book);
+          }}>
+            <span className="text-xs font-medium truncate text-stone-200 group-hover/title:text-white transition-colors">
+              {(() => {
+                const book = library.find(b => b.filename === fileName);
+                return book ? displayBookTitle(book.title, book.filename) : fileName;
+              })()}
+            </span>
+            <Pencil size={12} className="text-stone-500 group-hover/title:text-amber-400 transition-all opacity-0 group-hover/title:opacity-100 shrink-0 hidden sm:block" />
+          </div>
+          <div className="hidden sm:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+            {['light', 'sepia', 'paper', 'dim', 'dark'].map((t) => (
+              <button key={t} onClick={() => setTheme(t as any)} className={cn("w-3 h-3 rounded-full border border-white/20 transition-all", theme === t ? "bg-indigo-500 ring-1 ring-white/40" : "bg-stone-700 hover:bg-stone-600")} title={t} />
+            ))}
+          </div>
+          <div className="hidden md:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="hidden md:flex items-center gap-0.5 shrink-0">
+            <button onClick={() => { freezePageForRemount(); changeZoom(-0.1); }} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomOut size={12}/></button>
+            <span className="text-[9px] font-mono w-7 text-center text-stone-400">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span>
+            <button onClick={() => { freezePageForRemount(); changeZoom(0.1); }} className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white"><ZoomIn size={12}/></button>
+          </div>
+          {(fileType === 'pdf' || fileType === 'txt') && (
+            <>
+              <div className="w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+              <button
+                onClick={toggleReaderMode}
+                className={cn(
+                  "p-1.5 rounded-full transition-all shrink-0",
+                  isReaderMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10"
+                )}
+                title="Modo lector (texto)"
+                aria-label="Modo lector"
+              >
+                <BookText size={16} />
+              </button>
+              <button
+                onClick={() => void toggleLiveAudio()}
+                className={cn(
+                  "p-1.5 rounded-full transition-all shrink-0",
+                  liveAudio.status === 'playing' || liveAudio.status === 'loading'
+                    ? "bg-emerald-500 text-white shadow-lg"
+                    : liveAudio.status === 'paused'
+                      ? "bg-emerald-700 text-white"
+                      : "text-stone-400 hover:text-white hover:bg-white/10"
+                )}
+                title={liveAudio.status === 'playing' ? 'Pausar audio' : `Leer en voz alta (CATTS · ${liveLang.toUpperCase()})`}
+                aria-label={`Audio en vivo ${liveLang}`}
+              >
+                {liveAudio.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <Headphones size={16} />}
+              </button>
+              {(() => {
+                const ab = library.find(b => b.filename === fileName);
+                if (!ab?.audio || !ab.cattsBookId) return null;
+                return (
+                  <button
+                    onClick={() => setShowAudiobook(true)}
+                    className={cn(
+                      "p-1.5 rounded-full transition-all shrink-0",
+                      showAudiobook ? "bg-amber-500 text-white shadow-lg" : "text-amber-400 hover:text-amber-200 hover:bg-white/10"
+                    )}
+                    title="Audiolibro CatTS (capítulos)"
+                    aria-label="Audiolibro"
+                  >
+                    <CassetteTape size={16} />
+                  </button>
+                );
+              })()}
+            </>
+          )}
+          <div className="hidden lg:block w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="hidden lg:flex items-center gap-1 shrink-0">
+            <button onClick={() => setIsFocusMode(!isFocusMode)} className={cn("p-1 rounded-full transition-all", isFocusMode ? "bg-indigo-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Focus (F)"><Maximize2 size={14} /></button>
+            <button onClick={() => setIsCaptureMode(!isCaptureMode)} className={cn("p-1 rounded-full transition-all", isCaptureMode ? "bg-amber-500 text-white shadow-lg" : "text-stone-400 hover:text-white hover:bg-white/10")} title="Capture Cover"><Crop size={14} /></button>
+          </div>
+          <div className="w-px h-3 bg-white/10 mx-0.5 shrink-0" />
+          <div className="relative shrink-0" ref={menuRef}>
+            <button onClick={() => setShowMenu(!showMenu)} className={cn("p-1 hover:bg-white/10 rounded-full transition-colors", showMenu && "bg-white/10")} aria-label="More"><MoreVertical size={14} /></button>
+            <AnimatePresence>{showMenu && (
+              <motion.div initial={{ opacity: 0, y: -4, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.95 }} className="absolute top-full right-0 mt-2 bg-stone-900/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl py-1 min-w-[160px] z-[70]">
                 <button onClick={() => { handleGoogleDrive(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2"><Cloud size={12} /> Google Drive</button>
                 <button onClick={() => { 
                   const book = library.find(b => b.filename === fileName);
@@ -532,7 +1468,7 @@ export default function App() {
                     <BookText size={12} /> {isReaderMode ? 'Ver PDF' : 'Modo lector'}
                   </button>
                 )}
-                <button onClick={() => { navigator.clipboard.writeText(window.location.href); setShowMenu(false); showToast('Enlace copiado'); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2">ðŸ”— Copiar enlace</button>
+                <button onClick={() => { navigator.clipboard.writeText(window.location.href); setShowMenu(false); showToast('Enlace copiado'); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2">🔗 Copiar enlace</button>
                 <div className="border-t border-white/10 my-1 md:hidden" />
                 <div className="px-3 py-2 md:hidden">
                   <p className="text-[9px] font-bold text-stone-500 uppercase tracking-widest mb-2">Tema</p>
@@ -666,7 +1602,7 @@ export default function App() {
                   setPageNumber(clampedPage);
                 }
                 setPageRatios(ratios);
-                // Show the reader immediately â€” page canvas fills in as PDF.js renders
+                // Show the reader immediately — page canvas fills in as PDF.js renders
                 setIsLoaded(true);
               } catch (e) {
                 console.error('[Reader] onLoadSuccess error:', e);
@@ -893,4 +1829,3 @@ export default function App() {
     </div>
   );
 }
-

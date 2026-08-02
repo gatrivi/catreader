@@ -14,13 +14,13 @@ interface UseReaderSyncProps {
   containerRef: React.RefObject<HTMLDivElement>;
   showToast: (msg: string) => void;
   setIsSyncing: (val: boolean) => void;
-  /** App restore freeze target â€” blocks false page-1 saves */
+  /** App restore freeze target — blocks false page-1 saves */
   getRestoreTargetPage?: () => number | null;
 }
 
 /**
  * Hook to manage reading progress synchronization.
- * FEATURE #1: synced progress is sacred â€” see docs/PROGRESS_SACRED.md
+ * FEATURE #1: synced progress is sacred — see docs/PROGRESS_SACRED.md
  */
 export function useReaderSync({
   fileName,
@@ -234,4 +234,3 @@ export function useReaderSync({
     resetCommittedPage,
   };
 }
-
