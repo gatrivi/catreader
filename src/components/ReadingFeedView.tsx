@@ -25,7 +25,6 @@ interface ReadingFeedViewProps {
   library: LibraryBook[];
   covers?: Record<string, string>;
   onOpenItem: (item: ReadingFeedItem, book: LibraryBook) => void;
-  onWarmBook: (book: LibraryBook) => void;
   onBack: () => void;
   appVersion?: string;
   onReportSaved?: () => void;
@@ -111,13 +110,11 @@ export function ReadingFeedView({
   library,
   covers = {},
   onOpenItem,
-  onWarmBook,
   onBack,
   appVersion = 'unknown',
   onReportSaved,
 }: ReadingFeedViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const warmedBooksRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<ReadingFeedItem[]>([]);
   const [order, setOrder] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(INITIAL_ITEMS);
@@ -211,12 +208,6 @@ export function ReadingFeedView({
     if (node.scrollTop + node.clientHeight * 2 > node.scrollHeight) {
       setVisibleCount((count) => Math.min(count + LOAD_MORE, order.length));
     }
-  };
-
-  const warmOnce = (book: LibraryBook) => {
-    if (warmedBooksRef.current.has(book.filename)) return;
-    warmedBooksRef.current.add(book.filename);
-    onWarmBook(book);
   };
 
   const updatePreferences = (update: (current: FeedPreferences) => FeedPreferences) => {
@@ -357,7 +348,6 @@ export function ReadingFeedView({
                     shareUrl={shareUrl}
                     saved={preferences.savedItems.includes(item.id)}
                     onOpenItem={onOpenItem}
-                    onWarmBook={warmOnce}
                     onMore={(nextItem) => setBookTaste(nextItem, 'more')}
                     onSkip={skipItem}
                     onLess={(nextItem) => setBookTaste(nextItem, 'less')}

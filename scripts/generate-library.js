@@ -25,12 +25,17 @@ function paperManifestPath(filename) {
   return fs.existsSync(p) ? `/books/paper/${paperSafeId(filename)}/paper-manifest.json` : undefined;
 }
 
+function readerAssetPath(filename) {
+  return `/reader/${paperSafeId(filename)}.json`;
+}
+
 const books = files
   .filter(file => supportedExtensions.some(ext => file.toLowerCase().endsWith(ext)))
   .map(file => {
     const ext = path.extname(file);
     const existing = currentBooks.find(b => b.filename === file);
     const paper = paperManifestPath(file);
+    const reader = ext.toLowerCase() === '.pdf' ? readerAssetPath(file) : undefined;
     
     return {
       id: file,
@@ -42,7 +47,8 @@ const books = files
       ...(existing?.audio ? { audio: existing.audio } : {}),
       ...(existing?.cattsBookId ? { cattsBookId: existing.cattsBookId } : {}),
       ...(existing?.coverSource ? { coverSource: existing.coverSource } : {}),
-      ...(paper ? { paper } : {})
+      ...(paper ? { paper } : {}),
+      ...(reader ? { reader } : {})
     };
   });
 

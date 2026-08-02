@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { syncService } from '../services/syncService';
 import { coverDB } from '../services/db';
 import { GoogleGenAI } from "@google/genai";
-import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
 import { shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
@@ -26,6 +25,8 @@ export interface LibraryBook {
   cattsBookId?: string;
   /** Path to paper-manifest.json when Paper Soul bake exists */
   paper?: string;
+  /** Small build-time page-text asset; the original PDF stays lazy. */
+  reader?: string;
   coverSource?: {
     type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'google-books' | 'bundled';
     url?: string;
@@ -394,6 +395,8 @@ export function useLibrary({
    */
   const extractPagesAsImages = async (blob: Blob, maxPages = 5): Promise<string[]> => {
     try {
+      const pdfjsBackground = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      (pdfjsBackground as any).GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${(pdfjsBackground as any).version}/legacy/build/pdf.worker.min.mjs`;
       const data = new Uint8Array(await blob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;

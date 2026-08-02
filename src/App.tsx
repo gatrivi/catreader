@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Document, Page, pdfjs as pdfjsLib } from 'react-pdf';
 import { 
   Upload,
   ZoomIn, 
@@ -29,15 +28,9 @@ import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { GoogleGenAI } from "@google/genai";
-import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
-
-// Setup pdfjs worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`;
-(pdfjsBackground as any).GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${(pdfjsBackground as any).version}/legacy/build/pdf.worker.min.mjs`;
 
 // Component Imports
 import { LibraryView } from './components/LibraryView';
-import { ReaderView } from './components/ReaderView';
 import { EditModal } from './components/EditModal';
 import { AudiobookListenPanel } from './components/AudiobookListenPanel';
 import { useShelves } from './hooks/useShelves';
@@ -75,6 +68,12 @@ import {
 import { loadLocalProgressMap } from './utils/localProgress';
 import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { APP_VERSION, RELEASE_NOTES_SEEN_KEY } from './utils/releaseNotes';
+import { parseReaderPayload, parseStoredReaderText, readerAssetPath } from './utils/readerData';
+
+const LazyReaderView = React.lazy(() =>
+  import('./components/ReaderView').then(({ ReaderView }) => ({ default: ReaderView })),
+);
+const LazyTextReaderView = React.lazy(() => import('./components/TextReaderView'));
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -86,6 +85,26 @@ function libraryUrl(): string {
 
 function feedUrl(): string {
   return new URL(getFeedPath(), window.location.origin).toString();
+}
+
+function OpeningBookShell({ title, onCancel }: { title: string; onCancel: () => void }) {
+  return (
+    <div className="flex min-h-full flex-col items-center justify-center gap-5 bg-stone-950 px-6 text-center text-stone-100">
+      <Loader2 size={30} className="animate-spin text-amber-500" aria-hidden="true" />
+      <div>
+        <p className="font-serif text-xl font-semibold">Preparando lectura</p>
+        <p className="mt-2 max-w-sm text-sm text-stone-500">{title}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-bold uppercase tracking-widest text-stone-400 hover:bg-white/10 hover:text-white"
+      >
+        <X size={15} />
+        Cancelar
+      </button>
+    </div>
+  );
 }
 
 /** Ensure browser Back returns to the gallery instead of leaving the site. */
@@ -136,6 +155,7 @@ export default function App() {
   const [isManualHide, setIsManualHide] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isReaderMode, setIsReaderMode] = useState(false);
+  const [openingBook, setOpeningBook] = useState<LibraryBook | null>(null);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
   const [isFeedView, setIsFeedView] = useState(() => isFeedPath(window.location.pathname));
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
@@ -144,21 +164,7 @@ export default function App() {
   const modeSwitchPageRef = useRef<number | null>(null);
   
   const loadGhostTextToState = useCallback((storedText: string) => {
-    if (storedText.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(storedText);
-        if (Array.isArray(parsed)) {
-          setTextContent(parsed);
-          return;
-        }
-      } catch (e) { /* ignore */ }
-    }
-    if (storedText.includes('[Page ')) {
-      const pages = storedText.split(/\[Page \d+\]\n/).filter(Boolean);
-      setTextContent(pages);
-    } else {
-      setTextContent([storedText]);
-    }
+    setTextContent(parseStoredReaderText(storedText));
   }, []);
 
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -205,7 +211,18 @@ export default function App() {
   const ghostInflightRef = useRef<Set<number>>(new Set());
   const ghostPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bookBlobPromisesRef = useRef<Map<string, Promise<Blob>>>(new Map());
+  const readerTextPromisesRef = useRef<Map<string, Promise<string[]>>>(new Map());
+  const pdfjsBackgroundRef = useRef<any>(null);
   const openRequestRef = useRef(0);
+
+  const getPdfJs = async () => {
+    if (!pdfjsBackgroundRef.current) {
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      (pdfjs as any).GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${(pdfjs as any).version}/legacy/build/pdf.worker.min.mjs`;
+      pdfjsBackgroundRef.current = pdfjs;
+    }
+    return pdfjsBackgroundRef.current;
+  };
 
   // --- Hooks Integration ---
   const liveLang = detectBookLang(fileName);
@@ -555,8 +572,38 @@ export default function App() {
     return promise;
   };
 
-  const warmBook = (book: LibraryBook) => {
-    void getBookBlob(book).catch(() => {});
+  const getBookReaderText = (book: LibraryBook): Promise<string[]> => {
+    const existing = readerTextPromisesRef.current.get(book.filename);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const readerPath = book.reader || readerAssetPath(book.filename, baseUrl);
+      const candidatePaths = [readerPath];
+      const generatedPath = readerAssetPath(book.filename, baseUrl);
+      if (!candidatePaths.includes(generatedPath)) candidatePaths.push(generatedPath);
+
+      for (const path of candidatePaths) {
+        try {
+          const response = await fetch(path);
+          if (!response.ok) continue;
+          const pages = parseReaderPayload(await response.json());
+          if (!pages) continue;
+          void coverDB.saveGhostText(book.filename, JSON.stringify(pages));
+          return pages;
+        } catch {
+          // Offline or an older deployment without the generated asset.
+        }
+      }
+
+      const stored = parseStoredReaderText(await coverDB.getGhostText(book.filename));
+      if (stored) return stored;
+      throw new Error('No hay texto preparado para este libro');
+    })();
+
+    readerTextPromisesRef.current.set(book.filename, promise);
+    promise.catch(() => readerTextPromisesRef.current.delete(book.filename));
+    return promise;
   };
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -673,6 +720,7 @@ export default function App() {
     if (ghostPdfLoadingRef.current) return ghostPdfLoadingRef.current;
 
     ghostPdfLoadingRef.current = (async () => {
+      const pdfjsBackground = await getPdfJs();
       const data = new Uint8Array(await fileOrBlob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
@@ -794,6 +842,9 @@ export default function App() {
   };
 
   const toggleReaderMode = async () => {
+    if (fileType !== 'pdf') return;
+    const book = library.find((candidate) => candidate.filename === fileName);
+    if (!book) return;
     // Freeze page before remount — observer would otherwise see top of text view (p~1–3)
     // and saveProgress would overwrite synced progress (feature #1).
     const keepPage = pageNumber;
@@ -801,45 +852,77 @@ export default function App() {
     restoreTargetPageRef.current = keepPage;
     setIsRestoring(true);
 
-    const nextMode = !isReaderMode;
-    setIsReaderMode(nextMode);
+    const requestId = ++openRequestRef.current;
+    const currentUrl = fileUrl;
 
-    if (nextMode && fileType === 'pdf') {
+    if (isReaderMode) {
+      // Reader → PDF: this is the explicit heavy operation.
+      setOpeningBook(book);
+      setFileUrl(null);
+      setIsLoaded(false);
       try {
-        const text = await coverDB.getGhostText(fileName);
-        if (text) loadGhostTextToState(text);
-
-        const blob =
-          (await coverDB.getBookContent(fileName)) ||
-          (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
-        if (blob) {
-          // Fill holes around synced page — do NOT start at page 1
-          await ensureGhostAround(blob, fileName, keepPage);
-        } else if (!text) {
-          showToast('No se pudo cargar el PDF para texto');
-        }
-      } catch (e) {
-        console.error('[ReaderMode] Failed lazy extraction:', e);
-        showToast('Error al extraer texto');
+        const blob = await getBookBlob(book);
+        if (requestId !== openRequestRef.current) return;
+        setFileUrl(URL.createObjectURL(blob));
+        setIsReaderMode(false);
+        setOpeningBook(null);
+      } catch (error) {
+        if (requestId !== openRequestRef.current) return;
+        console.error('[ReaderMode] Failed to load original PDF:', error);
+        setOpeningBook(null);
+        setIsRestoring(false);
+        showToast('No se pudo cargar el PDF original');
       }
+      return;
+    }
+
+    // PDF → Reader: prefer the small generated page-text asset. Only use
+    // PDF.js as a fallback for old builds or locally uploaded files.
+    try {
+      let pages = textContentRef.current;
+      if (!pages?.length) {
+        try {
+          pages = await getBookReaderText(book);
+        } catch {
+          const blob =
+            (await coverDB.getBookContent(fileName)) ||
+            (currentUrl?.startsWith('blob:') ? await fetch(currentUrl).then((r) => r.blob()) : null);
+          if (!blob) throw new Error('No hay texto preparado para este libro');
+          await ensureGhostAround(blob, fileName, keepPage);
+          pages = textContentRef.current;
+        }
+      }
+      if (requestId !== openRequestRef.current || !pages?.length) return;
+      if (currentUrl?.startsWith('blob:')) URL.revokeObjectURL(currentUrl);
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      setFileUrl(book.reader || readerAssetPath(fileName, baseUrl));
+      setTextContent(pages);
+      setNumPages(pages.length);
+      setIsReaderMode(true);
+      setIsLoaded(true);
+    } catch (error) {
+      if (requestId !== openRequestRef.current) return;
+      console.error('[ReaderMode] Failed to load reader text:', error);
+      showToast('No se pudo preparar el texto');
     }
   };
 
   // As user scrolls in reader mode, extract the new window on demand
   useEffect(() => {
     if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
+    if (textContent?.[pageNumber - 1]?.trim()) return;
     let cancelled = false;
     (async () => {
-      const blob =
-        (await coverDB.getBookContent(fileName)) ||
-        (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+      // A reader asset URL is not a PDF. Never feed it to PDF.js; only use
+      // a PDF already present in the local cache for old/partial assets.
+      const blob = await coverDB.getBookContent(fileName);
       if (cancelled || !blob) return;
       await ensureGhostAround(blob, fileName, pageNumber);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isReaderMode, fileType, fileName, fileUrl, pageNumber]);
+  }, [isReaderMode, fileType, fileName, fileUrl, pageNumber, textContent]);
 
   // After reader↔PDF switch, scroll back to frozen page once DOM exists
   useEffect(() => {
@@ -910,10 +993,11 @@ export default function App() {
       return;
     }
     let pageHtml = await resolvePageTextForTts();
-    if (!pageHtml.trim() && fileType === 'pdf' && fileUrl) {
+    if (!pageHtml.trim() && fileType === 'pdf' && (fileUrl?.startsWith('blob:') || await coverDB.getBookContent(fileName))) {
       showToast('Extrayendo texto…');
       try {
-        const blob = (await coverDB.getBookContent(fileName)) || (await fetch(fileUrl).then((r) => r.blob()));
+        const blob = (await coverDB.getBookContent(fileName)) || (fileUrl?.startsWith('blob:') ? await fetch(fileUrl).then((r) => r.blob()) : null);
+        if (!blob) return;
         void extractGhostTextLazy(blob, fileName);
         for (let n = 0; n < 50; n++) {
           await new Promise((r) => setTimeout(r, 120));
@@ -943,8 +1027,10 @@ export default function App() {
   };
 
   const closeBook = (skipHistory = false) => {
+    const wasOpening = !!openingBook;
+    const returnToFeed = isFeedPath(window.location.pathname) || window.history.state?.view === 'feed';
     openRequestRef.current += 1;
-    if (!fileUrl) return;
+    if (!fileUrl && !wasOpening) return;
     liveAudio.stop();
     // Force-flush FEATURE #1 progress (even mid-restore) using frozen page if any
     if (isLoaded && fileName) {
@@ -956,12 +1042,13 @@ export default function App() {
     ghostPdfRef.current = null;
     ghostPdfLoadingRef.current = null;
     ghostInflightRef.current.clear();
-    if (fileUrl.startsWith('blob:')) {
+    if (fileUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
     if (restoringTimeoutRef.current) clearTimeout(restoringTimeoutRef.current);
     setFileUrl(null);
+    setOpeningBook(null);
     setFileName('');
     setNumPages(0);
     setIsLoaded(false);
@@ -976,8 +1063,9 @@ export default function App() {
       if (window.history.state?.view === 'reader' && window.history.length > 1) {
         window.history.back();
       } else {
-        window.history.replaceState({ view: 'library' }, '', libraryUrl());
-        setIsFeedView(false);
+        const nextUrl = returnToFeed ? feedUrl() : libraryUrl();
+        window.history.replaceState({ view: returnToFeed ? 'feed' : 'library' }, '', nextUrl);
+        setIsFeedView(returnToFeed);
       }
     } else {
       setIsFeedView(isFeedPath(window.location.pathname));
@@ -1013,10 +1101,12 @@ export default function App() {
     skipHistory = false,
     initialEpubLocation?: string,
     initialScrollRatio?: number,
-    fallbackPage?: number
+    fallbackPage?: number,
+    openPdf = false,
   ) => {
     const filename = book.filename;
-    
+    const textFirstPdf = book.type === 'pdf' && !openPdf;
+
     // If book is already open, just jump to page/quadrant if specified
     if (filename === fileName && fileUrl) {
       if (forcePage || fallbackPage) scrollToPage(forcePage || fallbackPage || 1);
@@ -1033,9 +1123,13 @@ export default function App() {
       URL.revokeObjectURL(fileUrl);
     }
 
+    setFileUrl(null);
     setFileName(filename);
     setFileType(book.type);
-    setIsReaderMode(false);
+    setOpeningBook(book);
+    setIsLoaded(false);
+    setTextContent(null);
+    setIsReaderMode(textFirstPdf);
     setEpubCfi(initialEpubLocation || '');
     // FEATURE #1: do NOT set page to 1 before progress loads — freeze until known
     setIsRestoring(true);
@@ -1056,13 +1150,40 @@ export default function App() {
       ? Promise.resolve(null)
       : loadProgress(filename);
 
-    const blobPromise = getBookBlob(book);
-
     try {
-      const [blob, progress] = await Promise.all([blobPromise, progressPromise]);
+      let blob: Blob | null = null;
+      let readerPages: string[] | null = null;
+      let progress: Awaited<ReturnType<typeof loadProgress>> = null;
+
+      if (textFirstPdf) {
+        const readerPromise = getBookReaderText(book);
+        progress = await progressPromise.catch(() => null);
+        try {
+          readerPages = await readerPromise;
+        } catch (readerError) {
+          // Old deployments and locally uploaded PDFs may not have a
+          // generated reader asset. Fall back to the local PDF cache and
+          // extract only the requested page window.
+          console.warn('[Reader] Reader asset unavailable; using local PDF fallback:', readerError);
+          blob = await getBookBlob(book);
+          await ensureGhostAround(blob, filename, fallbackPage || forcePage || 1);
+          readerPages = textContentRef.current;
+        }
+        if (!readerPages?.length) throw new Error('No se pudo preparar el texto del libro');
+      } else {
+        [blob, progress] = await Promise.all([getBookBlob(book), progressPromise]);
+      }
       if (requestId !== openRequestRef.current) return;
-      const url = URL.createObjectURL(blob);
-      setFileUrl(url);
+
+      if (textFirstPdf) {
+        const baseUrl = import.meta.env.BASE_URL || '/';
+        setFileUrl(book.reader || readerAssetPath(filename, baseUrl));
+        setTextContent(readerPages);
+        setNumPages(readerPages.length);
+      } else if (blob) {
+        setFileUrl(URL.createObjectURL(blob));
+      }
+      setOpeningBook(null);
       setIsFeedView(false);
 
       if (skipHistory) {
@@ -1075,6 +1196,7 @@ export default function App() {
         pushReaderHistory(bookPath, filename);
       }
       if (book.type === 'txt') {
+        if (!blob) throw new Error('Texto no disponible');
         const text = await blob.text();
         if (requestId !== openRequestRef.current) return;
         setTextContent([text]);
@@ -1084,7 +1206,7 @@ export default function App() {
         syncService.saveGhostText(filename, text).catch(() => {});
       } else if (book.type === 'epub') {
         setTextContent(null);
-      } else {
+      } else if (!textFirstPdf) {
         setTextContent(null);
       }
 
@@ -1098,12 +1220,15 @@ export default function App() {
       } else if (progress?.page != null) {
         restoreTargetPageRef.current = progress.page;
         modeSwitchPageRef.current = progress.page;
-        commitPage(progress.page);
+        const target = textFirstPdf ? clampPage(progress.page, readerPages?.length || 1) : progress.page;
+        setPageNumber(target);
+        commitPage(target);
       } else if (fallbackPage != null && fallbackPage > 0) {
-        restoreTargetPageRef.current = fallbackPage;
-        modeSwitchPageRef.current = fallbackPage;
-        setPageNumber(fallbackPage);
-        commitPage(fallbackPage);
+        const target = textFirstPdf ? clampPage(fallbackPage, readerPages?.length || 1) : fallbackPage;
+        restoreTargetPageRef.current = target;
+        modeSwitchPageRef.current = target;
+        setPageNumber(target);
+        commitPage(target);
         setScrollRatio(0);
       } else {
         restoreTargetPageRef.current = null;
@@ -1115,15 +1240,20 @@ export default function App() {
       }
       
       // Safety timeout for the "Restoring position" overlay
-      restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), 5000);
+      restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), textFirstPdf ? 1200 : 5000);
     } catch (err: any) {
       if (requestId !== openRequestRef.current) return;
       console.error('[Reader] Failed to open book:', err);
+      setOpeningBook(null);
+      setFileUrl(null);
+      setIsLoaded(false);
+      setIsRestoring(false);
       setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
       showToast('Error al abrir el libro.');
+      return;
     }
     if (requestId !== openRequestRef.current) return;
-    if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
+    if (textFirstPdf || book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
     else {
       setIsLoaded(false);
       // Safety timeout for "Preparando páginas" (5s for heavy PDFs)
@@ -1523,13 +1653,14 @@ export default function App() {
           resetUITimer();
         }}
       >
-        {!fileUrl ? (
+        {openingBook ? (
+          <OpeningBookShell title={openingBook.title} onCancel={() => closeBook()} />
+        ) : !fileUrl ? (
           isFeedView ? (
             <ReadingFeedView
               library={library}
               covers={covers}
               onOpenItem={openFeedItem}
-              onWarmBook={warmBook}
               onBack={closeFeed}
               appVersion={APP_VERSION}
               onReportSaved={() => setFragmentReportCount(loadFragmentReports().length)}
@@ -1579,7 +1710,28 @@ export default function App() {
             }} />
           )
         ) : (
-          <ReaderView 
+          <React.Suspense
+            fallback={(
+              <div className="flex min-h-full items-center justify-center bg-stone-950 text-stone-500">
+                <Loader2 size={28} className="animate-spin text-amber-500" />
+              </div>
+            )}
+          >
+          {isReaderMode || fileType === 'txt' ? (
+            <LazyTextReaderView
+              fileType={fileType}
+              textContent={textContent}
+              pageNumber={pageNumber}
+              zoom={typeof zoom === 'number' ? zoom : 1}
+              theme={theme}
+              isSimplified={isSimplified}
+              onTextSelection={(text, x, y) => setSelectedTextMenu({ text, x, y })}
+              onToggleReaderMode={toggleReaderMode}
+              themeStyles={themeStyles}
+              paperPath={library.find(b => b.filename === fileName)?.paper ?? null}
+            />
+          ) : (
+          <LazyReaderView
             fileUrl={fileUrl} 
             fileType={fileType} 
             textContent={textContent} 
@@ -1718,6 +1870,8 @@ export default function App() {
               }
             }}
           />
+          )}
+          </React.Suspense>
         )}
       </main>
 

@@ -38,9 +38,8 @@ describe('ReadingFeedView', () => {
       <ReadingFeedView
         library={library}
         onOpenItem={vi.fn()}
-        onWarmBook={vi.fn()}
         onBack={vi.fn()}
-        appVersion="v2.10.16"
+        appVersion="v2.10.17"
       />
     );
 
@@ -52,7 +51,7 @@ describe('ReadingFeedView', () => {
     expect(loadFragmentReports()).toHaveLength(1);
     expect(loadFragmentReports()[0]).toMatchObject({
       reason: 'destination',
-      appVersion: 'v2.10.16',
+      appVersion: 'v2.10.17',
       locator: { kind: 'pdf', page: 12 },
     });
   });
@@ -63,7 +62,6 @@ describe('ReadingFeedView', () => {
       <ReadingFeedView
         library={library}
         onOpenItem={onOpenItem}
-        onWarmBook={vi.fn()}
         onBack={vi.fn()}
       />
     );
@@ -73,7 +71,12 @@ describe('ReadingFeedView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Guardar fragmento' }));
     expect(onOpenItem).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /Abrir/ }));
+    const openButton = screen.getByRole('button', { name: /Abrir/ });
+    fireEvent.pointerDown(openButton);
+    fireEvent.mouseEnter(openButton);
+    expect(onOpenItem).not.toHaveBeenCalled();
+
+    fireEvent.click(openButton);
     expect(onOpenItem).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'feed-1' }),
       expect.objectContaining({ filename: 'book.pdf' })
@@ -85,7 +88,6 @@ describe('ReadingFeedView', () => {
       <ReadingFeedView
         library={library}
         onOpenItem={vi.fn()}
-        onWarmBook={vi.fn()}
         onBack={vi.fn()}
       />
     );

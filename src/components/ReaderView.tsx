@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, AlertCircle, Check, X, Crop } from 'lucide-react';
-import { Document, Page } from 'react-pdf';
+import { Document, Page, pdfjs } from 'react-pdf';
 import { EpubView } from './EpubView';
 import { SadMonkIcon } from './SadMonkIcon';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,6 +10,8 @@ import { isPageInRenderWindow } from '../utils/reader';
 import { PaperLayer } from './PaperLayer';
 import { usePaperTexture } from '../hooks/usePaperTexture';
 import { applyInkVariance, stainsForPage } from '../utils/paperSoul';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

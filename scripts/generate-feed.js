@@ -7,10 +7,12 @@ const root = process.cwd();
 const booksDir = path.join(root, 'public', 'books');
 const booksFile = path.join(root, 'public', 'books.json');
 const feedFile = path.join(root, 'public', 'feed.json');
+const readerDir = path.join(root, 'public', 'reader');
 
 const MAX_ITEMS_PER_BOOK = 48;
 const MAX_PASSAGE_CHARS = 860;
 const MIN_PASSAGE_WORDS = 18;
+const READER_DATA_VERSION = 1;
 
 function attr(tag, name) {
   const match = tag.match(new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
@@ -103,6 +105,20 @@ function joinPdfLine(parts) {
   return line;
 }
 
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function pageTextToHtml(value) {
+  const text = value.trim();
+  return text ? `<p>${escapeHtml(text)}</p>` : '';
+}
+
 async function extractPdf(filename) {
   const data = new Uint8Array(fs.readFileSync(path.join(booksDir, filename)));
   const pdf = await pdfjs.getDocument({
@@ -111,6 +127,7 @@ async function extractPdf(filename) {
     useSystemFonts: true,
   }).promise;
   const candidates = [];
+  const pages = Array(pdf.numPages).fill('');
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     try {
@@ -138,6 +155,8 @@ async function extractPdf(filename) {
         .filter(Boolean)
         .join(' ');
 
+      pages[pageNumber - 1] = pageTextToHtml(pageText);
+
       candidates.push(...makeCandidates(pageText, {
         kind: 'pdf',
         page: pageNumber,
@@ -148,7 +167,15 @@ async function extractPdf(filename) {
     }
   }
 
-  return candidates;
+  return { candidates, pages };
+}
+
+function readerAssetPath(filename) {
+  return `/reader/${filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 96)}.json`;
+}
+
+function readerFilePath(filename) {
+  return path.join(readerDir, path.basename(readerAssetPath(filename)));
 }
 
 function resolveZipPath(base, href) {
@@ -292,10 +319,20 @@ async function main() {
     .filter((book) => fs.existsSync(path.join(booksDir, book.filename)));
   const signature = sourceSignature(books);
 
+  fs.mkdirSync(readerDir, { recursive: true });
+
   if (!process.argv.includes('--force') && fs.existsSync(feedFile)) {
     try {
       const previous = JSON.parse(fs.readFileSync(feedFile, 'utf8'));
-      if (previous.sourceSignature === signature && previous.items?.length) {
+      const readerFilesReady = books
+        .filter((book) => book.type === 'pdf')
+        .every((book) => fs.existsSync(readerFilePath(book.filename)));
+      if (
+        previous.sourceSignature === signature &&
+        previous.readerVersion === READER_DATA_VERSION &&
+        previous.items?.length &&
+        readerFilesReady
+      ) {
         console.log(`[Feed] Up to date: ${previous.items.length} passages.`);
         return;
       }
@@ -307,11 +344,20 @@ async function main() {
   const items = [];
   for (const book of books) {
     try {
-      const candidates = book.type === 'pdf'
+      const extraction = book.type === 'pdf'
         ? await extractPdf(book.filename)
         : book.type === 'epub'
           ? await extractEpub(book.filename)
           : extractTxt(book.filename);
+      const candidates = book.type === 'pdf' ? extraction.candidates : extraction;
+
+      if (book.type === 'pdf') {
+        fs.writeFileSync(readerFilePath(book.filename), JSON.stringify({
+          version: READER_DATA_VERSION,
+          type: 'pdf',
+          pages: extraction.pages,
+        }));
+      }
 
       sampleCandidates(candidates).forEach((candidate, index) => {
         items.push({
@@ -332,7 +378,8 @@ async function main() {
   }
 
   fs.writeFileSync(feedFile, JSON.stringify({
-    version: 1,
+    version: 2,
+    readerVersion: READER_DATA_VERSION,
     sourceSignature: signature,
     items,
   }));
