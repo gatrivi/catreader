@@ -6,6 +6,8 @@ import {
   matchBookBySlug,
   parseBookQuery,
   resolveBookRoute,
+  getFeedPath,
+  isFeedPath,
 } from './routing';
 
 describe('routing', () => {
@@ -67,5 +69,12 @@ describe('routing', () => {
   it('resolveBookRoute prefers path then query', () => {
     expect(resolveBookRoute('/church/meditations/5', '')?.page).toBe(5);
     expect(resolveBookRoute('/', '?book=foo.pdf&page=3')?.rawFilename).toBe('foo.pdf');
+  });
+
+  it('recognizes the discovery feed route', () => {
+    expect(getFeedPath()).toBe('/feed');
+    expect(isFeedPath('/feed')).toBe(true);
+    expect(isFeedPath('/feed/')).toBe(true);
+    expect(isFeedPath('/')).toBe(false);
   });
 });

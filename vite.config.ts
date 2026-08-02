@@ -11,7 +11,8 @@ export default defineConfig(({mode}) => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        // Let the reader choose when to reload; never interrupt a page mid-read.
+        registerType: 'prompt',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
         manifest: {
           name: 'CatReader',
@@ -19,6 +20,7 @@ export default defineConfig(({mode}) => {
           description: 'A magical minimalist book reader',
           theme_color: '#1c1917',
           background_color: '#1c1917',
+          lang: 'es-AR',
           display: 'standalone',
           icons: [
             {
@@ -42,7 +44,7 @@ export default defineConfig(({mode}) => {
         workbox: {
           // Exclude books from precache to avoid build errors and huge initial downloads
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
-          globIgnores: ['**/books/*.pdf', '**/books/*.epub'],
+          globIgnores: ['**/books/*.pdf', '**/books/*.epub', '**/feed.json'],
           // Use runtime caching for books instead
           runtimeCaching: [
             {
@@ -53,6 +55,21 @@ export default defineConfig(({mode}) => {
                 expiration: {
                   maxEntries: 50,
                   maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /\/feed\.json$/,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'reading-feed',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 1,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],

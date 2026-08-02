@@ -47,8 +47,12 @@ import { useLibrary, LibraryBook } from './hooks/useLibrary';
 
 import { ProfileModal } from './components/ProfileModal';
 import { authService } from './services/authService';
-import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath, resolveBookRoute, buildBookShareUrl } from './utils/routing';
+import { buildBookPath, parseBookPath, matchBookBySlug, getLibraryPath, getFeedPath, isFeedPath, resolveBookRoute, buildBookShareUrl } from './utils/routing';
 import { displayBookTitle } from './components/BookCover';
+import { ReadingFeedView } from './components/ReadingFeedView';
+import { FragmentReportsModal } from './components/FragmentReportsModal';
+import type { ReadingFeedItem } from './utils/readingFeed';
+import { loadFragmentReports } from './utils/fragmentReports';
 import { clampPage, offsetPage, shouldBlockPageObserver, pageElementPrefix } from './utils/reader';
 import { PageInput } from './components/PageInput';
 import { parsePdfPageSemantically } from './utils/pdfParser';
@@ -80,10 +84,19 @@ function libraryUrl(): string {
   return new URL(getLibraryPath(), window.location.origin).toString();
 }
 
+function feedUrl(): string {
+  return new URL(getFeedPath(), window.location.origin).toString();
+}
+
 /** Ensure browser Back returns to the gallery instead of leaving the site. */
 function seedReaderHistoryStack(bookPath: string, filename: string) {
   const bookUrl = new URL(bookPath, window.location.origin).toString();
-  window.history.replaceState({ view: 'library' }, '', libraryUrl());
+  const fromFeed = isFeedPath(window.location.pathname);
+  window.history.replaceState(
+    { view: fromFeed ? 'feed' : 'library', direct: true },
+    '',
+    fromFeed ? feedUrl() : libraryUrl()
+  );
   window.history.pushState({ view: 'reader', filename }, '', bookUrl);
 }
 
@@ -124,6 +137,7 @@ export default function App() {
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isReaderMode, setIsReaderMode] = useState(false);
   const [isCaptureMode, setIsCaptureMode] = useState(false);
+  const [isFeedView, setIsFeedView] = useState(() => isFeedPath(window.location.pathname));
   const [showCoverLabels, setShowCoverLabels] = useState(localStorage.getItem('catreader_cover_labels') === 'true');
   const restoringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoreTargetPageRef = useRef<number | null>(null);
@@ -178,6 +192,8 @@ export default function App() {
     setReleaseNotesUnread(false);
     setShowReleaseNotes(false);
   }, []);
+  const [showFragmentReports, setShowFragmentReports] = useState(false);
+  const [fragmentReportCount, setFragmentReportCount] = useState(() => loadFragmentReports().length);
 
   // --- Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -188,6 +204,8 @@ export default function App() {
   const ghostPdfLoadingRef = useRef<Promise<any> | null>(null);
   const ghostInflightRef = useRef<Set<number>>(new Set());
   const ghostPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bookBlobPromisesRef = useRef<Map<string, Promise<Blob>>>(new Map());
+  const openRequestRef = useRef(0);
 
   // --- Hooks Integration ---
   const liveLang = detectBookLang(fileName);
@@ -512,15 +530,46 @@ export default function App() {
   };
 
   // --- Book Operations ---
+  const getBookBlob = (book: LibraryBook): Promise<Blob> => {
+    const existing = bookBlobPromisesRef.current.get(book.filename);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const cached = await coverDB.getBookContent(book.filename);
+      if (cached && cached.size > 0) return cached;
+
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
+      const fetchUrl = `${booksDirPath}${encodeURIComponent(book.filename)}`;
+      const response = await fetch(fetchUrl);
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
+      void coverDB.saveBookContent(book.filename, blob);
+      return blob;
+    })();
+
+    bookBlobPromisesRef.current.set(book.filename, promise);
+    promise.catch(() => bookBlobPromisesRef.current.delete(book.filename));
+    return promise;
+  };
+
+  const warmBook = (book: LibraryBook) => {
+    void getBookBlob(book).catch(() => {});
+  };
+
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      openRequestRef.current += 1;
       const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
       setFileName(file.name);
       setFileType(ext);
       await coverDB.saveBookContent(file.name, file);
       const url = URL.createObjectURL(file);
       setFileUrl(url);
+      pushReaderHistory(buildBookPath('library', file.name), file.name);
+      setIsFeedView(false);
       
       if (ext === 'txt') {
         const text = await file.text();
@@ -882,11 +931,7 @@ export default function App() {
       window.getSelection()?.toString().trim() ||
       selectedTextMenu?.text?.trim() ||
       '';
-    const book = library.find((b) => b.filename === fileName);
-    const queue = sentencesFromPageHtml(pageHtml, sel || null, {
-      title: book?.title,
-      author: book?.author,
-    });
+    const queue = sentencesFromPageHtml(pageHtml, sel || null);
     if (queue.length === 0) {
       showToast('Sin oraciones');
       return;
@@ -897,6 +942,7 @@ export default function App() {
   };
 
   const closeBook = (skipHistory = false) => {
+    openRequestRef.current += 1;
     if (!fileUrl) return;
     liveAudio.stop();
     // Force-flush FEATURE #1 progress (even mid-restore) using frozen page if any
@@ -930,8 +976,31 @@ export default function App() {
         window.history.back();
       } else {
         window.history.replaceState({ view: 'library' }, '', libraryUrl());
+        setIsFeedView(false);
       }
+    } else {
+      setIsFeedView(isFeedPath(window.location.pathname));
     }
+  };
+
+  const openFeed = () => {
+    openRequestRef.current += 1;
+    if (isFeedPath(window.location.pathname)) {
+      setIsFeedView(true);
+      return;
+    }
+    window.history.pushState({ view: 'feed', from: 'library' }, '', feedUrl());
+    setIsFeedView(true);
+  };
+
+  const closeFeed = () => {
+    openRequestRef.current += 1;
+    if (window.history.state?.view === 'feed' && window.history.state?.from === 'library') {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState({ view: 'library' }, '', libraryUrl());
+    setIsFeedView(false);
   };
 
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -940,7 +1009,9 @@ export default function App() {
     book: LibraryBook,
     forcePage?: number,
     forceQuadrant?: number,
-    skipHistory = false
+    skipHistory = false,
+    initialEpubLocation?: string,
+    initialScrollRatio?: number
   ) => {
     const filename = book.filename;
     
@@ -949,6 +1020,8 @@ export default function App() {
       if (forcePage) scrollToPage(forcePage);
       return;
     }
+
+    const requestId = ++openRequestRef.current;
 
     console.log(`[Reader] Opening book: ${filename}`);
     
@@ -960,11 +1033,13 @@ export default function App() {
     setFileName(filename);
     setFileType(book.type);
     setIsReaderMode(false);
+    setEpubCfi(initialEpubLocation || '');
     // FEATURE #1: do NOT set page to 1 before progress loads — freeze until known
     setIsRestoring(true);
-    restoreTargetPageRef.current = forcePage ?? null;
-    modeSwitchPageRef.current = forcePage ?? null;
-    setScrollRatio(0);
+    const hasForcedPage = forcePage != null;
+    restoreTargetPageRef.current = hasForcedPage ? forcePage : null;
+    modeSwitchPageRef.current = hasForcedPage ? forcePage : null;
+    setScrollRatio(initialScrollRatio ?? 0);
     
     // Clear previous timeouts
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
@@ -974,43 +1049,23 @@ export default function App() {
     const bookPath = buildBookPath(shelfTitle, filename, forcePage, forceQuadrant);
     localStorage.setItem('catreader_last_book', filename);
 
-    const progressPromise = forcePage
+    const progressPromise = hasForcedPage
       ? Promise.resolve(null)
       : loadProgress(filename);
 
-    const blobPromise = (async (): Promise<Blob> => {
-      const cached = await coverDB.getBookContent(filename);
-      if (cached && cached.size > 0) {
-        console.log(`[Reader] Using cached blob for ${filename}: ${cached.size} bytes, type=${cached.type}`);
-        return cached;
-      }
-      if (cached && cached.size === 0) {
-        console.warn(`[Reader] Cached blob for ${filename} is empty, refetching...`);
-      }
-      const baseUrl = import.meta.env.BASE_URL || '/';
-      const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
-      const fetchUrl = `${booksDirPath}${filename}`;
-      console.log(`[Reader] Fetching blob from: ${fetchUrl}`);
-      const res = await fetch(fetchUrl);
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const blob = await res.blob();
-      console.log(`[Reader] Fetched blob for ${filename}: ${blob.size} bytes, type=${blob.type}`);
-      if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
-      if (book.type === 'pdf' && !blob.type.includes('pdf')) {
-        console.warn(`[Reader] Fetched blob has unexpected type for PDF: ${blob.type}. This may be an HTML fallback.`);
-      }
-      coverDB.saveBookContent(filename, blob).catch(() => {});
-      return blob;
-    })();
+    const blobPromise = getBookBlob(book);
 
     try {
       const [blob, progress] = await Promise.all([blobPromise, progressPromise]);
+      if (requestId !== openRequestRef.current) return;
       const url = URL.createObjectURL(blob);
       setFileUrl(url);
+      setIsFeedView(false);
 
       if (skipHistory) {
         const onBookUrl = !!resolveBookRoute(window.location.pathname, window.location.search);
-        if (!onBookUrl || window.history.length <= 1) {
+        const hasReaderState = window.history.state?.view === 'reader';
+        if (!onBookUrl || !hasReaderState || window.history.length <= 1) {
           seedReaderHistoryStack(bookPath, filename);
         }
       } else {
@@ -1018,8 +1073,10 @@ export default function App() {
       }
       if (book.type === 'txt') {
         const text = await blob.text();
+        if (requestId !== openRequestRef.current) return;
         setTextContent([text]);
         setNumPages(1);
+        if (initialScrollRatio != null) setScrollRatio(initialScrollRatio);
         coverDB.saveGhostText(filename, text).catch(() => {});
         syncService.saveGhostText(filename, text).catch(() => {});
       } else if (book.type === 'epub') {
@@ -1028,7 +1085,7 @@ export default function App() {
         setTextContent(null);
       }
 
-      if (forcePage) {
+      if (hasForcedPage) {
         restoreTargetPageRef.current = forcePage;
         modeSwitchPageRef.current = forcePage;
         setPageNumber(forcePage);
@@ -1043,16 +1100,20 @@ export default function App() {
         restoreTargetPageRef.current = null;
         modeSwitchPageRef.current = null;
         setPageNumber(1);
-        setScrollRatio(0);
+        // A Discover item may target a position inside a TXT file. Keep that
+        // locator when there is no prior progress to restore.
+        if (initialScrollRatio == null) setScrollRatio(0);
       }
       
       // Safety timeout for the "Restoring position" overlay
       restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), 5000);
     } catch (err: any) {
+      if (requestId !== openRequestRef.current) return;
       console.error('[Reader] Failed to open book:', err);
       setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
       showToast('Error al abrir el libro.');
     }
+    if (requestId !== openRequestRef.current) return;
     if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);
     else {
       setIsLoaded(false);
@@ -1066,20 +1127,34 @@ export default function App() {
 
   // --- Browser Navigation ---
   useEffect(() => {
+    if (window.history.state?.view) return;
+    if (isFeedView) {
+      window.history.replaceState({ view: 'feed', direct: true }, '', window.location.href);
+    } else if (!resolveBookRoute(window.location.pathname, window.location.search)) {
+      window.history.replaceState({ view: 'library' }, '', window.location.href);
+    }
+  }, [isFeedView]);
+
+  useEffect(() => {
     const handlePopState = () => {
       const parsed = resolveBookRoute(window.location.pathname, window.location.search);
       if (parsed) {
+        setIsFeedView(false);
         const book = matchBookBySlug(library, parsed.bookSlug, parsed.rawFilename);
         if (book) {
           openFromLibrary(book as LibraryBook, parsed.page, parsed.quadrant, true);
         }
+      } else if (isFeedPath(window.location.pathname)) {
+        closeBook(true);
+        setIsFeedView(true);
       } else {
         closeBook(true);
+        setIsFeedView(false);
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [library]);
+  }, [library, fileUrl]);
 
   useEffect(() => {
     if (editingBook) return;
@@ -1111,7 +1186,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (fileName) {
+    if (fileName && fileUrl) {
       const book = library.find(b => b.filename === fileName);
       const shelf = book ? shelves.find(s => s.bookIds.includes(book.id)) : null;
       const shelfTitle = shelf?.title || 'library';
@@ -1124,7 +1199,7 @@ export default function App() {
         url.toString()
       );
     }
-  }, [pageNumber, quadrant, fileName, library, shelves]);
+  }, [pageNumber, quadrant, fileName, fileUrl, library, shelves]);
 
   useEffect(() => {
     if (fileType === 'txt' && isLoaded && scrollRatio > 0 && containerRef.current) {
@@ -1154,6 +1229,21 @@ export default function App() {
     if (e.clientX > width * 0.7) changePage(1);
     else if (e.clientX < width * 0.3) changePage(-1);
     resetUITimer();
+  };
+
+  const openFeedItem = (item: ReadingFeedItem, book: LibraryBook) => {
+    const locator = item.locator;
+    const scrollRatio = locator.kind === 'txt' && locator.offset != null && locator.sourceLength
+      ? Math.min(0.999, Math.max(0, locator.offset / locator.sourceLength))
+      : undefined;
+    void openFromLibrary(
+      book,
+      locator.page,
+      undefined,
+      false,
+      locator.kind === 'epub' ? locator.href : undefined,
+      scrollRatio
+    );
   };
 
   useEffect(() => {
@@ -1424,6 +1514,16 @@ export default function App() {
         }}
       >
         {!fileUrl ? (
+          isFeedView ? (
+            <ReadingFeedView
+              library={library}
+              onOpenItem={openFeedItem}
+              onWarmBook={warmBook}
+              onBack={closeFeed}
+              appVersion={APP_VERSION}
+              onReportSaved={() => setFragmentReportCount(loadFragmentReports().length)}
+            />
+          ) : (
           <LibraryView 
             library={library} 
             covers={covers} 
@@ -1456,6 +1556,9 @@ export default function App() {
             releaseNotesVersion={APP_VERSION}
             releaseNotesUnread={releaseNotesUnread}
             onOpenReleaseNotes={() => setShowReleaseNotes(true)}
+            onOpenFeed={openFeed}
+            onOpenReports={() => setShowFragmentReports(true)}
+            fragmentReportCount={fragmentReportCount}
             onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); navigator.clipboard.writeText(buildBookShareUrl(shelf?.title || 'library', book.filename)); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={(id) => {
               const result = removeShelf(id);
               if (result && result.count > 0) {
@@ -1463,6 +1566,7 @@ export default function App() {
               }
               return result;
             }} />
+          )
         ) : (
           <ReaderView 
             fileUrl={fileUrl} 
@@ -1711,6 +1815,7 @@ export default function App() {
       />
       <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} onLogin={handleLogin} onLogout={handleLogout} onGeneratePFP={handleGeneratePFP} isSyncing={isSyncing} />
       <ReleaseNotesModal isOpen={showReleaseNotes} onClose={closeReleaseNotes} />
+      <FragmentReportsModal isOpen={showFragmentReports} onClose={() => setShowFragmentReports(false)} />
     </div>
   );
 }

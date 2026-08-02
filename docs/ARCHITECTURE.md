@@ -41,6 +41,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 |-----------|------|
 | `LibraryView` | Paged 4×4 racks, DnD, search (`/`), wallpaper, highlights strip |
 | `BookCover` | Cover render, format badge, open |
+| `ReadingFeedView` | `/feed` Discover stream of book fragments; opens the source locator |
 | `ReaderView` | Virtualized PDF scroll, TXT/ghost text, PaperLayer |
 | `EpubView` | EPUB.js continuous/scroll + CFI |
 | `PageInput` | Jump-to-page |
@@ -64,6 +65,8 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | Module | Owns |
 |--------|------|
 | `routing` | `/shelf/book[/page[/quad]]`, legacy `?book=&page=`, share URLs |
+| `readingFeed` | Stable feed order and PDF/EPUB/TXT fragment locators |
+| `fragmentReports` | Local quality reports for bad feed fragments |
 | `reader` | clamp/offset page, `PDF_RENDER_WINDOW=8`, library search filter |
 | `progressGuard` | FEATURE #1: merge/save/observer guards — never clobber page |
 | `pdfParser` | Semantic page → HTML for “Modo lector” |
@@ -77,6 +80,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 |------------|------|
 | `predev` / `prebuild` | `generate-library.js` → `public/books.json` (+ `paper` path if baked) |
 | `dev` | Express+Vite |
+| `generate-feed.js` | Build-time `public/feed.json` from readable book passages |
 | `build` | Vite build + `post-build.js` |
 | `enrich` | Gemini OCR + SVG covers CLI |
 | `paper-bake` | Stand-in Paper Soul bake → `public/books/paper/<id>/` |
@@ -93,6 +97,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 ## Routing
 
 - Library: `/` (respects Vite `BASE_URL`)
+- Discover: `/feed` (fragment stream; back returns to the library)
 - Book: `/{shelfSlug}/{bookSlug}` optional `/{page}/{quadrant}`
 - Legacy: `?book=file.pdf&page=N`
 
