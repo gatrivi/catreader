@@ -42,21 +42,10 @@ export async function parsePdfPageSemantically(page: any, tc: any): Promise<stri
     const str = item.str.trim();
     if (!str) return false;
 
-    // Check if in header/footer zone
+    // Header/footer band: drop chrome (page #s, running titles — incl. Title Case)
     if (y < footerThreshold || y > headerThreshold) {
-      // Exclude simple page numbers, short repetitive strings, or brief metadata headers
-      const isNumeric = /^\d+$/.test(str) || /^[ivxldcm]+$/i.test(str);
-      const isShort = str.length < 6 && /\d/.test(str);
-      const isCommonBookHeader = str.length < 50 && (
-        str.toLowerCase() === str || 
-        str.toUpperCase() === str || 
-        str.includes('Page') || 
-        str.includes('Pág')
-      );
-      
-      if (isNumeric || isShort || isCommonBookHeader) {
-        return false; // Skip headers/footers
-      }
+      if (/^\d+$/.test(str) || /^[ivxldcm]+$/i.test(str)) return false;
+      if (str.length < 100) return false; // running book title / author / "Page N"
     }
     return true;
   });

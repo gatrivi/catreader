@@ -1,5 +1,10 @@
 # Completed Tasks for Review
 
+## Feed diversify + TTS chrome strip (v2.10.17)
+- [x] Discover interleaves books (`diversifyFeedIds`) so one title cannot monopolize the first screen.
+- [x] Live TTS strips repeating PDF title/author chrome; pdfParser header band tightened.
+- [x] Rebased onto remote Discover/Paper Soul stack; dropped duplicate local commits.
+
 ## Discover Paper Soul + social copy (v2.10.16)
 - [x] Discover cards use cached Paper Soul grain and up to three per-book stains without PDF work.
 - [x] Paragraphs are inert; only the explicit `Abrir` action navigates to the book.

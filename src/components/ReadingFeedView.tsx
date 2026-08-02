@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { LibraryBook } from '../hooks/useLibrary';
 import {
+  diversifyFeedIds,
   shuffleFeedIds,
   type ReadingFeedItem,
 } from '../utils/readingFeed';
@@ -91,7 +92,7 @@ function applyFeedPreferences(
   preferences.deprioritizedBooks.forEach((filename) => {
     nextOrder = reorderBookIds(nextOrder, catalog, filename, 'less');
   });
-  return nextOrder;
+  return diversifyFeedIds(nextOrder, catalog);
 }
 
 function feedUrl() {
@@ -159,7 +160,7 @@ export function ReadingFeedView({
           }
         } else {
           const seed = Number(sessionStorage.getItem(`${ORDER_KEY}:seed`)) || readSeed() || Date.now();
-          nextOrder = shuffleFeedIds(nextCatalog, seed);
+          nextOrder = diversifyFeedIds(shuffleFeedIds(nextCatalog, seed), nextCatalog);
         }
 
         if (nextOrder.length < nextCatalog.length) {
@@ -244,7 +245,10 @@ export function ReadingFeedView({
       };
     });
     setOrder((currentOrder) => {
-      const nextOrder = reorderBookIds(currentOrder, catalog, item.filename, direction);
+      const nextOrder = diversifyFeedIds(
+        reorderBookIds(currentOrder, catalog, item.filename, direction),
+        catalog
+      );
       sessionStorage.setItem(ORDER_KEY, JSON.stringify(nextOrder));
       return nextOrder;
     });

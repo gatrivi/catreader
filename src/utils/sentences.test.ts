@@ -39,6 +39,17 @@ describe('sentences', () => {
     expect(sentencesFromPageHtml(html, null)).toEqual(['A.', 'B.', 'C.']);
   });
 
+  it('strips running book title/author before TTS', () => {
+    const html =
+      '<p>The Conferences of John Ca by John Cassian When I was in the desert of Scete.</p>';
+    const out = sentencesFromPageHtml(html, null, {
+      title: 'The Conferences of John Cassian',
+      author: 'John Cassian',
+    });
+    expect(out.join(' ')).not.toMatch(/Conferences of John/i);
+    expect(out.join(' ')).toMatch(/desert of Scete/i);
+  });
+
   it('hashes stably', () => {
     expect(hashText('hola')).toBe(hashText('hola'));
     expect(hashText('hola')).not.toBe(hashText('adios'));

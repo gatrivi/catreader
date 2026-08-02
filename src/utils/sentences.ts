@@ -78,8 +78,69 @@ export function chunkForLive(
   return out.filter(Boolean);
 }
 
-export function sentencesFromPageHtml(pageHtml: string, selection?: string | null): string[] {
-  const sentences = splitSentences(htmlToPlain(pageHtml));
+/** Escape for RegExp. */
+function esc(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Drop repeating PDF chrome: book title / author / "by Author" at page start.
+ * pdfParser header-band filter misses Title Case running heads — TTS must strip too.
+ */
+export function stripRunningHeaders(
+  plain: string,
+  opts?: { title?: string; author?: string }
+): string {
+  let t = (plain || '').replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+
+  const title = (opts?.title || '').replace(/\s+/g, ' ').trim();
+  const author = (opts?.author || '').replace(/\s+/g, ' ').trim();
+
+  const needles: string[] = [];
+  if (title.length >= 8) {
+    needles.push(title);
+    if (title.length > 24) needles.push(title.slice(0, 24));
+    if (title.length > 36) needles.push(title.slice(0, 36));
+  }
+  if (author.length >= 4) {
+    needles.push(`by ${author}`);
+    needles.push(author);
+  }
+
+  // Truncated running heads: "The Conferences of John Ca..." (ellipsis / cut mid-word)
+  if (title.length >= 16) {
+    const head = esc(title.slice(0, 20));
+    t = t.replace(new RegExp(`^${head}[\\w'’.-]*[.…]*(?:\\s+|$)`, 'i'), '').trim();
+  }
+
+  for (let n = 0; n < 4; n++) {
+    let hit = false;
+    for (const needle of needles) {
+      if (!needle) continue;
+      const re = new RegExp(`^${esc(needle)}[.…]*(?:\\s+|$)`, 'i');
+      if (re.test(t)) {
+        t = t.replace(re, '').trim();
+        hit = true;
+        break;
+      }
+    }
+    if (!hit) break;
+  }
+
+  if (author) {
+    t = t.replace(new RegExp(`^by\\s+${esc(author)}[.…]*(?:\\s+|$)`, 'i'), '').trim();
+  }
+
+  return t;
+}
+
+export function sentencesFromPageHtml(
+  pageHtml: string,
+  selection?: string | null,
+  opts?: { title?: string; author?: string }
+): string[] {
+  const sentences = splitSentences(stripRunningHeaders(htmlToPlain(pageHtml), opts));
   if (!selection?.trim()) return sentences;
   const start = startIndexFromSelection(sentences, selection);
   return sentences.slice(start);

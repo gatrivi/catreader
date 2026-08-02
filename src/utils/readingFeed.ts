@@ -43,6 +43,28 @@ export function shuffleFeedIds(items: ReadingFeedItem[], seed: number): string[]
   return ids;
 }
 
+/** Keeps Discover from showing one book for the entire first screen. */
+export function diversifyFeedIds(order: string[], catalog: ReadingFeedItem[]): string[] {
+  const byId = new Map(catalog.map((item) => [item.id, item]));
+  const buckets = new Map<string, string[]>();
+  order.forEach((id) => {
+    const item = byId.get(id);
+    if (!item) return;
+    const bucket = buckets.get(item.filename) || [];
+    bucket.push(id);
+    buckets.set(item.filename, bucket);
+  });
+  const diversified: string[] = [];
+  while (diversified.length < order.length) {
+    let added = false;
+    buckets.forEach((bucket) => {
+      const id = bucket.shift();
+      if (id) { diversified.push(id); added = true; }
+    });
+    if (!added) break;
+  }
+  return diversified;
+}
 export function feedLocationLabel(locator: FeedLocator): string {
   if (locator.kind === 'pdf') return locator.page ? `p. ${locator.page}` : 'PDF';
   if (locator.kind === 'epub') return locator.label || 'capítulo';

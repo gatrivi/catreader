@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { feedLocationLabel, paperPageForFeedItem, shuffleFeedIds, type ReadingFeedItem } from './readingFeed';
+import { diversifyFeedIds, feedLocationLabel, paperPageForFeedItem, shuffleFeedIds, type ReadingFeedItem } from './readingFeed';
 
 const items: ReadingFeedItem[] = [
   { id: 'a', bookId: 'book-a', filename: 'a.txt', type: 'txt', title: 'A', text: 'A', locator: { kind: 'txt', label: 'fragmento 1' } },
@@ -12,6 +12,14 @@ describe('reading feed utilities', () => {
     const first = shuffleFeedIds(items, 42);
     expect(shuffleFeedIds(items, 42)).toEqual(first);
     expect(new Set(first)).toEqual(new Set(items.map((item) => item.id)));
+  });
+
+  it('interleaves books so one source cannot monopolize Discover', () => {
+    const order = ['a1', 'a2', 'b1', 'a3', 'b2'].map((id, index) => ({
+      ...items[index % 2], id, filename: id.startsWith('a') ? 'a.txt' : 'b.pdf', bookId: id.startsWith('a') ? 'book-a' : 'book-b',
+    }));
+    expect(diversifyFeedIds(order.map((item) => item.id), order).slice(0, 4))
+      .toEqual(['a1', 'b1', 'a2', 'b2']);
   });
 
   it('formats source locations for the feed', () => {
