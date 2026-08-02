@@ -518,7 +518,7 @@ export const LibraryView = ({
                   title="Descubrir fragmentos"
                 >
                   <ScrollText size={12} />
-                  <span className="hidden md:inline">Descubrir</span>
+                  <span className="whitespace-nowrap">Descubrir</span>
                 </button>
               )}
               <button 
