@@ -1,7 +1,7 @@
 # Completed Tasks for Review
 
 ## Handoff 2026-08-02 (v2.10.19)
-- [x] See `docs/handoff.md`.
+- [x] See `docs/HANDOFF.md`.
 
 ## Discover real Paper Soul stack (v2.10.19)
 - [x] Procedural stain fallback when bake missing (was CSS-only parchment).
