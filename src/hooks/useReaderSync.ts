@@ -45,11 +45,6 @@ export function useReaderSync({
   const isRestoringRef = useRef(isRestoring);
   isRestoringRef.current = isRestoring;
 
-  useEffect(() => {
-    // A new book gets its own monotonic guard; never inherit the previous book's page.
-    lastCommittedPageRef.current = 1;
-  }, [fileName]);
-
   const getDeviceCategory = useCallback(() => {
     const width = window.innerWidth;
     if (width < 768) return 'mobile';
@@ -68,6 +63,10 @@ export function useReaderSync({
 
   const commitPage = useCallback((page: number) => {
     if (page > 0) lastCommittedPageRef.current = Math.max(lastCommittedPageRef.current, page);
+  }, []);
+
+  const resetCommittedPage = useCallback(() => {
+    lastCommittedPageRef.current = 1;
   }, []);
 
   const loadProgress = useCallback(async (id: string): Promise<ReadingProgress | null> => {
@@ -232,6 +231,7 @@ export function useReaderSync({
     loadProgress,
     saveProgress,
     commitPage,
+    resetCommittedPage,
   };
 }
 

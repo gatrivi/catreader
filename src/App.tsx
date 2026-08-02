@@ -260,6 +260,7 @@ export default function App() {
     loadProgress,
     saveProgress,
     commitPage,
+    resetCommittedPage,
   } = useReaderSync({
     fileName,
     isLoaded,
@@ -516,7 +517,7 @@ export default function App() {
       const titles = library.slice(0, 5).map(b => b.title).join(', ');
       const result = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: [{ role: 'user', parts: [{ text: `Create a unique, artistic, and minimalist SVG profile …10442 tokens truncated…w-2xl py-1 min-w-[160px] z-[70]">
+        contents: [{ role: 'user', parts: [{ text: `Create a unique, artistic, and mi…10454 tokens truncated…w-2xl py-1 min-w-[160px] z-[70]">
                 <button onClick={() => { handleGoogleDrive(); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-stone-300 hover:bg-white/10 flex items-center gap-2"><Cloud size={12} /> Google Drive</button>
                 <button onClick={() => { 
                   const book = library.find(b => b.filename === fileName);

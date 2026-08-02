@@ -203,6 +203,7 @@ describe('useReaderSync', () => {
 
     act(() => {
       result.current.commitPage(20);
+      result.current.resetCommittedPage();
     });
     rerender({ fileName: 'second.pdf' });
     act(() => {
