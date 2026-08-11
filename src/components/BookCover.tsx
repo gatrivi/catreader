@@ -32,7 +32,7 @@ interface BookCoverProps {
     audio?: boolean;
     svg?: string;
     coverSource?: {
-      type: 'user-custom' | 'ai-generated' | 'openlibrary';
+      type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'wikimedia';
     };
   };
   cover?: string;
@@ -66,6 +66,12 @@ export const BookCover: React.FC<BookCoverProps> = ({
   fillHeight = false,
   coversHydrated = true,
 }) => {
+  const [coverLoadFailed, setCoverLoadFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setCoverLoadFailed(false);
+  }, [cover]);
+
   React.useEffect(() => {
     console.log(`[BookCover] Mount/update ${book.filename}: cover=${!!cover} source=${cover?.startsWith('data:') ? 'dataURL' : cover?.startsWith('http') ? 'url' : cover ? 'svg/other' : 'none'}`);
   }, [book.filename, cover]);
@@ -85,16 +91,18 @@ export const BookCover: React.FC<BookCoverProps> = ({
     return cover;
   }, [cover]);
 
+  const usableDisplayCover = coverLoadFailed ? null : displayCover;
+
   const svgDataUrl = React.useMemo(() => {
     // Post-hydrate: covers[] is sole source — no SVG flash/swap
-    if (coversHydrated || !book.svg || displayCover) return null;
+    if (coversHydrated || !book.svg || usableDisplayCover) return null;
     try {
       return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
     } catch (e) {
       console.error('Failed to encode book.svg:', e);
       return null;
     }
-  }, [book.svg, displayCover, coversHydrated]);
+  }, [book.svg, usableDisplayCover, coversHydrated]);
 
   const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
 
@@ -224,8 +232,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
                 {book.type}
               </div>
 
-              {displayCover ? (
-                <img src={displayCover} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
+              {usableDisplayCover ? (
+                <img src={usableDisplayCover} alt={book.title} onError={() => setCoverLoadFailed(true)} className="w-full h-full object-cover rounded-r-md" />
               ) : !coversHydrated ? (
                 <div className="w-full h-full rounded-r-md bg-stone-800/80 animate-pulse" aria-hidden />
               ) : svgDataUrl && book.coverSource?.type !== 'user-custom' ? (
@@ -248,7 +256,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
               )}
 
               {/* Title always visible on the spine (even when cover art loads) */}
-              {(displayCover || svgDataUrl) && (
+              {(usableDisplayCover || svgDataUrl) && (
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-2 pt-6 pb-1.5 z-30 pointer-events-none">
                   <p className="text-white text-[9px] sm:text-[10px] font-bold leading-tight line-clamp-2 text-center drop-shadow-md">
                     {spineTitle}
