@@ -5,6 +5,7 @@ export type CoverSourceType =
   | 'ai-generated'
   | 'openlibrary'
   | 'google-books'
+  | 'wikimedia'
   | 'bundled';
 
 export function isUserCustomCover(coverSource?: { type?: string } | null): boolean {

@@ -27,7 +27,7 @@ export interface LibraryBook {
   /** Path to paper-manifest.json when Paper Soul bake exists */
   paper?: string;
   coverSource?: {
-    type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'google-books' | 'bundled';
+    type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'google-books' | 'wikimedia' | 'bundled';
     url?: string;
     svgPath?: string;
     updatedAt?: number;
@@ -261,7 +261,7 @@ export function useLibrary({
               }
             }
 
-            if (src?.url && (src.type === 'openlibrary' || src.type === 'google-books')) {
+            if (src?.url && (src.type === 'openlibrary' || src.type === 'google-books' || src.type === 'wikimedia')) {
               loadedCovers[book.filename] = src.url;
               await coverDB.saveCover(book.filename, src.url);
               continue;
