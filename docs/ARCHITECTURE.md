@@ -113,6 +113,7 @@ See `docs/perf-and-tests.md`. Run `npm test` before push.
 
 - **FEATURE #1 (synced progress) is SACRED** — see [`docs/PROGRESS_SACRED.md`](PROGRESS_SACRED.md)
 - **READER MODE MUST BE LAZY FROM CURRENT PAGE** — [`docs/READER_MODE_LAZY.md`](READER_MODE_LAZY.md) (word→snippet→page→±1; v2.10.2)
+- **PATRISTIC EVIDENCE VIEW PLAN** — [`docs/PATRISTIC_EVIDENCE_VIEW_PLAN.md`](PATRISTIC_EVIDENCE_VIEW_PLAN.md)
 - Library view issue enum + status: [`docs/library-view-issues.md`](library-view-issues.md)
 - Shelf nesting not implemented
 - DnD has no ghost preview (opacity fade only)
