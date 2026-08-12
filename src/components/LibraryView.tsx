@@ -937,7 +937,7 @@ export const LibraryView = ({
             </div>
 
             {/* Navigation / Move Targets */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 z-[60] max-w-[94vw]">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-nowrap items-center justify-center gap-3 z-[60] max-w-[94vw] overflow-x-auto">
               <AnimatePresence mode="wait">
                 {dragState ? (
                   <motion.div 
@@ -966,7 +966,7 @@ export const LibraryView = ({
                   <motion.div 
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    className="flex flex-wrap items-center justify-center gap-2 bg-stone-950/50 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/5 shadow-xl max-w-[94vw]"
+                    className="flex flex-nowrap items-center justify-center gap-2 bg-stone-950/50 backdrop-blur-md px-3 py-2 rounded-2xl border border-white/5 shadow-xl max-w-[94vw] overflow-x-auto"
                   >
                     <button
                       onClick={() => flipRack('prev')}

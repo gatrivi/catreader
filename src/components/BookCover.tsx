@@ -91,18 +91,19 @@ export const BookCover: React.FC<BookCoverProps> = ({
     return cover;
   }, [cover]);
 
-  const usableDisplayCover = coverLoadFailed ? null : displayCover;
+  const isGeneratedCover = book.coverSource?.type === 'ai-generated' || cover?.includes('<svg') || cover?.startsWith('data:image/svg');
+  const usableDisplayCover = coverLoadFailed || isGeneratedCover ? null : displayCover;
 
   const svgDataUrl = React.useMemo(() => {
     // Post-hydrate: covers[] is sole source — no SVG flash/swap
-    if (coversHydrated || !book.svg || usableDisplayCover) return null;
+    if (coversHydrated || !book.svg || usableDisplayCover || isGeneratedCover) return null;
     try {
       return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
     } catch (e) {
       console.error('Failed to encode book.svg:', e);
       return null;
     }
-  }, [book.svg, usableDisplayCover, coversHydrated]);
+  }, [book.svg, usableDisplayCover, coversHydrated, isGeneratedCover]);
 
   const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
 

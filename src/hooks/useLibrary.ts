@@ -201,7 +201,7 @@ export function useLibrary({
               ...book,
               title: meta?.title || book.title,
               author: meta?.author || '',
-              svg: hideBundledSvg ? undefined : (meta?.svg ?? book.svg),
+              svg: undefined,
               coverSource: src || undefined
             };
           });
@@ -424,7 +424,7 @@ export function useLibrary({
    * Enriches a single book using Gemini.
    */
   const enrichBookWithGemini = useCallback(async (book: LibraryBook) => {
-    const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
+    const g_apiKey = '';
     if (!g_apiKey) return null;
 
     setIdentifyingBookId(book.id);
@@ -628,7 +628,7 @@ export function useLibrary({
       }
 
       // If forceAI is set OR external APIs failed, try Gemini/SVG
-      if (enrichedMetadataRef.current[book.filename]?.svg && !forceAI) {
+      if (false && enrichedMetadataRef.current[book.filename]?.svg && !forceAI) {
         const existingDb = await coverDB.getCover(book.filename);
         if (existingDb && !existingDb.includes('<svg') && existingDb !== enrichedMetadataRef.current[book.filename].svg) {
           return;
@@ -639,7 +639,7 @@ export function useLibrary({
         return;
       }
 
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
+      const g_apiKey = '';
       if (g_apiKey) {
         const enriched = await enrichBookWithGemini(book);
         if (enriched && enriched.svg) {
@@ -662,9 +662,9 @@ export function useLibrary({
         }
       }
 
-      await generateCoverFallback(book);
+      // No synthetic cover fallback in live.
     } catch (err) {
-      await generateCoverFallback(book);
+      // No synthetic cover fallback in live.
     } finally {
       setTimeout(() => setIdentifyingBookId(null), 1000);
     }
@@ -860,7 +860,7 @@ export function useLibrary({
         return;
       }
       const book = library[idx];
-      const g_apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY || '';
+      const g_apiKey = '';
       const currentMeta = enrichedMetadataRef.current[book.filename];
       const needsEnrichment = !currentMeta || book.title === book.filename || !book.author;
 
