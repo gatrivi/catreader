@@ -532,23 +532,52 @@ export default function App() {
   };
 
   // --- Book Operations ---
+  const isUsableBookBlob = async (blob: Blob | null, book: LibraryBook): Promise<boolean> => {
+    if (!blob || blob.size === 0) return false;
+    if (book.type.toLowerCase() !== 'pdf') return true;
+    if (blob.type.toLowerCase().includes('pdf')) return true;
+    try {
+      return (await blob.slice(0, 5).text()) === '%PDF-';
+    } catch {
+      return false;
+    }
+  };
+
   const getBookBlob = (book: LibraryBook): Promise<Blob> => {
     const existing = bookBlobPromisesRef.current.get(book.filename);
     if (existing) return existing;
 
     const promise = (async () => {
       const cached = await coverDB.getBookContent(book.filename);
-      if (cached && cached.size > 0) return cached;
+      if (await isUsableBookBlob(cached, book)) return cached as Blob;
+      if (cached) {
+        console.warn('[Reader] Dropping invalid cached book:', book.filename, cached.type, cached.size);
+        await coverDB.deleteBookContent(book.filename).catch(() => {});
+      }
 
       const baseUrl = import.meta.env.BASE_URL || '/';
       const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
       const fetchUrl = `${booksDirPath}${encodeURIComponent(book.filename)}`;
-      const response = await fetch(fetchUrl);
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
-      const blob = await response.blob();
-      if (blob.size === 0) throw new Error('Fetched blob is empty (0 bytes)');
-      void coverDB.saveBookContent(book.filename, blob);
-      return blob;
+      const candidates = [fetchUrl, `${fetchUrl}?v=${encodeURIComponent(APP_VERSION)}`];
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < candidates.length; attempt += 1) {
+        try {
+          const response = await fetch(candidates[attempt], { cache: attempt === 0 ? 'default' : 'reload' });
+          if (!response.ok) throw new Error(`Server returned ${response.status}`);
+          const blob = await response.blob();
+          if (!(await isUsableBookBlob(blob, book))) {
+            throw new Error(`Invalid ${book.type.toUpperCase()} response (${blob.type || "unknown type"}, ${blob.size} bytes)`);
+          }
+          void coverDB.saveBookContent(book.filename, blob);
+          return blob;
+        } catch (err) {
+          lastError = err;
+          if (attempt === 0) console.warn('[Reader] Book fetch retry:', book.filename, err);
+        }
+      }
+
+      throw lastError instanceof Error ? lastError : new Error('Failed to fetch book');
     })();
 
     bookBlobPromisesRef.current.set(book.filename, promise);
@@ -1208,8 +1237,18 @@ export default function App() {
     } catch (err: any) {
       if (requestId !== openRequestRef.current) return;
       console.error('[Reader] Failed to open book:', err);
-      setGlobalError({ message: 'No pudimos abrir el libro', details: err.message });
-      showToast('Error al abrir el libro.');
+      // A failed network request must return the user to a usable shelf, not
+      // leave a fake loading state running for another five seconds.
+      setGlobalError(null);
+      setFileUrl(null);
+      setFileName('');
+      setIsLoaded(true);
+      setIsRestoring(false);
+      restoreTargetPageRef.current = null;
+      modeSwitchPageRef.current = null;
+      localStorage.removeItem('catreader_last_book');
+      showToast('No se pudo descargar el libro. Probá de nuevo.');
+      return;
     }
     if (requestId !== openRequestRef.current) return;
     if (book.type === 'txt' || book.type === 'epub') setIsLoaded(true);

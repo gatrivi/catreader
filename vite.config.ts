@@ -45,10 +45,11 @@ export default defineConfig(({mode}) => {
           // Exclude books from precache to avoid build errors and huge initial downloads
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
           globIgnores: ['**/books/*.pdf', '**/books/*.epub', '**/feed.json'],
-          // Use runtime caching for books instead
+          // Use runtime caching for books instead. EPUB/TXT should be just as
+          // resilient offline as PDFs once the user has opened them.
           runtimeCaching: [
             {
-              urlPattern: /\/books\/.*\.pdf$/,
+              urlPattern: /\/books\/.*\.(pdf|epub|txt)$/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'books-cache',
