@@ -1,0 +1,38 @@
+name: Normalize App EOL
+
+on:
+  push:
+    branches: [agent/discover-text-first]
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore App CRLF
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/App.tsx')
+          s = p.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+          p.write_bytes(s.replace('\n', '\r\n').encode('utf-8'))
+          PY
+          git diff --numstat origin/main -- src/App.tsx
+          changed=$(git diff --numstat origin/main -- src/App.tsx | awk '{print $1+$2}')
+          test -n "$changed"
+          test "$changed" -lt 500
+      - name: Commit normalized file
+        shell: bash
+        run: |
+          git config user.name "catreader-agent"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/normalize-app-eol.yml
+          git add src/App.tsx
+          git commit -m "chore: preserve App line endings"
+          git push
