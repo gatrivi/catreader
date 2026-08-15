@@ -290,3 +290,14 @@
 .paper-soul-ink .ink-5 { opacity: 0.98; font-weight: 400; }
 .paper-soul-ink .ink-6 { opacity: 0.92; }
 .paper-soul-ink .ink-7 { opacity: 0.95; letter-spacing: 0.005em; }
+
+
+/* E-ink / reduced-motion: avoid expensive repaint-heavy transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
