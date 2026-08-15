@@ -109,8 +109,16 @@ export function useLibrary({
       const deletedRaw = localStorage.getItem('catreader_deleted_books');
       const deletedSet = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
       const visibleData = filterDeletedBooks(data as LibraryBook[], deletedSet);
-      // Keep spinner until covers+library commit together (no early SVG paint)
-      setGlobalStatus('Cargando portadas...');
+
+      // Critical path: paint the shelf as soon as books.json arrives. Covers and
+      // cloud metadata are enrichment, not prerequisites for using the app.
+      // Mark covers hydrated so BookCover renders its title/author fallback
+      // instead of a wall of blank shimmer tiles while IndexedDB is scanned.
+      setLibrary(visibleData.map((book: LibraryBook) => ({ ...book, svg: undefined })));
+      setCovers({ ...coverMem.map });
+      setCoversHydrated(true);
+      setIsLoadingLibrary(false);
+      setGlobalStatus(null);
 
       // Load enriched metadata in the background
       (async () => {
@@ -271,7 +279,7 @@ export function useLibrary({
             if (bundledSvg && bundledSvg.includes('<svg')) {
               await coverDB.saveCover(book.filename, bundledSvg);
               loadedCovers[book.filename] = bundledSvg;
-              const prev = metaUpdates[book.filename] || {
+              const prev: { title: string; author: string; svg?: string; coverSource?: any } = metaUpdates[book.filename] || {
                 title: book.title,
                 author: book.author || '',
                 svg: bundledSvg,
