@@ -1,4 +1,4 @@
-/** Cover sacredness helpers — never clobber an existing cover unless force. */
+/** Cover sacredness helpers — protect real/user covers, but allow synthetic SVGs to upgrade. */
 
 export type CoverSourceType =
   | 'user-custom'
@@ -23,15 +23,31 @@ export function hasStoredCover(cover: string | null | undefined): boolean {
   );
 }
 
-/** Idle / auto fetch must skip when any cover already exists (unless force). */
+/** Legacy/generated SVGs are placeholders and may be upgraded to a real cover. */
+export function isSyntheticCover(
+  cover: string | null | undefined,
+  coverSource?: { type?: string } | null,
+): boolean {
+  return (
+    coverSource?.type === 'ai-generated' ||
+    coverSource?.type === 'bundled' ||
+    !!cover?.includes('<svg') ||
+    !!cover?.startsWith('data:image/svg')
+  );
+}
+
+/** Idle / auto fetch protects real or user covers, while allowing synthetic placeholders to upgrade. */
 export function shouldSkipCoverFetch(opts: {
   force?: boolean;
   existingCover?: string | null;
   coverSource?: { type?: string } | null;
 }): boolean {
   if (opts.force) return false;
-  // Any declared source (bundled/catalog/custom) is sacred for idle scan
-  if (opts.coverSource?.type) return true;
-  if (hasStoredCover(opts.existingCover)) return true;
-  return false;
+
+  const sourceType = opts.coverSource?.type;
+  if (sourceType === 'user-custom') return true;
+  if (sourceType === 'openlibrary' || sourceType === 'google-books' || sourceType === 'wikimedia') return true;
+
+  if (isSyntheticCover(opts.existingCover, opts.coverSource)) return false;
+  return hasStoredCover(opts.existingCover);
 }
