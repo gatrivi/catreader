@@ -72,7 +72,7 @@ patch('src/App.tsx', [[
           if (!response.ok) throw new Error(\`Server returned ${'${response.status}'}\`);
           const blob = await response.blob();
           if (!(await isUsableBookBlob(blob, book))) {
-            throw new Error(\`Invalid ${'${book.type.toUpperCase()}'} response (${ '${blob.type || "unknown type"}' }, ${'${blob.size}'} bytes)\`);
+            throw new Error(\`Invalid ${'${book.type.toUpperCase()}'} response (${'${blob.type || "unknown type"}'}, ${'${blob.size}'} bytes)\`);
           }
           void coverDB.saveBookContent(book.filename, blob);
           return blob;
@@ -131,6 +131,17 @@ patch('src/hooks/useLibrary.ts', [[
       setCoversHydrated(true);
       setIsLoadingLibrary(false);
       setGlobalStatus(null);`
+], [
+`              const prev = metaUpdates[book.filename] || {
+                title: book.title,
+                author: book.author || '',
+                svg: bundledSvg,
+              };`,
+`              const prev: { title: string; author: string; svg?: string; coverSource?: any } = metaUpdates[book.filename] || {
+                title: book.title,
+                author: book.author || '',
+                svg: bundledSvg,
+              };`
 ]]);
 
 patch('vite.config.ts', [[
