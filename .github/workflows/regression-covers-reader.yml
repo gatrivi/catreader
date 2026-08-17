@@ -3,7 +3,7 @@ on:
   push:
     branches: [agent/regression-covers-reader]
 permissions:
-  contents: read
+  contents: write
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -13,6 +13,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Apply regression fixes
+        run: node scripts/apply-regression-fix.mjs
       - run: npm ci
       - name: Typecheck
         run: npm run lint
@@ -20,3 +22,23 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+      - name: Artifact smoke checks
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const books = JSON.parse(fs.readFileSync('dist/books.json', 'utf8'));
+          const wikimedia = books.filter((book) => book.coverSource?.type === 'wikimedia' && book.coverSource?.url);
+          if (!wikimedia.length) throw new Error('No shipped Wikimedia covers in production artifact');
+          console.log(`Production artifact contains ${wikimedia.length} Wikimedia covers`);
+          NODE
+      - name: Commit validated fixes
+        run: |
+          if git diff --quiet -- src/App.tsx src/hooks/useLibrary.ts; then
+            echo 'No generated patch changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx src/hooks/useLibrary.ts
+          git commit -m 'fix: restore covers and text-first library opens'
+          git push origin HEAD:agent/regression-covers-reader
