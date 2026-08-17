@@ -2,9 +2,12 @@ import fs from 'node:fs';
 
 function patch(path, from, to) {
   const raw = fs.readFileSync(path, 'utf8');
-  if (raw.includes(to)) return;
-  if (!raw.includes(from)) throw new Error(`Patch anchor not found in ${path}: ${from.slice(0, 120)}`);
-  fs.writeFileSync(path, raw.replace(from, to));
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  let text = raw.replace(/\r\n/g, '\n');
+  if (text.includes(to)) return;
+  if (!text.includes(from)) throw new Error(`Patch anchor not found in ${path}: ${from.slice(0, 120)}`);
+  text = text.replace(from, to);
+  fs.writeFileSync(path, eol === '\r\n' ? text.replace(/\n/g, '\r\n') : text);
 }
 
 patch(
