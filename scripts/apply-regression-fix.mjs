@@ -121,6 +121,85 @@ import { shouldOpenTextFirst } from './utils/openMode';`,
 
 patch(
   'src/App.tsx',
+  `  const toggleReaderMode = async () => {
+    // Freeze page before remount — observer would otherwise see top of text view (p~1–3)
+    // and saveProgress would overwrite synced progress (feature #1).
+    const keepPage = pageNumber;
+    modeSwitchPageRef.current = keepPage;
+    restoreTargetPageRef.current = keepPage;
+    setIsRestoring(true);
+
+    const nextMode = !isReaderMode;
+    setIsReaderMode(nextMode);
+
+    if (nextMode && fileType === 'pdf') {`,
+  `  const toggleReaderMode = async () => {
+    // Freeze page before remount — observer would otherwise see top of text view (p~1–3)
+    // and saveProgress would overwrite synced progress (feature #1).
+    const keepPage = pageNumber;
+    modeSwitchPageRef.current = keepPage;
+    restoreTargetPageRef.current = keepPage;
+    setIsRestoring(true);
+
+    // Text-first uses a tiny text blob as a mount sentinel until the actual PDF
+    // arrives. Never hand that sentinel to PDF.js when the user asks for the original.
+    if (isReaderMode && fileType === 'pdf') {
+      const book = library.find((candidate) => candidate.filename === fileName);
+      if (!book) {
+        setIsRestoring(false);
+        return;
+      }
+      showToast('Cargando PDF original…');
+      try {
+        const blob = await getBookBlob(book);
+        const realUrl = URL.createObjectURL(blob);
+        setFileUrl((current) => {
+          if (current?.startsWith('blob:')) URL.revokeObjectURL(current);
+          return realUrl;
+        });
+        setIsReaderMode(false);
+      } catch (e) {
+        console.error('[ReaderMode] Failed original PDF load:', e);
+        restoreTargetPageRef.current = null;
+        modeSwitchPageRef.current = null;
+        setIsRestoring(false);
+        showToast('No se pudo cargar el PDF original');
+      }
+      return;
+    }
+
+    const nextMode = !isReaderMode;
+    setIsReaderMode(nextMode);
+
+    if (nextMode && fileType === 'pdf') {`,
+);
+
+patch(
+  'src/App.tsx',
+  `  useEffect(() => {
+    if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
+    let cancelled = false;
+    (async () => {
+      const blob =
+        (await coverDB.getBookContent(fileName)) ||
+        (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+      if (cancelled || !blob) return;
+      await ensureGhostAround(blob, fileName, pageNumber);
+    })();`,
+  `  useEffect(() => {
+    if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
+    let cancelled = false;
+    (async () => {
+      // During text-first startup fileUrl can be a text sentinel, not a PDF.
+      // Only parse a PDF that is already present in the verified book cache.
+      const blob = await coverDB.getBookContent(fileName);
+      if (cancelled || !blob) return;
+      await ensureGhostAround(blob, fileName, pageNumber);
+    })();`,
+);
+
+patch(
+  'src/App.tsx',
   `    fallbackPage?: number,
     preferReaderMode = false,
     initialReaderHtml?: string
