@@ -138,7 +138,7 @@ export const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
     },
     checks,
     recentLog: entries.slice(-40),
-  }, [
+  }, null, 2), [
     activeBook,
     appVersion,
     checks,
