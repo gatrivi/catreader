@@ -48,8 +48,9 @@ function isSyntheticSource(source: CoverSource): boolean {
 
 /**
  * Pick the source that should win when the shipped catalogue and persisted
- * metadata disagree. User covers are sacred; otherwise newer real catalogue
- * art is allowed to replace stale enrichment/cache entries.
+ * metadata disagree. User covers are sacred. For static books, real artwork
+ * declared in books.json is canonical so shipped cover corrections cannot be
+ * hidden forever by stale automatically-enriched cache entries.
  */
 export function preferredCoverSource(catalogue: CoverSource, persisted: CoverSource): CoverSource {
   if (persisted?.type === 'user-custom') return persisted;
@@ -59,8 +60,9 @@ export function preferredCoverSource(catalogue: CoverSource, persisted: CoverSou
 
   const catalogueSynthetic = isSyntheticSource(catalogue);
   const persistedSynthetic = isSyntheticSource(persisted);
-  if (!catalogueSynthetic && persistedSynthetic) return catalogue;
-  if (catalogueSynthetic && !persistedSynthetic) return persisted;
+
+  if (!catalogueSynthetic) return catalogue;
+  if (!persistedSynthetic) return persisted;
 
   const catalogueUpdatedAt = catalogue.updatedAt || 0;
   const persistedUpdatedAt = persisted.updatedAt || 0;
@@ -68,7 +70,6 @@ export function preferredCoverSource(catalogue: CoverSource, persisted: CoverSou
     return catalogueUpdatedAt > persistedUpdatedAt ? catalogue : persisted;
   }
 
-  // With no trustworthy timestamp difference, keep the user's persisted state.
   return persisted;
 }
 
