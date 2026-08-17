@@ -41,20 +41,20 @@ describe('covers lock', () => {
     expect(isUserCustomCover({ type: 'ai-generated' })).toBe(false);
   });
 
-  it('uses a newer shipped cover instead of stale enriched metadata', () => {
-    const oldOpenLibrary = {
+  it('uses shipped real art even when stale automatic cache has a newer timestamp', () => {
+    const staleOpenLibrary = {
       type: 'openlibrary' as const,
       url: 'https://covers.openlibrary.org/old.jpg',
-      updatedAt: 100,
+      updatedAt: 999999,
     };
-    const newWikimedia = {
+    const shippedWikimedia = {
       type: 'wikimedia' as const,
       url: 'https://commons.wikimedia.org/new.jpg',
       updatedAt: 200,
     };
 
-    expect(preferredCoverSource(newWikimedia, oldOpenLibrary)).toEqual(newWikimedia);
-    expect(shouldReplaceStoredCover(oldOpenLibrary.url, newWikimedia)).toBe(true);
+    expect(preferredCoverSource(shippedWikimedia, staleOpenLibrary)).toEqual(shippedWikimedia);
+    expect(shouldReplaceStoredCover(staleOpenLibrary.url, shippedWikimedia)).toBe(true);
   });
 
   it('never lets catalogue art overwrite a user custom cover', () => {
