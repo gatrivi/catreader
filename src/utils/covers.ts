@@ -9,7 +9,7 @@ export type CoverSourceType =
   | 'bundled';
 
 export type CoverSource = {
-  type?: CoverSourceType;
+  type: CoverSourceType;
   url?: string;
   updatedAt?: number;
 } | null | undefined;
