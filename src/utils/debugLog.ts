@@ -98,7 +98,9 @@ export function clearDebugEntries() {
 
 export function subscribeDebugEntries(listener: () => void) {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function installGlobalDebugCapture() {
