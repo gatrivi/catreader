@@ -72,18 +72,18 @@ patch(
             if (cover) {`,
   `          for (const book of allBooks) {
             const rawBook = withSvg.find((b) => b.filename === book.filename) || book;
-            const src = preferredCoverSource(rawBook.coverSource, metaUpdates[book.filename]?.coverSource);
-            if (src?.type) {
+            const chosenSource = preferredCoverSource(rawBook.coverSource, metaUpdates[book.filename]?.coverSource);
+            if (chosenSource?.type) {
               const prev = metaUpdates[book.filename] || {
                 title: book.title,
                 author: book.author || '',
                 svg: rawBook.svg,
               };
-              metaUpdates[book.filename] = { ...prev, coverSource: src };
+              metaUpdates[book.filename] = { ...prev, coverSource: chosenSource };
             }
 
             let cover = loadedCovers[book.filename] || (await coverDB.getCover(book.filename));
-            if (cover && shouldReplaceStoredCover(cover, src)) {
+            if (cover && shouldReplaceStoredCover(cover, chosenSource)) {
               delete loadedCovers[book.filename];
               await coverDB.deleteCover(book.filename).catch(() => {});
               cover = null;
@@ -93,11 +93,8 @@ patch(
 
 patch(
   'src/hooks/useLibrary.ts',
-  `
-            const src = rawBook.coverSource || metaUpdates[book.filename]?.coverSource;
-            if (src?.type === 'user-custom' && src.url) {`,
-  `
-            if (src?.type === 'user-custom' && src.url) {`,
+  `            const src = rawBook.coverSource || metaUpdates[book.filename]?.coverSource;`,
+  `            const src = chosenSource;`,
 );
 
 patch(
