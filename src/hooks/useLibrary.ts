@@ -5,7 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
-import { shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
+import { preferredCoverSource, shouldReplaceStoredCover, shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
 import {
   coverMem,
   coverMemMerge,
@@ -114,8 +114,16 @@ export function useLibrary({
       // cloud metadata are enrichment, not prerequisites for using the app.
       // Mark covers hydrated so BookCover renders its title/author fallback
       // instead of a wall of blank shimmer tiles while IndexedDB is scanned.
+      const initialCovers: Record<string, string> = { ...coverMem.map };
+      for (const book of visibleData) {
+        const src = book.coverSource;
+        if (!initialCovers[book.filename] && src?.url && ['openlibrary', 'google-books', 'wikimedia'].includes(src.type)) {
+          initialCovers[book.filename] = src.url;
+        }
+      }
+      coverMemMerge(initialCovers);
       setLibrary(visibleData.map((book: LibraryBook) => ({ ...book, svg: undefined })));
-      setCovers({ ...coverMem.map });
+      setCovers(initialCovers);
       setCoversHydrated(true);
       setIsLoadingLibrary(false);
       setGlobalStatus(null);
@@ -202,14 +210,14 @@ export function useLibrary({
           // ponytail: enrich visibleData only — mapping raw `data` resurrected deleted books
           const enriched = visibleData.map((book: LibraryBook) => {
             const meta = metadata[book.filename];
-            const src = meta?.coverSource;
-            // Suppress svg flash whenever we have a declared cover source (incl. bundled/custom)
-            const hideBundledSvg = !!src?.type && src.type !== 'ai-generated';
+            const src = preferredCoverSource(book.coverSource, meta?.coverSource);
+            // Preserve bundled SVG until hydration unless a real/custom source supersedes it.
+            const hideBundledSvg = !!src?.type && src.type !== 'ai-generated' && src.type !== 'bundled';
             return {
               ...book,
               title: meta?.title || book.title,
-              author: meta?.author || '',
-              svg: undefined,
+              author: meta?.author || book.author || '',
+              svg: hideBundledSvg ? undefined : (meta?.svg || book.svg),
               coverSource: src || undefined
             };
           });
@@ -228,7 +236,22 @@ export function useLibrary({
 
           for (const book of allBooks) {
             const rawBook = withSvg.find((b) => b.filename === book.filename) || book;
+            const chosenSource = preferredCoverSource(rawBook.coverSource, metaUpdates[book.filename]?.coverSource);
+            if (chosenSource?.type) {
+              const prev = metaUpdates[book.filename] || {
+                title: book.title,
+                author: book.author || '',
+                svg: rawBook.svg,
+              };
+              metaUpdates[book.filename] = { ...prev, coverSource: chosenSource };
+            }
+
             let cover = loadedCovers[book.filename] || (await coverDB.getCover(book.filename));
+            if (cover && shouldReplaceStoredCover(cover, chosenSource)) {
+              delete loadedCovers[book.filename];
+              await coverDB.deleteCover(book.filename).catch(() => {});
+              cover = null;
+            }
             if (cover) {
               loadedCovers[book.filename] = cover;
               // Stamp source so idle never replaces orphan IDB covers
@@ -248,7 +271,7 @@ export function useLibrary({
               continue;
             }
 
-            const src = rawBook.coverSource || metaUpdates[book.filename]?.coverSource;
+            const src = chosenSource;
             if (src?.type === 'user-custom' && src.url) {
               try {
                 const r = await fetch(src.url);
@@ -308,7 +331,7 @@ export function useLibrary({
           }
           setLibrary(allBooks.map((b) => ({
             ...b,
-            coverSource: metaUpdates[b.filename]?.coverSource || b.coverSource,
+            coverSource: preferredCoverSource(b.coverSource, metaUpdates[b.filename]?.coverSource) || undefined,
           })));
           setIsLoadingLibrary(false);
           setGlobalStatus(null);

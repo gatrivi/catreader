@@ -76,6 +76,7 @@ import {
 import { loadLocalProgressMap } from './utils/localProgress';
 import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { APP_VERSION, RELEASE_NOTES_SEEN_KEY } from './utils/releaseNotes';
+import { shouldOpenTextFirst } from './utils/openMode';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -834,6 +835,33 @@ export default function App() {
     restoreTargetPageRef.current = keepPage;
     setIsRestoring(true);
 
+    // Text-first uses a tiny text blob as a mount sentinel until the actual PDF
+    // arrives. Never hand that sentinel to PDF.js when the user asks for the original.
+    if (isReaderMode && fileType === 'pdf') {
+      const book = library.find((candidate) => candidate.filename === fileName);
+      if (!book) {
+        setIsRestoring(false);
+        return;
+      }
+      showToast('Cargando PDF original…');
+      try {
+        const blob = await getBookBlob(book);
+        const realUrl = URL.createObjectURL(blob);
+        setFileUrl((current) => {
+          if (current?.startsWith('blob:')) URL.revokeObjectURL(current);
+          return realUrl;
+        });
+        setIsReaderMode(false);
+      } catch (e) {
+        console.error('[ReaderMode] Failed original PDF load:', e);
+        restoreTargetPageRef.current = null;
+        modeSwitchPageRef.current = null;
+        setIsRestoring(false);
+        showToast('No se pudo cargar el PDF original');
+      }
+      return;
+    }
+
     const nextMode = !isReaderMode;
     setIsReaderMode(nextMode);
 
@@ -863,9 +891,9 @@ export default function App() {
     if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
     let cancelled = false;
     (async () => {
-      const blob =
-        (await coverDB.getBookContent(fileName)) ||
-        (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+      // During text-first startup fileUrl can be a text sentinel, not a PDF.
+      // Only parse a PDF that is already present in the verified book cache.
+      const blob = await coverDB.getBookContent(fileName);
       if (cancelled || !blob) return;
       await ensureGhostAround(blob, fileName, pageNumber);
     })();
@@ -1047,7 +1075,7 @@ export default function App() {
     initialEpubLocation?: string,
     initialScrollRatio?: number,
     fallbackPage?: number,
-    preferReaderMode = false,
+    preferReaderMode?: boolean,
     initialReaderHtml?: string
   ) => {
     const filename = book.filename;
@@ -1068,7 +1096,7 @@ export default function App() {
       URL.revokeObjectURL(fileUrl);
     }
 
-    const textFirstPdf = preferReaderMode && book.type === 'pdf';
+    const textFirstPdf = shouldOpenTextFirst(book.type, preferReaderMode);
     setFileName(filename);
     setFileType(book.type);
     setIsReaderMode(textFirstPdf);
