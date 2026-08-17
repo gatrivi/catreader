@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { SadMonkIcon } from './SadMonkIcon';
+import { debugWarn } from '../utils/debugLog';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -32,7 +33,8 @@ interface BookCoverProps {
     audio?: boolean;
     svg?: string;
     coverSource?: {
-      type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'wikimedia';
+      type: 'user-custom' | 'ai-generated' | 'openlibrary' | 'google-books' | 'wikimedia' | 'bundled';
+      url?: string;
     };
   };
   cover?: string;
@@ -72,9 +74,15 @@ export const BookCover: React.FC<BookCoverProps> = ({
     setCoverLoadFailed(false);
   }, [cover]);
 
-  React.useEffect(() => {
-    console.log(`[BookCover] Mount/update ${book.filename}: cover=${!!cover} source=${cover?.startsWith('data:') ? 'dataURL' : cover?.startsWith('http') ? 'url' : cover ? 'svg/other' : 'none'}`);
-  }, [book.filename, cover]);
+  const handleCoverLoadError = () => {
+    setCoverLoadFailed(true);
+    debugWarn('cover', 'image failed to load', {
+      filename: book.filename,
+      source: book.coverSource?.type || 'unknown',
+      url: cover?.startsWith('http') ? cover.slice(0, 500) : undefined,
+    });
+  };
+
   const displayCover = React.useMemo(() => {
     if (!cover) return null;
     // If it's already a URL or Data URL, return it
@@ -234,7 +242,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
               </div>
 
               {usableDisplayCover ? (
-                <img src={usableDisplayCover} alt={book.title} onError={() => setCoverLoadFailed(true)} className="w-full h-full object-cover rounded-r-md" />
+                <img src={usableDisplayCover} alt={book.title} onError={handleCoverLoadError} className="w-full h-full object-cover rounded-r-md" />
               ) : !coversHydrated ? (
                 <div className="w-full h-full rounded-r-md bg-stone-800/80 animate-pulse" aria-hidden />
               ) : svgDataUrl && book.coverSource?.type !== 'user-custom' ? (

@@ -77,6 +77,8 @@ import { loadLocalProgressMap } from './utils/localProgress';
 import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { APP_VERSION, RELEASE_NOTES_SEEN_KEY } from './utils/releaseNotes';
 import { shouldOpenTextFirst } from './utils/openMode';
+import { DiagnosticsPanel } from './components/DiagnosticsPanel';
+import { debugError, debugInfo, debugWarn, installGlobalDebugCapture } from './utils/debugLog';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -163,7 +165,8 @@ export default function App() {
     }
   }, []);
 
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(() => new URLSearchParams(window.location.search).get('debug') === '1');
+  useEffect(() => installGlobalDebugCapture(), []);
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
   const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'gaston');
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(localStorage.getItem('catreader_custom_wallpaper'));
@@ -550,9 +553,12 @@ export default function App() {
 
     const promise = (async () => {
       const cached = await coverDB.getBookContent(book.filename);
-      if (await isUsableBookBlob(cached, book)) return cached as Blob;
+      if (await isUsableBookBlob(cached, book)) {
+        debugInfo('book-cache', 'hit', { filename: book.filename, size: cached?.size, type: cached?.type });
+        return cached as Blob;
+      }
       if (cached) {
-        console.warn('[Reader] Dropping invalid cached book:', book.filename, cached.type, cached.size);
+        debugWarn('book-cache', 'dropping invalid cached book', { filename: book.filename, type: cached.type, size: cached.size });
         await coverDB.deleteBookContent(book.filename).catch(() => {});
       }
 
@@ -564,6 +570,7 @@ export default function App() {
 
       for (let attempt = 0; attempt < candidates.length; attempt += 1) {
         try {
+          debugInfo('book-fetch', 'request', { filename: book.filename, attempt: attempt + 1, url: candidates[attempt] });
           const response = await fetch(candidates[attempt], { cache: attempt === 0 ? 'default' : 'reload' });
           if (!response.ok) throw new Error(`Server returned ${response.status}`);
           const blob = await response.blob();
@@ -571,13 +578,15 @@ export default function App() {
             throw new Error(`Invalid ${book.type.toUpperCase()} response (${blob.type || "unknown type"}, ${blob.size} bytes)`);
           }
           void coverDB.saveBookContent(book.filename, blob);
+          debugInfo('book-fetch', 'success', { filename: book.filename, attempt: attempt + 1, size: blob.size, type: blob.type });
           return blob;
         } catch (err) {
           lastError = err;
-          if (attempt === 0) console.warn('[Reader] Book fetch retry:', book.filename, err);
+          debugWarn('book-fetch', 'attempt failed', { filename: book.filename, attempt: attempt + 1, error: err instanceof Error ? err.message : String(err) });
         }
       }
 
+      debugError('book-fetch', 'all attempts failed', { filename: book.filename, error: lastError instanceof Error ? lastError.message : String(lastError) });
       throw lastError instanceof Error ? lastError : new Error('Failed to fetch book');
     })();
 
@@ -1089,7 +1098,7 @@ export default function App() {
     const requestId = ++openRequestRef.current;
     resetCommittedPage();
 
-    console.log(`[Reader] Opening book: ${filename}`);
+    debugInfo('reader', 'open requested', { filename, type: book.type, forcedPage: forcePage ?? fallbackPage ?? null });
     
     // Revoke previous URL if opening a different book
     if (fileUrl && fileUrl.startsWith('blob:')) {
@@ -1097,6 +1106,7 @@ export default function App() {
     }
 
     const textFirstPdf = shouldOpenTextFirst(book.type, preferReaderMode);
+    debugInfo('reader', 'open mode selected', { filename, textFirstPdf, preferReaderMode: preferReaderMode ?? null });
     setFileName(filename);
     setFileType(book.type);
     setIsReaderMode(textFirstPdf);
@@ -1193,7 +1203,7 @@ export default function App() {
         setPageNumber(targetPage);
         commitPage(targetPage);
       }).catch((err) => {
-        console.warn('[Reader] Background PDF warm failed:', err);
+        debugWarn('reader', 'background PDF warm failed', { filename, error: err instanceof Error ? err.message : String(err) });
         restoreTargetPageRef.current = null;
         modeSwitchPageRef.current = null;
         setIsRestoring(false);
@@ -1264,7 +1274,7 @@ export default function App() {
       restoringTimeoutRef.current = setTimeout(() => setIsRestoring(false), 5000);
     } catch (err: any) {
       if (requestId !== openRequestRef.current) return;
-      console.error('[Reader] Failed to open book:', err);
+      debugError('reader', 'failed to open book', { filename, error: err instanceof Error ? err.message : String(err) });
       // A failed network request must return the user to a usable shelf, not
       // leave a fake loading state running for another five seconds.
       setGlobalError(null);
@@ -1459,37 +1469,31 @@ export default function App() {
 
   return (
     <div className={cn("fixed inset-0 overflow-hidden flex flex-col transition-colors duration-500", themeStyles[theme])} onMouseMove={resetUITimer} onTouchStart={resetUITimer}>
-      <button onClick={() => setShowDiagnostics(true)} className="fixed top-2 right-4 z-40 text-[10px] font-mono opacity-30 select-none hover:opacity-100 transition-opacity uppercase tracking-[0.2em] cursor-help">{APP_VERSION}</button>
-
-      <AnimatePresence>{showDiagnostics && (
-
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-stone-950/95 backdrop-blur-xl p-6 sm:p-12 overflow-auto">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex items-center justify-between mb-8 border-b border-white/10 pb-4">
-                <div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /><h2 className="text-xl font-mono text-white font-bold">CatReader Diagnostics</h2></div>
-                <button onClick={() => setShowDiagnostics(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"><X size={20} /></button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono text-sm">
-                <div className="bg-stone-900/50 p-4 rounded-xl border border-white/5">
-                  <h3 className="text-stone-500 uppercase text-xs mb-3 font-bold">Core State</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between border-b border-white/5 py-1"><span>Version</span><span className="text-emerald-400">{APP_VERSION}</span></div>
-                    <div className="flex justify-between border-b border-white/5 py-1"><span>Device</span><span className="text-amber-400 capitalize">{getDeviceCategory()}</span></div>
-                    <div className="flex justify-between border-b border-white/5 py-1"><span>Active Book</span><span className="text-indigo-400 truncate max-w-[200px]">{fileName || 'None'}</span></div>
-                  </div>
-                </div>
-                <div className="bg-stone-900/50 p-4 rounded-xl border border-white/5">
-                  <h3 className="text-stone-500 uppercase text-xs mb-3 font-bold">Metrics</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between border-b border-white/5 py-1"><span>Page</span><span className="text-emerald-400">{pageNumber} / {numPages || 0}</span></div>
-                    <div className="flex justify-between border-b border-white/5 py-1"><span>Zoom</span><span className="text-white">{Math.round((typeof zoom === 'number' ? zoom : 1) * 100)}%</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <button
+        onClick={() => setShowDiagnostics(true)}
+        className="fixed top-1 right-2 z-40 min-w-11 min-h-11 px-2 grid place-items-center text-[10px] font-mono opacity-45 select-none hover:opacity-100 focus:opacity-100 transition-opacity uppercase tracking-[0.12em] cursor-help"
+        aria-label="Abrir diagnóstico"
+        title="Diagnóstico"
+      >{APP_VERSION}</button>
+      <DiagnosticsPanel
+        open={showDiagnostics}
+        onClose={() => setShowDiagnostics(false)}
+        appVersion={APP_VERSION}
+        device={getDeviceCategory()}
+        library={library}
+        covers={covers}
+        coversHydrated={coversHydrated}
+        libraryLoading={isLoadingLibrary}
+        activeBook={fileName}
+        fileType={fileType}
+        readerMode={isReaderMode}
+        isLoaded={isLoaded}
+        isRestoring={isRestoring}
+        pageNumber={pageNumber}
+        numPages={numPages}
+        pwaStatus={pwaUpdate.status}
+        isSyncing={isSyncing}
+      />
 
       <AnimatePresence>{globalStatus && (
         <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-amber-600 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold flex items-center gap-3 border-2 border-amber-400">
