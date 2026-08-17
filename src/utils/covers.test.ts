@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { hasStoredCover, isSyntheticCover, isUserCustomCover, shouldSkipCoverFetch } from './covers';
+import {
+  hasStoredCover,
+  isSyntheticCover,
+  isUserCustomCover,
+  preferredCoverSource,
+  shouldReplaceStoredCover,
+  shouldSkipCoverFetch,
+} from './covers';
 
 describe('covers lock', () => {
   it('detects stored covers', () => {
@@ -32,5 +39,37 @@ describe('covers lock', () => {
   it('flags user-custom', () => {
     expect(isUserCustomCover({ type: 'user-custom' })).toBe(true);
     expect(isUserCustomCover({ type: 'ai-generated' })).toBe(false);
+  });
+
+  it('uses a newer shipped cover instead of stale enriched metadata', () => {
+    const oldOpenLibrary = {
+      type: 'openlibrary' as const,
+      url: 'https://covers.openlibrary.org/old.jpg',
+      updatedAt: 100,
+    };
+    const newWikimedia = {
+      type: 'wikimedia' as const,
+      url: 'https://commons.wikimedia.org/new.jpg',
+      updatedAt: 200,
+    };
+
+    expect(preferredCoverSource(newWikimedia, oldOpenLibrary)).toEqual(newWikimedia);
+    expect(shouldReplaceStoredCover(oldOpenLibrary.url, newWikimedia)).toBe(true);
+  });
+
+  it('never lets catalogue art overwrite a user custom cover', () => {
+    const custom = {
+      type: 'user-custom' as const,
+      url: 'https://storage.example/custom.jpg',
+      updatedAt: 10,
+    };
+    const catalogue = {
+      type: 'wikimedia' as const,
+      url: 'https://commons.wikimedia.org/new.jpg',
+      updatedAt: 999,
+    };
+
+    expect(preferredCoverSource(catalogue, custom)).toEqual(custom);
+    expect(shouldReplaceStoredCover('data:image/jpeg;base64,user', custom)).toBe(false);
   });
 });
