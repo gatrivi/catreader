@@ -17,6 +17,15 @@ describe('auto cover lookup', () => {
     expect(result?.url).toContain('1jA8AAAAcAAJ');
   });
 
+  it('still recognizes volume 1 when an imported book only has a placeholder author', () => {
+    const result = knownCoverFor({
+      filename: 'abecedario_espiritual_vol_1.pdf',
+      title: 'abecedario_espiritual_vol_1',
+      author: 'Desconocido',
+    });
+    expect(result?.url).toContain('1jA8AAAAcAAJ');
+  });
+
   it('keeps volume 2 distinct from volume 1', () => {
     const result = knownCoverFor({
       filename: 'abecedario_espiritual_vol_2.pdf',
