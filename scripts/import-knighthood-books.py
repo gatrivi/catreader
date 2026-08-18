@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Import public-domain Catholic knighthood texts into CatReader.
-
-The importer intentionally avoids modern copyrighted translations. It downloads
-old/public-domain editions, converts them to UTF-8 text, and adds clean metadata
-for CatReader's generated library manifest.
-"""
+"""Import public-domain Catholic knighthood texts into CatReader."""
 
 from __future__ import annotations
 
@@ -62,8 +57,6 @@ BOOKS = [
 
 
 class ArticleText(HTMLParser):
-    """Minimal HTML-to-text extractor for MediaWiki parse output."""
-
     BLOCKS = {"p", "div", "section", "h1", "h2", "h3", "h4", "li", "br", "blockquote"}
     SKIP = {"script", "style", "sup", "table"}
 
@@ -75,15 +68,13 @@ class ArticleText(HTMLParser):
     def handle_starttag(self, tag: str, attrs) -> None:
         if tag in self.SKIP:
             self.skip_depth += 1
-            return
-        if not self.skip_depth and tag in self.BLOCKS:
+        elif not self.skip_depth and tag in self.BLOCKS:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in self.SKIP and self.skip_depth:
             self.skip_depth -= 1
-            return
-        if not self.skip_depth and tag in self.BLOCKS:
+        elif not self.skip_depth and tag in self.BLOCKS:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
@@ -91,17 +82,15 @@ class ArticleText(HTMLParser):
             self.parts.append(data)
 
     def text(self) -> str:
-        raw = html.unescape("".join(self.parts))
-        raw = raw.replace("\xa0", " ")
+        raw = html.unescape("".join(self.parts)).replace("\xa0", " ")
         raw = re.sub(r"[ \t]+", " ", raw)
         raw = re.sub(r" *\n *", "\n", raw)
-        raw = re.sub(r"\n{3,}", "\n\n", raw)
-        return raw.strip()
+        return re.sub(r"\n{3,}", "\n\n", raw).strip()
 
 
 def fetch(url: str) -> bytes:
-    request = Request(url, headers={"User-Agent": "CatReader/2 book-import (public-domain texts)"})
-    with urlopen(request, timeout=120) as response:
+    req = Request(url, headers={"User-Agent": "CatReader/2 book-import (public-domain texts)"})
+    with urlopen(req, timeout=120) as response:
         return response.read()
 
 
@@ -114,9 +103,8 @@ def pdftotext(pdf: Path, target: Path) -> str:
 
 def write_book(filename: str, text: str, source_note: str) -> None:
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    header = f"{source_note}\n\n"
     out = BOOKS_DIR / filename
-    out.write_text(header + text + "\n", encoding="utf-8")
+    out.write_text(f"{source_note}\n\n{text}\n", encoding="utf-8")
     if out.stat().st_size < 2500:
         raise RuntimeError(f"Suspiciously short import: {filename} ({out.stat().st_size} bytes)")
     print(f"[import] {filename}: {out.stat().st_size:,} bytes")
@@ -127,35 +115,26 @@ def import_bernard() -> None:
     parser = ArticleText()
     parser.feed(payload["parse"]["text"])
     text = parser.text()
-    # Trim MediaWiki chrome if any survives parse output.
     starts = [text.find(marker) for marker in ("LIVRE DE SAINT BERNARD", "PROLOGUE", "A Hugues")]
     starts = [i for i in starts if i >= 0]
     if starts:
         text = text[min(starts):]
     write_book(
-        BOOKS[0]["filename"],
-        text,
+        BOOKS[0]["filename"], text,
         "Public-domain French translation by Abbé Charpentier, Librairie Louis Vivès, 1866. Source: French Wikisource.",
     )
 
 
 def import_llull(tmp: Path) -> None:
-    pdf = tmp / "llull.pdf"
-    txt = tmp / "llull.txt"
+    pdf, txt = tmp / "llull.pdf", tmp / "llull.txt"
     pdf.write_bytes(fetch(SOURCES["llull"]))
     text = pdftotext(pdf, txt)
-    # Drop scanner garbage before the edition's recognizable front matter where possible.
-    candidates = [
-        text.lower().find("the buke"),
-        text.lower().find("order of knighthood"),
-        text.lower().find("gilbert hay"),
-    ]
+    candidates = [text.lower().find(x) for x in ("the buke", "order of knighthood", "gilbert hay")]
     candidates = [i for i in candidates if i >= 0]
     if candidates:
         text = text[min(candidates):]
     write_book(
-        BOOKS[1]["filename"],
-        text,
+        BOOKS[1]["filename"], text,
         "Public-domain 1847 English/Scots edition, translated from French and associated with Sir Gilbert Hay. Source scan: Cornell University Library / Internet Archive.",
     )
 
@@ -165,14 +144,15 @@ def normalize_page(page: str) -> str:
 
 
 def import_louis(tmp: Path) -> None:
-    pdf = tmp / "medieval-civilization-1910.pdf"
-    txt = tmp / "medieval-civilization-1910.txt"
+    pdf, txt = tmp / "medieval-civilization-1910.pdf", tmp / "medieval-civilization-1910.txt"
     pdf.write_bytes(fetch(SOURCES["louis"]))
-    text = pdftotext(pdf, txt)
-    pages = text.split("\f")
+    pages = pdftotext(pdf, txt).split("\f")
 
+    # Ignore front matter / table of contents. The actual selection is printed pp. 366-375.
     start = None
     for i, page in enumerate(pages):
+        if i < 250:
+            continue
         n = normalize_page(page)
         if (
             ("advice" in n and "louis" in n and "son" in n)
@@ -182,23 +162,23 @@ def import_louis(tmp: Path) -> None:
             start = i
             break
     if start is None:
-        # OCR occasionally damages the heading; the opening still contains Philip + father/son language.
         for i, page in enumerate(pages):
+            if i < 250:
+                continue
             n = normalize_page(page)
-            if "philip" in n and "dear son" in n and "father" in n and 250 < i < len(pages) - 10:
+            if "philip" in n and "dear son" in n and "father" in n:
                 start = i
                 break
     if start is None:
         raise RuntimeError("Could not locate St. Louis' Advice to His Son in the 1910 scan")
 
-    # The cited selection is printed pp. 366-375: ten consecutive printed pages.
+    print(f"[import] St. Louis starts at scan page {start + 1}")
     excerpt = "\n\n".join(p.strip() for p in pages[start : start + 10] if p.strip())
     check = normalize_page(excerpt)
     if "dear son" not in check or len(excerpt) < 5000:
         raise RuntimeError(f"St. Louis extraction failed validation at scan page {start + 1}")
     write_book(
-        BOOKS[2]["filename"],
-        excerpt,
+        BOOKS[2]["filename"], excerpt,
         "Public-domain English text from Dana C. Munro & George C. Sellery (eds.), Medieval Civilization, 1910, pp. 366-375. Source scan: Internet Archive / California Digital Library.",
     )
 
@@ -206,8 +186,7 @@ def import_louis(tmp: Path) -> None:
 def import_ignatius() -> None:
     text = fetch(SOURCES["ignatius"]).decode("utf-8", errors="replace")
     write_book(
-        BOOKS[3]["filename"],
-        text,
+        BOOKS[3]["filename"], text,
         "Project Gutenberg eBook #70790. 1916 English edition adapted by Rev. Charles Coppens, S.J.; public domain in the USA.",
     )
 
@@ -216,10 +195,8 @@ def update_metadata() -> None:
     current = json.loads(BOOKS_JSON.read_text(encoding="utf-8"))
     by_filename = {book["filename"]: book for book in current}
     for book in BOOKS:
-        old = by_filename.get(book["filename"], {})
-        by_filename[book["filename"]] = {**old, **book}
-    ordered = list(by_filename.values())
-    BOOKS_JSON.write_text(json.dumps(ordered, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        by_filename[book["filename"]] = {**by_filename.get(book["filename"], {}), **book}
+    BOOKS_JSON.write_text(json.dumps(list(by_filename.values()), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"[import] books.json metadata prepared for {len(BOOKS)} books")
 
 
