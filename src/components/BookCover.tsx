@@ -72,6 +72,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 }) => {
   const [coverLoadFailed, setCoverLoadFailed] = React.useState(false);
   const [autoCover, setAutoCover] = React.useState<AutoCoverResult | null>(null);
+  const [autoCoverRetry, setAutoCoverRetry] = React.useState(0);
 
   React.useEffect(() => {
     setCoverLoadFailed(false);
@@ -109,13 +110,14 @@ export const BookCover: React.FC<BookCoverProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [book.filename, book.title, book.author, book.coverSource?.type, cover, coverLoadFailed, coversHydrated]);
+  }, [book.filename, book.title, book.author, book.coverSource?.type, cover, coverLoadFailed, coversHydrated, autoCoverRetry]);
 
   const handleCoverLoadError = () => {
     if (autoCover) {
       invalidateAutoCover(book.filename, autoCover.url);
       void coverDB.deleteCover(book.filename).catch(() => {});
       setAutoCover(null);
+      setAutoCoverRetry((value) => value + 1);
     }
     setCoverLoadFailed(true);
     debugWarn('cover', 'image failed to load', {
@@ -148,7 +150,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
     cover?.includes('<svg') ||
     cover?.startsWith('data:image/svg')
   );
-  const usableDisplayCover = coverLoadFailed || isGeneratedCover ? null : displayCover;
+  const usableDisplayCover = (coverLoadFailed && !autoCover) || isGeneratedCover ? null : displayCover;
 
   const svgDataUrl = React.useMemo(() => {
     // Post-hydrate: covers[] is sole source — no SVG flash/swap
