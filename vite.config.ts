@@ -82,19 +82,8 @@ export default defineConfig(({mode}) => {
       })
     ],
     build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
-              if (id.includes('motion') || id.includes('framer-motion')) return 'vendor-motion';
-              if (id.includes('lucide-react')) return 'vendor-lucide';
-              if (id.includes('react')) return 'vendor-react';
-              return 'vendor';
-            }
-          },
-        },
-      },
+      // Default Rollup chunking preserves React.lazy()/dynamic-import boundaries.
+      // A manual vendor mega-chunk made PDF.js/Gemini part of library startup.
       chunkSizeWarningLimit: 1000,
     },
     test: {

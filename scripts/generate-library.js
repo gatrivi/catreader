@@ -38,7 +38,7 @@ const books = files
       type: ext.substring(1).toLowerCase(),
       title: existing?.title || file.replace(ext, ''),
       author: existing?.author,
-      svg: existing?.svg,
+      // Legacy synthetic SVG covers are intentionally omitted from the runtime manifest.
       ...(existing?.audio ? { audio: existing.audio } : {}),
       ...(existing?.cattsBookId ? { cattsBookId: existing.cattsBookId } : {}),
       ...(existing?.coverSource ? { coverSource: existing.coverSource } : {}),

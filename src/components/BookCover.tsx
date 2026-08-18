@@ -7,6 +7,7 @@ import { SadMonkIcon } from './SadMonkIcon';
 import { debugInfo, debugWarn } from '../utils/debugLog';
 import { coverDB } from '../services/db';
 import { invalidateAutoCover, resolveAutoCover, type AutoCoverResult } from '../utils/autoCover';
+import { cacheCoverThumbnail } from '../utils/coverThumbCache';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -111,6 +112,12 @@ export const BookCover: React.FC<BookCoverProps> = ({
       cancelled = true;
     };
   }, [book.filename, book.title, book.author, book.coverSource?.type, cover, coverLoadFailed, coversHydrated, autoCoverRetry]);
+
+  const handleCoverLoad = () => {
+    const source = autoCover?.url || cover;
+    if (!source?.startsWith('http')) return;
+    void cacheCoverThumbnail(book.filename, source);
+  };
 
   const handleCoverLoadError = () => {
     if (autoCover) {
@@ -283,7 +290,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
               </div>
 
               {usableDisplayCover ? (
-                <img src={usableDisplayCover} alt={book.title} onError={handleCoverLoadError} className="w-full h-full object-cover rounded-r-md" />
+                <img src={usableDisplayCover} alt={book.title} loading="lazy" decoding="async" onLoad={handleCoverLoad} onError={handleCoverLoadError} className="w-full h-full object-cover rounded-r-md" />
               ) : !coversHydrated ? (
                 <div className="w-full h-full rounded-r-md bg-stone-800/80 animate-pulse" aria-hidden />
               ) : svgDataUrl && book.coverSource?.type !== 'user-custom' ? (

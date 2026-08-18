@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Document, Page, pdfjs as pdfjsLib } from 'react-pdf';
 import { 
   Upload,
   ZoomIn, 
@@ -28,17 +27,9 @@ import { syncService, type Highlight } from './services/syncService';
 import { coverDB } from './services/db';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { GoogleGenAI } from "@google/genai";
-import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
-
-// Keep PDF.js fully local/offline. Remote workers make first-open latency network-dependent.
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-(pdfjsBackground as any).GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 // Component Imports
 import { LibraryView } from './components/LibraryView';
-import { ReaderView } from './components/ReaderView';
 import { EditModal } from './components/EditModal';
 import { AudiobookListenPanel } from './components/AudiobookListenPanel';
 import { useShelves } from './hooks/useShelves';
@@ -79,6 +70,10 @@ import { APP_VERSION, RELEASE_NOTES_SEEN_KEY } from './utils/releaseNotes';
 import { shouldOpenTextFirst } from './utils/openMode';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { debugError, debugInfo, debugWarn, installGlobalDebugCapture } from './utils/debugLog';
+
+const ReaderView = React.lazy(() =>
+  import('./components/ReaderView').then((module) => ({ default: module.ReaderView }))
+);
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -518,6 +513,7 @@ export default function App() {
     if (!g_apiKey || library.length === 0) return;
     setIsSyncing(true);
     try {
+      const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: g_apiKey });
       const titles = library.slice(0, 5).map(b => b.title).join(', ');
       const result = await ai.models.generateContent({
@@ -716,6 +712,8 @@ export default function App() {
     if (ghostPdfLoadingRef.current) return ghostPdfLoadingRef.current;
 
     ghostPdfLoadingRef.current = (async () => {
+      const { getPdfJsRuntime } = await import('./utils/pdfRuntime');
+      const pdfjsBackground = await getPdfJsRuntime();
       const data = new Uint8Array(await fileOrBlob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
@@ -1741,6 +1739,7 @@ export default function App() {
             }} />
           )
         ) : (
+          <React.Suspense fallback={<div className="min-h-full grid place-items-center text-stone-500 text-xs font-mono">Cargando lector…</div>}>
           <ReaderView 
             fileUrl={fileUrl} 
             fileType={fileType} 
@@ -1880,6 +1879,7 @@ export default function App() {
               }
             }}
           />
+          </React.Suspense>
         )}
       </main>
 
