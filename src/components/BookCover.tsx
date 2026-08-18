@@ -1,10 +1,12 @@
 import React from 'react';
-import { Pencil, Share2, Sparkles, AlertCircle, CassetteTape } from 'lucide-react';
+import { Pencil, Share2, Sparkles, CassetteTape } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { SadMonkIcon } from './SadMonkIcon';
-import { debugWarn } from '../utils/debugLog';
+import { debugInfo, debugWarn } from '../utils/debugLog';
+import { coverDB } from '../services/db';
+import { invalidateAutoCover, resolveAutoCover, type AutoCoverResult } from '../utils/autoCover';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -69,37 +71,83 @@ export const BookCover: React.FC<BookCoverProps> = ({
   coversHydrated = true,
 }) => {
   const [coverLoadFailed, setCoverLoadFailed] = React.useState(false);
+  const [autoCover, setAutoCover] = React.useState<AutoCoverResult | null>(null);
 
   React.useEffect(() => {
     setCoverLoadFailed(false);
   }, [cover]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    const incomingSynthetic =
+      !cover ||
+      book.coverSource?.type === 'ai-generated' ||
+      book.coverSource?.type === 'bundled' ||
+      cover.includes('<svg') ||
+      cover.startsWith('data:image/svg');
+    const mayAutoResolve =
+      coversHydrated &&
+      book.coverSource?.type !== 'user-custom' &&
+      (incomingSynthetic || coverLoadFailed);
+
+    if (!mayAutoResolve) {
+      setAutoCover(null);
+      return () => { cancelled = true; };
+    }
+
+    void resolveAutoCover(book).then((result) => {
+      if (cancelled || !result) return;
+      setAutoCover(result);
+      void coverDB.saveCover(book.filename, result.url).catch(() => {});
+      debugInfo('cover', 'auto cover resolved', {
+        filename: book.filename,
+        source: result.source,
+        url: result.url.slice(0, 500),
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [book.filename, book.title, book.author, book.coverSource?.type, cover, coverLoadFailed, coversHydrated]);
+
   const handleCoverLoadError = () => {
+    if (autoCover) {
+      invalidateAutoCover(book.filename, autoCover.url);
+      void coverDB.deleteCover(book.filename).catch(() => {});
+      setAutoCover(null);
+    }
     setCoverLoadFailed(true);
     debugWarn('cover', 'image failed to load', {
       filename: book.filename,
-      source: book.coverSource?.type || 'unknown',
-      url: cover?.startsWith('http') ? cover.slice(0, 500) : undefined,
+      source: autoCover?.source || book.coverSource?.type || 'unknown',
+      url: (autoCover?.url || cover)?.startsWith('http') ? (autoCover?.url || cover)?.slice(0, 500) : undefined,
     });
   };
 
+  const effectiveCover = autoCover?.url || cover;
+
   const displayCover = React.useMemo(() => {
-    if (!cover) return null;
+    if (!effectiveCover) return null;
     // If it's already a URL or Data URL, return it
-    if (cover.startsWith('http') || cover.startsWith('data:')) return cover;
+    if (effectiveCover.startsWith('http') || effectiveCover.startsWith('data:')) return effectiveCover;
     // If it's raw SVG code, convert to Data URL
-    if (cover.includes('<svg')) {
+    if (effectiveCover.includes('<svg')) {
       try {
-        return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(cover)))}`;
+        return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(effectiveCover)))}`;
       } catch (e) {
         console.error('Failed to encode SVG cover:', e);
         return null;
       }
     }
-    return cover;
-  }, [cover]);
+    return effectiveCover;
+  }, [effectiveCover]);
 
-  const isGeneratedCover = book.coverSource?.type === 'ai-generated' || cover?.includes('<svg') || cover?.startsWith('data:image/svg');
+  const isGeneratedCover = !autoCover && (
+    book.coverSource?.type === 'ai-generated' ||
+    cover?.includes('<svg') ||
+    cover?.startsWith('data:image/svg')
+  );
   const usableDisplayCover = coverLoadFailed || isGeneratedCover ? null : displayCover;
 
   const svgDataUrl = React.useMemo(() => {
@@ -139,6 +187,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   const spineTitle = displayBookTitle(book.title, book.filename);
   const hasMetadata = spineTitle !== book.filename.replace(/\.[^/.]+$/, '') && !!book.author;
+  const knownAuthor = book.author && book.author !== 'Desconocido' && book.author !== 'Autor Desconocido';
 
   return (
     <div 
@@ -169,7 +218,8 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
       <motion.div 
         onClick={onClick}
-        title="Abrir libro"
+        title={spineTitle}
+        aria-label={`Abrir ${spineTitle}`}
         className={cn(
           "relative bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
           fillHeight ? "h-full max-h-full w-auto aspect-[2/3]" : "w-full aspect-[2/3]",
@@ -248,26 +298,28 @@ export const BookCover: React.FC<BookCoverProps> = ({
               ) : svgDataUrl && book.coverSource?.type !== 'user-custom' ? (
                 <img src={svgDataUrl} alt={book.title} className="w-full h-full object-cover rounded-r-md" />
               ) : (
-                <div className="flex-1 p-3 flex flex-col justify-between text-center overflow-hidden">
+                <div className="flex-1 px-1.5 py-2 sm:p-3 flex flex-col justify-center text-center overflow-hidden min-h-0">
                   <div className={cn(
-                    "font-serif font-bold text-sm leading-tight line-clamp-4 mt-2 break-words",
+                    "font-serif font-bold text-[9px] min-[380px]:text-[10px] sm:text-sm leading-[1.12] sm:leading-tight line-clamp-7 sm:line-clamp-5 break-normal [overflow-wrap:anywhere]",
                     isSimplified ? "text-stone-300" : "text-[#5b4636]"
                   )}>
                     {spineTitle}
                   </div>
-                  <div className={cn(
-                    "font-serif text-[10px] uppercase tracking-widest line-clamp-2 mb-2 break-words",
-                    isSimplified ? "text-stone-500" : "text-[#8b5a2b]"
-                  )}>
-                    {book.author || 'Autor Desconocido'}
-                  </div>
+                  {knownAuthor && (
+                    <div className={cn(
+                      "font-serif text-[7px] sm:text-[10px] uppercase tracking-wide sm:tracking-widest line-clamp-2 mt-1.5 sm:mt-3 break-normal [overflow-wrap:anywhere]",
+                      isSimplified ? "text-stone-500" : "text-[#8b5a2b]"
+                    )}>
+                      {book.author}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Title always visible on the spine (even when cover art loads) */}
               {(usableDisplayCover || svgDataUrl) && (
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-2 pt-6 pb-1.5 z-30 pointer-events-none">
-                  <p className="text-white text-[9px] sm:text-[10px] font-bold leading-tight line-clamp-2 text-center drop-shadow-md">
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-1.5 sm:px-2 pt-7 pb-1.5 z-30 pointer-events-none">
+                  <p className="text-white text-[8px] min-[380px]:text-[9px] sm:text-[10px] font-bold leading-[1.15] line-clamp-3 sm:line-clamp-2 text-center drop-shadow-md">
                     {spineTitle}
                   </p>
                 </div>
@@ -296,9 +348,9 @@ export const BookCover: React.FC<BookCoverProps> = ({
         {/* Title/Author Label Overlay */}
         {showLabels && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 z-30 pointer-events-none">
-            <p className="text-white text-[9px] font-bold truncate leading-tight">{spineTitle}</p>
-            {book.author && book.author !== 'Desconocido' && (
-              <p className="text-white/70 text-[7px] truncate leading-tight">{book.author}</p>
+            <p className="text-white text-[9px] font-bold line-clamp-2 leading-tight">{spineTitle}</p>
+            {knownAuthor && (
+              <p className="text-white/70 text-[7px] line-clamp-1 leading-tight">{book.author}</p>
             )}
           </div>
         )}
