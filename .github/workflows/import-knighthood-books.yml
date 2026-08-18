@@ -1,10 +1,11 @@
 name: Import Catholic knighthood books
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/add-catholic-knighthood-books
+      - main
     paths:
+      - scripts/import-knighthood-books.py
       - .github/workflows/import-knighthood-books.yml
 
 permissions:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   import-books:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'agent/add-catholic-knighthood-books'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
