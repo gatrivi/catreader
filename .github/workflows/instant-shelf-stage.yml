@@ -25,7 +25,19 @@ jobs:
           cache: npm
 
       - name: Apply product patch
-        run: node scripts/apply-instant-shelf-boot.mjs
+        shell: bash
+        run: |
+          node scripts/apply-instant-shelf-boot.mjs
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'src/utils/coverThumbCache.ts';
+          let text = fs.readFileSync(path, 'utf8');
+          text = text.replace(
+            `    if ('decode' in image) await image.decode();\n    else await new Promise<void>((resolve, reject) => {\n      image.onload = () => resolve();\n      image.onerror = () => reject(new Error('cover image failed'));\n    });`,
+            `    await image.decode();`,
+          );
+          fs.writeFileSync(path, text);
+          NODE
 
       - run: npm ci
       - name: TypeScript
