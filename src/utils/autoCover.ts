@@ -106,7 +106,7 @@ function googleBooksCover(id: string): string {
 /** Known public-domain volumes where generic search can easily return the wrong part. */
 export function knownCoverFor(book: AutoCoverBook): AutoCoverResult | null {
   const title = normalizeText(normalizeCoverLookupTitle(book.title, book.filename));
-  const author = normalizeText(book.author || '');
+  const author = normalizeText(meaningfulAuthor(book.author));
   const isOsuna = title.includes('abecedario espiritual') && (!author || author.includes('osuna'));
   if (!isOsuna) return null;
 
