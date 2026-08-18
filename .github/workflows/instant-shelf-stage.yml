@@ -1,0 +1,64 @@
+name: Stage instant shelf boot
+
+on:
+  push:
+    branches: [agent/instant-shelf-boot]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-stage:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply product patch
+        run: node scripts/apply-instant-shelf-boot.mjs
+
+      - run: npm ci
+      - name: TypeScript
+        run: npm run lint
+      - name: Unit and regression tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Critical artifact smoke
+        run: npm run test:critical
+
+      - name: Boot budget assertions
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const booksSize = fs.statSync('public/books.json').size;
+          if (booksSize > 150_000) throw new Error(`books.json still too large: ${booksSize} bytes`);
+          const html = fs.readFileSync('dist/index.html', 'utf8');
+          if (/pdf\.worker|pdfjs/i.test(html)) throw new Error('PDF runtime is still linked from initial HTML');
+          console.log(`[boot-budget] books.json=${booksSize} bytes`);
+          console.log('[boot-budget] initial HTML has no PDF runtime link');
+          NODE
+
+      - name: Commit validated product changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/App.tsx \
+            src/components/BookCover.tsx \
+            src/components/ReaderView.tsx \
+            src/hooks/useLibrary.ts \
+            src/services/coverMem.ts \
+            src/utils/coverThumbCache.ts \
+            src/utils/pdfRuntime.ts \
+            scripts/generate-library.js \
+            vite.config.ts
+          git commit -m "perf: make library paint from local state first"
+          git push
