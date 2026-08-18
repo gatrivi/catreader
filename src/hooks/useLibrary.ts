@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { syncService } from '../services/syncService';
 import { coverDB } from '../services/db';
-import { GoogleGenAI } from "@google/genai";
-import * as pdfjsBackground from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
 import { preferredCoverSource, shouldReplaceStoredCover, shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
@@ -12,6 +10,7 @@ import {
   coverMemMarkHydrated,
   coverMemSet,
 } from '../services/coverMem';
+import { primeCoverThumbnails } from '../utils/coverThumbCache';
 
 export interface LibraryBook {
   id: string;
@@ -127,6 +126,17 @@ export function useLibrary({
       setCoversHydrated(true);
       setIsLoadingLibrary(false);
       setGlobalStatus(null);
+
+      // Tiny shelf art is an offline UI asset, not content. Warm every known
+      // real cover only after first paint, with two requests max at a time.
+      primeCoverThumbnails(
+        visibleData.flatMap((book: LibraryBook) =>
+          book.coverSource?.url && ['openlibrary', 'google-books', 'wikimedia'].includes(book.coverSource.type)
+            ? [{ filename: book.filename, url: book.coverSource.url }]
+            : []
+        ),
+        (filename, thumb) => putCover(filename, thumb),
+      );
 
       // Load enriched metadata in the background
       (async () => {
@@ -418,13 +428,15 @@ export function useLibrary({
       setIsLoadingLibrary(false);
       setGlobalStatus(null);
     }
-  }, [setGlobalStatus]);
+  }, [setGlobalStatus, putCover]);
 
   /**
    * Extracts pages of a PDF as base64 images for OCR.
    */
   const extractPagesAsImages = async (blob: Blob, maxPages = 5): Promise<string[]> => {
     try {
+      const { getPdfJsRuntime } = await import('../utils/pdfRuntime');
+      const pdfjsBackground = await getPdfJsRuntime();
       const data = new Uint8Array(await blob.arrayBuffer());
       const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
       const pdf = await loadingTask.promise;
@@ -460,6 +472,7 @@ export function useLibrary({
 
     setIdentifyingBookId(book.id);
     try {
+      const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: g_apiKey });
       let prompt = `Analyze this book file named "${book.filename}".
       1. Identify the actual Book Title and Author Name.
