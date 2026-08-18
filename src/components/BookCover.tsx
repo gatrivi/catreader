@@ -131,9 +131,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   const displayCover = React.useMemo(() => {
     if (!effectiveCover) return null;
-    // If it's already a URL or Data URL, return it
     if (effectiveCover.startsWith('http') || effectiveCover.startsWith('data:')) return effectiveCover;
-    // If it's raw SVG code, convert to Data URL
     if (effectiveCover.includes('<svg')) {
       try {
         return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(effectiveCover)))}`;
@@ -153,7 +151,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
   const usableDisplayCover = (coverLoadFailed && !autoCover) || isGeneratedCover ? null : displayCover;
 
   const svgDataUrl = React.useMemo(() => {
-    // Post-hydrate: covers[] is sole source — no SVG flash/swap
     if (coversHydrated || !book.svg || usableDisplayCover || isGeneratedCover) return null;
     try {
       return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
@@ -165,18 +162,14 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
 
-  // Estimate dominant color for aura and hover feedback
   const auraColor = React.useMemo(() => {
-    if (readingProgress >= 0.95) return 'rgba(255, 215, 0, 0.4)'; // Golden for finished
-    if (readingProgress > 0) return 'rgba(16, 185, 129, 0.3)'; // Emerald for in progress
-    return 'rgba(255, 255, 255, 0.1)'; // Faint white for unread
+    if (readingProgress >= 0.95) return 'rgba(255, 215, 0, 0.4)';
+    if (readingProgress > 0) return 'rgba(16, 185, 129, 0.3)';
+    return 'rgba(255, 255, 255, 0.1)';
   }, [readingProgress]);
 
-  // Handle hover to report "color mood"
   const handleMouseEnter = () => {
     if (onHover) {
-      // In a real app, we might extract this from the image.
-      // For the demo, we use a color based on the book title hash.
       const colors = ['#4c1d95', '#831843', '#1e3a8a', '#064e3b', '#78350f', '#1c1917'];
       const hash = book.title.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
       onHover(colors[hash % colors.length]);
@@ -200,7 +193,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Reading Aura */}
       {!isSimplified && readingProgress > 0 && (
         <motion.div 
           initial={{ opacity: 0, scale: 0.8 }}
@@ -220,7 +212,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
       <motion.div 
         onClick={onClick}
-        title={spineTitle}
+        title="Abrir libro"
         aria-label={`Abrir ${spineTitle}`}
         className={cn(
           "relative bg-[#f4ecd8] rounded-r-sm sm:rounded-r-md border-l-2 sm:border-l-4 lg:border-l-[6px] border-[#8b5a2b] cursor-pointer flex flex-col transition-all overflow-hidden z-10",
@@ -269,8 +261,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
               <div className="text-[10px] font-serif italic text-amber-200 uppercase tracking-widest animate-pulse">
                 Identificando...
               </div>
-              
-              {/* Magic Runes Effect */}
               <div className="absolute inset-0 pointer-events-none opacity-20 overflow-hidden">
                 <div className="absolute top-2 left-2 text-[8px] font-mono text-amber-300 rotate-12 italic">Ω Ψ Φ</div>
                 <div className="absolute bottom-4 right-2 text-[8px] font-mono text-indigo-300 -rotate-12 italic">Δ Σ Ξ</div>
@@ -283,7 +273,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
               animate={{ opacity: 1 }}
               className="w-full h-full flex flex-col relative"
             >
-              {/* Format Badge */}
               <div className={cn(
                 "absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter z-30 shadow-sm border backdrop-blur-md",
                 book.type.toLowerCase() === 'pdf' && "bg-red-500/20 text-red-200 border-red-500/30",
@@ -318,7 +307,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
                 </div>
               )}
 
-              {/* Title always visible on the spine (even when cover art loads) */}
               {(usableDisplayCover || svgDataUrl) && (
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-1.5 sm:px-2 pt-7 pb-1.5 z-30 pointer-events-none">
                   <p className="text-white text-[8px] min-[380px]:text-[9px] sm:text-[10px] font-bold leading-[1.15] line-clamp-3 sm:line-clamp-2 text-center drop-shadow-md">
@@ -327,7 +315,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
                 </div>
               )}
 
-              {/* Sad Monk Overlay for Unsupported Books */}
               {!isSupported && (
                 <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-stone-900/40 backdrop-blur-[2px]">
                   <SadMonkIcon size={48} className="text-amber-500" />
@@ -347,7 +334,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
           </>
         )}
 
-        {/* Title/Author Label Overlay */}
         {showLabels && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 z-30 pointer-events-none">
             <p className="text-white text-[9px] font-bold line-clamp-2 leading-tight">{spineTitle}</p>
@@ -357,7 +343,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
           </div>
         )}
 
-        {/* Action buttons - discreet bottom-right pill */}
         <div className={cn(
           "absolute bottom-2 right-2 flex items-center gap-1.5 z-40 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 shadow-xl transition-all duration-300 transform",
           "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 translate-y-2 group-hover:translate-y-0"
