@@ -43,6 +43,7 @@ export function previewPlainText(source: string): string {
   )
     .replace(/\r/g, '')
     .replace(/[ \t]+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
