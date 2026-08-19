@@ -1,8 +1,11 @@
-export const APP_VERSION = 'v2.10.19';
+export const APP_VERSION = 'v2.10.20';
 
 export const RELEASE_NOTES_SEEN_KEY = `catreader_release_notes_seen_${APP_VERSION}`;
 
 export const RELEASE_NOTES = [
+  'El PDF original vuelve a usar el worker recomendado por React-PDF.',
+  'Firebase ya no inventa usuarios guest cuando Auth tarda o la red falla.',
+  'El sync cloud corta rápido si Firebase está offline y CatReader sigue local-first.',
   'Descubrir usa grain + manchas + tinta Paper Soul (fallback si no hay bake).',
   'Descubrir Paper Soul mas oscuro: pergamino envejecido, mas grano.',
   'Descubrir mezcla libros para no saturar con un solo título.',

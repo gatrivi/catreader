@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, type User } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -9,28 +9,66 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
 
-// Anonymous Auth for "No Login Hell"
-export const ensureAuth = () => {
-  return new Promise((resolve, reject) => {
-    // Timeout after 5 seconds to avoid hanging the app
-    const timeout = setTimeout(() => {
-      console.warn('Auth timeout reached, proceeding as guest');
-      resolve({ uid: 'guest_' + Math.random().toString(36).substring(7) });
-    }, 5000);
+const AUTH_TIMEOUT_MS = 8000;
+let authPromise: Promise<User> | null = null;
 
-    onAuthStateChanged(auth, async (user) => {
+/**
+ * Return a real Firebase user or reject. Never fabricate a guest uid: a fake
+ * uid makes Firestore requests run without a matching authenticated identity
+ * and turns one auth/network failure into a cascade of sync errors.
+ */
+export const ensureAuth = (): Promise<User> => {
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+  if (authPromise) return authPromise;
+
+  authPromise = new Promise<User>((resolve, reject) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+    let timeout: ReturnType<typeof setTimeout>;
+
+    const cleanup = () => {
       clearTimeout(timeout);
-      if (user) {
-        resolve(user);
-      } else {
+      unsubscribe?.();
+    };
+
+    const succeed = (user: User) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(user);
+    };
+
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    timeout = setTimeout(() => {
+      fail(new Error('Firebase auth unavailable'));
+    }, AUTH_TIMEOUT_MS);
+
+    unsubscribe = onAuthStateChanged(
+      auth,
+      async (user) => {
+        if (user) {
+          succeed(user);
+          return;
+        }
+
         try {
           const cred = await signInAnonymously(auth);
-          resolve(cred.user);
-        } catch (err) {
-          console.error('Anonymous sign-in failed:', err);
-          resolve({ uid: 'guest_fallback' });
+          succeed(cred.user);
+        } catch (error) {
+          fail(error);
         }
-      }
-    });
+      },
+      fail,
+    );
+  }).finally(() => {
+    authPromise = null;
   });
+
+  return authPromise;
 };

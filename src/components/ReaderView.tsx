@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, AlertCircle, Check, X, Crop } from 'lucide-react';
 import { Document, Page, pdfjs as pdfjsLib } from 'react-pdf';
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { EpubView } from './EpubView';
 import { SadMonkIcon } from './SadMonkIcon';
 import { motion, AnimatePresence } from 'motion/react';

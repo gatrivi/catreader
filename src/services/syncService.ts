@@ -4,9 +4,8 @@
  */
 
 import { db, ensureAuth, storage } from '../firebase';
-import { doc, getDoc, setDoc, serverTimestamp, writeBatch, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { authService } from './authService';
 
 export interface ReadingProgress {
   page: number;
@@ -26,205 +25,287 @@ export interface Highlight {
   createdAt: number;
 }
 
+type CloudState = 'unknown' | 'online' | 'offline';
+
+const CLOUD_RETRY_MS = 30_000;
+const CLOUD_OPERATION_TIMEOUT_MS = 5_000;
+let cloudState: CloudState = 'unknown';
+let cloudOfflineUntil = 0;
+let cloudGate: Promise<void> | null = null;
+let offlineWarningShown = false;
+
+const browserIsOffline = () =>
+  typeof navigator !== 'undefined' && navigator.onLine === false;
+
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+const cloudLooksUnavailable = (error: unknown) => {
+  const code = String((error as any)?.code || '').toLowerCase();
+  const message = errorMessage(error).toLowerCase();
+
+  return browserIsOffline()
+    || code.includes('network-request-failed')
+    || code.includes('unavailable')
+    || code.includes('deadline-exceeded')
+    || message.includes('client is offline')
+    || message.includes('failed to fetch')
+    || message.includes('network error')
+    || message.includes('firebase auth unavailable')
+    || message.includes('cloud operation timed out');
+};
+
+const refreshCloudState = () => {
+  if (cloudState === 'offline' && Date.now() >= cloudOfflineUntil) {
+    cloudState = 'unknown';
+    cloudOfflineUntil = 0;
+  }
+};
+
+const markCloudOnline = () => {
+  cloudState = 'online';
+  cloudOfflineUntil = 0;
+  offlineWarningShown = false;
+};
+
+const markCloudOffline = (operation: string, error: unknown) => {
+  cloudState = 'offline';
+  cloudOfflineUntil = Date.now() + CLOUD_RETRY_MS;
+
+  if (!offlineWarningShown) {
+    offlineWarningShown = true;
+    console.warn('[CatReader:sync] Cloud unavailable; continuing local-first.', {
+      operation,
+      error: errorMessage(error),
+    });
+  }
+};
+
+const withTimeout = async <T>(operation: Promise<T>): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Cloud operation timed out')),
+          CLOUD_OPERATION_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
+};
+
+/**
+ * Serialize only the first cloud attempt. If Firebase is unreachable, one
+ * failure opens a short circuit breaker so startup does not fan out into
+ * settings/highlights/metadata/progress/ghost-text errors.
+ */
+const runCloud = async <T>(
+  operationName: string,
+  fallback: T,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  refreshCloudState();
+
+  if (browserIsOffline()) {
+    markCloudOffline(operationName, new Error('Browser is offline'));
+    return fallback;
+  }
+
+  if (cloudState === 'offline') return fallback;
+
+  if (cloudState === 'unknown' && cloudGate) {
+    await cloudGate;
+    return runCloud(operationName, fallback, operation);
+  }
+
+  if (cloudState === 'unknown') {
+    let releaseGate!: () => void;
+    cloudGate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+
+    try {
+      const result = await withTimeout(operation());
+      markCloudOnline();
+      return result;
+    } catch (error) {
+      if (cloudLooksUnavailable(error)) {
+        markCloudOffline(operationName, error);
+      } else {
+        // The transport is reachable; do not punish unrelated cloud calls.
+        markCloudOnline();
+        console.error(`[CatReader:sync] ${operationName} failed:`, error);
+      }
+      return fallback;
+    } finally {
+      releaseGate();
+      cloudGate = null;
+    }
+  }
+
+  try {
+    return await withTimeout(operation());
+  } catch (error) {
+    if (cloudLooksUnavailable(error)) {
+      markCloudOffline(operationName, error);
+    } else {
+      console.error(`[CatReader:sync] ${operationName} failed:`, error);
+    }
+    return fallback;
+  }
+};
+
+/** Firestore rules are keyed to the actual authenticated Firebase uid. */
 const getUserId = async () => {
-  const portableId = authService.getPortableId();
-  if (portableId) return portableId;
-  const user: any = await ensureAuth();
+  const user = await ensureAuth();
   return user.uid;
 };
 
 export const syncService = {
   async saveProgress(bookId: string, progress: ReadingProgress) {
-    const uid = await getUserId();
-    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', uid, 'progress', bookKey);
-    
-    // Strip undefined values — Firestore rejects them
-    const cleanProgress = Object.fromEntries(
-      Object.entries(progress).filter(([, v]) => v !== undefined)
-    );
-    
-    try {
+    return runCloud('progress save', false, async () => {
+      const uid = await getUserId();
+      const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+      const docRef = doc(db, 'users', uid, 'progress', bookKey);
+
+      // Strip undefined values — Firestore rejects them.
+      const cleanProgress = Object.fromEntries(
+        Object.entries(progress).filter(([, value]) => value !== undefined),
+      );
+
       await setDoc(docRef, {
         ...cleanProgress,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
       return true;
-    } catch (err) {
-      console.error('Firestore Save Error:', err);
-      return false;
-    }
+    });
   },
 
   async loadProgress(bookId: string): Promise<ReadingProgress | null> {
-    const uid = await getUserId();
-    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', uid, 'progress', bookKey);
-    
-    try {
+    return runCloud('progress load', null, async () => {
+      const uid = await getUserId();
+      const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+      const docRef = doc(db, 'users', uid, 'progress', bookKey);
       const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        return {
-          ...data,
-          updatedAt: data.updatedAt?.toMillis() || Date.now()
-        } as ReadingProgress;
-      }
-      return null;
-    } catch (err) {
-      console.error('Firestore Load Error:', err);
-      return null;
-    }
+
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      return {
+        ...data,
+        updatedAt: data.updatedAt?.toMillis() || Date.now(),
+      } as ReadingProgress;
+    });
   },
 
   async deleteBook(bookId: string) {
-    const uid = await getUserId();
-    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    try {
+    return runCloud('book delete', false, async () => {
+      const uid = await getUserId();
+      const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
       const batch = writeBatch(db);
       batch.delete(doc(db, 'users', uid, 'progress', bookKey));
-      // Note: we don't delete the cover blob from Storage to avoid accidental data loss
-      // and because Storage blobs are cheap. Metadata doc is cleaned up.
+      // Cover blobs stay in Storage to avoid accidental data loss.
       await batch.commit();
       return true;
-    } catch (err) {
-      console.error('Firestore Delete Error:', err);
-      return false;
-    }
+    });
   },
 
   async saveMetadata(metadata: Record<string, { title: string; author: string; svg?: string; coverSource?: any }>) {
-    const uid = await getUserId();
-    const docRef = doc(db, 'users', uid, 'library', 'metadata');
-    try {
+    return runCloud('metadata save', false, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'library', 'metadata');
       await setDoc(docRef, {
         books: metadata,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
       return true;
-    } catch (err) {
-      console.error('Firestore Metadata Save Error:', err);
-      return false;
-    }
+    });
   },
 
   async loadMetadata(): Promise<Record<string, { title: string; author: string; svg?: string; coverSource?: any }> | null> {
-    const uid = await getUserId();
-    const docRef = doc(db, 'users', uid, 'library', 'metadata');
-    try {
+    return runCloud('metadata load', null, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'library', 'metadata');
       const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        return snap.data().books;
-      }
-      return null;
-    } catch (err) {
-      console.error('Firestore Metadata Load Error:', err);
-      return null;
-    }
+      return snap.exists() ? snap.data().books : null;
+    });
   },
 
   async uploadCoverBlob(filename: string, base64Image: string): Promise<string | null> {
-    const uid = await getUserId();
-    const bookKey = filename.replace(/[^a-zA-Z0-9]/g, '_');
-    const storageRef = ref(storage, `users/${uid}/covers/${bookKey}`);
-    try {
+    return runCloud('cover upload', null, async () => {
+      const uid = await getUserId();
+      const bookKey = filename.replace(/[^a-zA-Z0-9]/g, '_');
+      const storageRef = ref(storage, `users/${uid}/covers/${bookKey}`);
       await uploadString(storageRef, base64Image, 'data_url');
-      return await getDownloadURL(storageRef);
-    } catch (err) {
-      console.error('Firebase Storage Upload Error:', err);
-      return null;
-    }
+      return getDownloadURL(storageRef);
+    });
   },
 
   async saveGhostText(bookId: string, text: string) {
-    const uid = await getUserId();
-    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', uid, 'ghostText', bookKey);
-    try {
+    return runCloud('ghost text save', false, async () => {
+      const uid = await getUserId();
+      const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+      const docRef = doc(db, 'users', uid, 'ghostText', bookKey);
       await setDoc(docRef, {
         content: text,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
       return true;
-    } catch (err) {
-      console.error('Firestore GhostText Save Error:', err);
-      return false;
-    }
+    });
   },
 
   async loadGhostText(bookId: string): Promise<string | null> {
-    const uid = await getUserId();
-    const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
-    const docRef = doc(db, 'users', uid, 'ghostText', bookKey);
-    try {
+    return runCloud('ghost text load', null, async () => {
+      const uid = await getUserId();
+      const bookKey = bookId.replace(/[^a-zA-Z0-9]/g, '_');
+      const docRef = doc(db, 'users', uid, 'ghostText', bookKey);
       const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        return snap.data().content;
-      }
-      return null;
-    } catch (err) {
-      console.error('Firestore GhostText Load Error:', err);
-      return null;
-    }
+      return snap.exists() ? snap.data().content : null;
+    });
   },
 
   async saveHighlights(highlights: Highlight[]) {
-    const uid = await getUserId();
-    const docRef = doc(db, 'users', uid, 'highlights', 'all');
-    try {
+    return runCloud('highlights save', false, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'highlights', 'all');
       await setDoc(docRef, {
         items: highlights,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
       return true;
-    } catch (err) {
-      console.error('Firestore Highlights Save Error:', err);
-      return false;
-    }
+    });
   },
 
   async loadHighlights(): Promise<Highlight[] | null> {
-    const uid = await getUserId();
-    const docRef = doc(db, 'users', uid, 'highlights', 'all');
-    try {
+    return runCloud('highlights load', null, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'highlights', 'all');
       const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        return snap.data().items || [];
-      }
-      return null;
-    } catch (err) {
-      console.error('Firestore Highlights Load Error:', err);
-      return null;
-    }
+      return snap.exists() ? (snap.data().items || []) : null;
+    });
   },
 
   async saveSettings(settings: Record<string, any>) {
-    const uid = await getUserId();
-    const docRef = doc(db, 'users', uid, 'settings', 'prefs');
-    try {
+    return runCloud('settings save', false, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'settings', 'prefs');
       await setDoc(docRef, {
         ...settings,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       }, { merge: true });
       return true;
-    } catch (err) {
-      console.error('Firestore Settings Save Error:', err);
-      return false;
-    }
+    });
   },
 
   async loadSettings(): Promise<Record<string, any> | null> {
-    const uid = await getUserId();
-    const docRef = doc(db, 'users', uid, 'settings', 'prefs');
-    try {
+    return runCloud('settings load', null, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'settings', 'prefs');
       const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        return snap.data();
-      }
-      return null;
-    } catch (err) {
-      console.error('Firestore Settings Load Error:', err);
-      return null;
-    }
-  }
+      return snap.exists() ? snap.data() : null;
+    });
+  },
 };
