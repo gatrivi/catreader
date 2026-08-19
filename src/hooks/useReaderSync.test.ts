@@ -131,6 +131,34 @@ describe('useReaderSync', () => {
     expect(result.current.pageNumber).toBe(42);
   });
 
+  it('blocks the stale page-1 reset during a saved-page restore', async () => {
+    (syncService.loadProgress as any).mockResolvedValue({
+      page: 42,
+      zoom: 1,
+      theme: 'dim',
+      updatedAt: Date.now()
+    });
+
+    const { result } = renderHook(() => useReaderSync(mockProps));
+
+    await act(async () => {
+      await result.current.loadProgress('test.pdf');
+    });
+    expect(result.current.pageNumber).toBe(42);
+    expect(result.current.isRestoring).toBe(true);
+
+    act(() => {
+      result.current.setPageNumber(1);
+    });
+    expect(result.current.pageNumber).toBe(42);
+
+    act(() => {
+      result.current.setIsRestoring(false);
+      result.current.setPageNumber(1);
+    });
+    expect(result.current.pageNumber).toBe(1);
+  });
+
   it('allows setPageNumber for go-to-page', async () => {
     (syncService.loadProgress as any).mockResolvedValue(null);
     const { result } = renderHook(() => useReaderSync(mockProps));
