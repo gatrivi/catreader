@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "sourceLanguage": "fr-FR",
+  "targetLanguage": "en-US",
+  "sourceTitle": "Les règles de la bienséance et de la civilité chrétienne",
+  "targetTitle": "Rules of Christian Decorum and Civility",
+  "generatedBy": "CatReader starter translation; replaceable by CatTS/Argos",
+  "segments": [
+    {
+      "id": "preface-1",
+      "source": "Préface",
+      "target": "Preface"
+    },
+    {
+      "id": "preface-2",
+      "source": "C’est une chose surprenante que la plupart des chrétiens ne regardent la bienséance et la civilité que comme une qualité purement humaine et mondaine et que, ne pensant pas à élever leur esprit plus haut, ils ne la considèrent pas comme une vertu qui a rapport à Dieu, au prochain et à nous-mêmes.",
+      "target": "It is surprising that most Christians regard decorum and civility only as a purely human and worldly quality and, failing to raise their minds higher, do not consider it a virtue that concerns God, our neighbour, and ourselves."
+    },
+    {
+      "id": "preface-3",
+      "source": "C’est ce qui fait bien connaître le peu de christianisme qu’il y a dans le monde, et combien il y a peu de personnes qui y vivent et se conduisent selon l’Esprit de Jésus-Christ.",
+      "target": "This makes clear how little Christianity there is in the world, and how few people live and conduct themselves according to the Spirit of Jesus Christ."
+    },
+    {
+      "id": "preface-4",
+      "source": "C’est cependant ce seul Esprit qui doit animer toutes nos actions pour les rendre saintes et agréables à Dieu, et c’est une obligation dont saint Paul nous avertit en nous disant en la personne des premiers chrétiens que, comme nous devons vivre par l’Esprit de Jésus-Christ, nous devons aussi nous conduire en toutes choses par le même Esprit.",
+      "target": "Yet this Spirit alone must animate all our actions if they are to be holy and pleasing to God. Saint Paul reminds us of this obligation when, speaking in the person of the first Christians, he says that as we must live by the Spirit of Jesus Christ, so we must conduct ourselves in all things by that same Spirit."
+    },
+    {
+      "id": "preface-5",
+      "source": "Comme il n’y a aucune de vos actions, selon le même Apôtre, qui ne doive être sainte, il n’y en a aussi pas une qui ne doive être faite par des motifs purement chrétiens, et ainsi toutes nos actions extérieures — qui sont les seules qui peuvent être réglées par la bienséance — doivent toujours avoir et porter avec soi un caractère de vertu.",
+      "target": "Since, according to the same Apostle, none of our actions should fail to be holy, neither should any be done except from genuinely Christian motives. Thus all our outward actions — the actions that can be governed by decorum — should always possess and display the character of virtue."
+    },
+    {
+      "id": "preface-6",
+      "source": "C’est ce que les pères et les mères sont obligés de considérer dans l’éducation de leurs enfants, et c’est à quoi les maîtres et maîtresses, chargés de l’instruction des enfants, doivent faire une attention particulière.",
+      "target": "This is what fathers and mothers are obliged to consider in educating their children, and what teachers charged with their instruction must take particular care to observe."
+    },
+    {
+      "id": "preface-7",
+      "source": "Ils ne doivent jamais, en leur donnant des règles de bienséance, oublier de leur enseigner qu’il ne faut les mettre en pratique que par des motifs purement chrétiens, et qui regardent la gloire de Dieu et le salut.",
+      "target": "When giving them rules of decorum, they must never forget to teach that these rules are to be practised from genuinely Christian motives, directed toward the glory of God and salvation."
+    },
+    {
+      "id": "preface-8",
+      "source": "Et, bien loin de dire aux enfants dont ils ont la conduite que s’ils ne font pas une telle chose on les blâmera, qu’on n’aura pas d’estime pour eux, qu’on les tournera en ridicule — qui sont toutes manières qui ne sont bonnes qu’à leur inspirer l’esprit du monde et à les éloigner de celui de l’Évangile — lorsqu’ils voudront les porter à des pratiques extérieures qui regardent le maintien du corps et la seule modestie, ils auront soin de les y engager par le motif de la présence de Dieu.",
+      "target": "Far from telling the children in their care that if they fail to do a certain thing they will be blamed, lose others’ esteem, or be ridiculed — motives that can only instil the spirit of the world and draw them away from the Gospel — when teachers wish to lead them toward outward practices concerning posture and modesty, they should encourage them through awareness of the presence of God."
+    },
+    {
+      "id": "preface-9",
+      "source": "S’ils leur apprennent et leur font faire des pratiques de bienséance qui ont rapport au prochain, ils les engageront à ne donner ces témoignages de bienveillance, d’honneur et de respect que comme à des membres de Jésus-Christ et à des temples vivants, et animés du Saint-Esprit.",
+      "target": "If they teach and have them practise forms of decorum concerning their neighbour, they should lead them to give these signs of goodwill, honour, and respect as to members of Jesus Christ and as living temples animated by the Holy Spirit."
+    },
+    {
+      "id": "preface-10",
+      "source": "C’est ainsi que saint Pierre exhorte les premiers fidèles auxquels il écrit d’aimer leurs frères et de rendre à chacun l’honneur qui lui est dû pour se montrer de véritables serviteurs de Dieu, en témoignant que c’est Dieu qu’ils honorent en la personne de leur prochain.",
+      "target": "Thus Saint Peter exhorts the first faithful to whom he writes to love their brothers and to render to each person the honour that is due, so as to show themselves true servants of God and to testify that it is God whom they honour in the person of their neighbour."
+    },
+    {
+      "id": "preface-11",
+      "source": "Si tous les chrétiens se mettent en état de ne donner des marques de bienveillance, d’estime et de respect que dans ces vues et par des motifs de cette nature, ils sanctifieront par ce moyen toutes leurs actions et donneront lieu de distinguer, comme on doit le faire, la bienséance et la civilité chrétienne de celle qui est purement mondaine et presque païenne.",
+      "target": "If all Christians give signs of goodwill, esteem, and respect with these intentions and from motives of this kind, they will thereby sanctify all their actions and make it possible to distinguish, as one should, Christian decorum and civility from that which is merely worldly and almost pagan."
+    }
+  ]
+}
