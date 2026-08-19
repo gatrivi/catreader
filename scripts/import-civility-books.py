@@ -107,7 +107,6 @@ def extract_lasalle_original(text: str) -> str:
 
     for raw in text.splitlines():
         line = raw.strip()
-        # Page numbers sometimes touch the next RB marker in pdftotext output.
         line = re.sub(r"^\d+(?=RB\s)", "", line)
         match = marker.match(line)
         if match:
@@ -125,15 +124,17 @@ def extract_lasalle_original(text: str) -> str:
             out.append(line)
 
     result = "\n".join(out)
-    result = re.sub(r"\n{3,}", "\n\n", result)
-    return result.strip()
+    return re.sub(r"\n{3,}", "\n\n", result).strip()
 
 
 def write_book(index: int, text: str, note: str, required: tuple[str, ...]) -> None:
     text = clean(text)
     check = text.lower()
-    if len(text) < 12000 or not all(term.lower() in check for term in required):
-        raise RuntimeError(f"Validation failed for {BOOKS[index]['filename']} ({len(text)} chars)")
+    missing = [term for term in required if term.lower() not in check]
+    if len(text) < 12000 or missing:
+        raise RuntimeError(
+            f"Validation failed for {BOOKS[index]['filename']} ({len(text)} chars; missing={missing})"
+        )
     out = BOOKS_DIR / BOOKS[index]["filename"]
     out.write_text(f"{note}\n\n{text}\n", encoding="utf-8")
     print(f"[import] {out.name}: {out.stat().st_size:,} bytes")
@@ -155,7 +156,7 @@ def main() -> None:
     write_book(
         0, lasalle,
         "Original French text (1703) by St. John Baptist de La Salle, extracted from the official Lasallian digital edition; editorial notes removed. Source: La Salle Global.",
-        ("civilité", "conversation", "maison des autres", "rendre visite", "bienveillance"),
+        ("civilité", "prochain", "visite"),
     )
 
     sales = trim_between(
