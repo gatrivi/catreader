@@ -31,12 +31,12 @@ export function useReaderSync({
   setIsSyncing,
   getRestoreTargetPage,
 }: UseReaderSyncProps) {
-  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [pageNumber, setPageNumberState] = useState<number>(1);
   const [zoom, setZoom] = useState<number | Record<string, number>>(1.0);
   const [theme, setTheme] = useState<Theme>((localStorage.getItem('catreader_theme') as Theme) || 'dim');
   const [epubCfi, setEpubCfi] = useState<string | undefined>(undefined);
   const [scrollRatio, setScrollRatio] = useState<number>(0);
-  const [isRestoring, setIsRestoring] = useState(false);
+  const [isRestoring, setIsRestoringState] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
 
   const zoomMapRef = useRef<Record<string, number>>({});
@@ -45,6 +45,36 @@ export function useReaderSync({
   pageNumberRef.current = pageNumber;
   const isRestoringRef = useRef(isRestoring);
   isRestoringRef.current = isRestoring;
+  // The PDF text-first fast path used to apply saved progress and then immediately
+  // call setPageNumber(1). Protect exactly that stale reset while restore is active.
+  const protectedRestorePageRef = useRef<number | null>(null);
+
+  const setIsRestoring = useCallback((value: boolean) => {
+    isRestoringRef.current = value;
+    if (!value) protectedRestorePageRef.current = null;
+    setIsRestoringState(value);
+  }, []);
+
+  const setPageNumber = useCallback((page: number) => {
+    const protectedPage = protectedRestorePageRef.current;
+    if (
+      page === 1 &&
+      protectedPage != null &&
+      protectedPage > 1 &&
+      pageNumberRef.current === protectedPage
+    ) {
+      debugWarn('reader-progress', 'blocked stale page-1 reset', {
+        protectedPage,
+        requestedPage: page,
+      });
+      // One-shot guard. The following restore-settle call clears restoring state,
+      // and future intentional navigation to page 1 must remain possible.
+      protectedRestorePageRef.current = null;
+      return;
+    }
+    pageNumberRef.current = page;
+    setPageNumberState(page);
+  }, []);
 
   const getDeviceCategory = useCallback(() => {
     const width = window.innerWidth;
@@ -68,6 +98,7 @@ export function useReaderSync({
 
   const resetCommittedPage = useCallback(() => {
     lastCommittedPageRef.current = 1;
+    protectedRestorePageRef.current = null;
   }, []);
 
   const loadProgress = useCallback(async (id: string): Promise<ReadingProgress | null> => {
@@ -91,7 +122,9 @@ export function useReaderSync({
       const targetZoom = zoomMapRef.current[category] || zoomMapRef.current.desktop || 1.0;
       const page = data.page || 1;
 
-      setPageNumber(page);
+      if (page > 1 && isRestoringRef.current) protectedRestorePageRef.current = page;
+      pageNumberRef.current = page;
+      setPageNumberState(page);
       lastCommittedPageRef.current = page;
       if (data.epubCfi) setEpubCfi(data.epubCfi);
       setZoom(targetZoom);
@@ -186,7 +219,7 @@ export function useReaderSync({
       setIsRestoring(false);
       return null;
     }
-  }, [getDeviceCategory]);
+  }, [getDeviceCategory, setIsRestoring]);
 
   const saveProgress = useCallback(async (opts?: {
     force?: boolean;
