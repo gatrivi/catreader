@@ -197,6 +197,8 @@ function themeBackground(): { background: string; color: string } {
 export default function ReaderOpenProbe() {
   const [preview, setPreview] = useState<ActivePreview | null>(null);
   const activeFilenameRef = useRef<string | null>(null);
+  const restoredKeyRef = useRef<string | null>(null);
+  const readyFilenameRef = useRef<string | null>(null);
   const openStartedRef = useRef<number>(0);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -227,8 +229,13 @@ export default function ReaderOpenProbe() {
   const restoreKnownPage = useCallback((filename: string) => {
     const { page } = readLocalProgress(filename);
     if (page <= 1) return false;
+    const key = `${filename}:${page}`;
+    if (restoredKeyRef.current === key) return true;
+
     const target = document.getElementById(`text-page-${page}`) || document.getElementById(`page-${page}`);
     if (!target) return false;
+
+    restoredKeyRef.current = key;
     target.scrollIntoView({ behavior: 'instant', block: 'start' });
     debugInfo('reader-open', 'local page restored by probe', {
       filename,
@@ -241,6 +248,8 @@ export default function ReaderOpenProbe() {
   const startProbe = useCallback(async (filename: string) => {
     if (!filename || activeFilenameRef.current === filename) return;
     activeFilenameRef.current = filename;
+    restoredKeyRef.current = null;
+    readyFilenameRef.current = null;
     openStartedRef.current = performance.now();
     const type = bookType(filename);
     const progress = readLocalProgress(filename);
@@ -263,6 +272,7 @@ export default function ReaderOpenProbe() {
         elapsedMs: Math.round(performance.now() - openStartedRef.current),
       });
     } else {
+      setPreview(null);
       debugInfo('reader-open', 'instant preview cache miss', { filename });
     }
 
@@ -322,7 +332,7 @@ export default function ReaderOpenProbe() {
 
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      if (activeFilenameRef.current !== filename) return;
+      if (activeFilenameRef.current !== filename || readyFilenameRef.current === filename) return;
       debugWarn('reader-open', 'open probe timeout', {
         filename,
         elapsedMs: Math.round(performance.now() - openStartedRef.current),
@@ -337,7 +347,9 @@ export default function ReaderOpenProbe() {
       const filename = localStorage.getItem('catreader_last_book');
       if (!filename) {
         activeFilenameRef.current = null;
-        if (preview) setPreview(null);
+        restoredKeyRef.current = null;
+        readyFilenameRef.current = null;
+        setPreview(null);
         return;
       }
       if (filename !== activeFilenameRef.current) void startProbe(filename);
@@ -355,7 +367,8 @@ export default function ReaderOpenProbe() {
 
       restoreKnownPage(filename);
 
-      if (readerHasRealContent()) {
+      if (readyFilenameRef.current !== filename && readerHasRealContent()) {
+        readyFilenameRef.current = filename;
         debugInfo('reader-open', 'real reader content ready', {
           filename,
           elapsedMs: Math.round(performance.now() - openStartedRef.current),
@@ -374,20 +387,22 @@ export default function ReaderOpenProbe() {
       document.removeEventListener('pointerup', onInteraction, true);
       observer.disconnect();
     };
-  }, [preview, restoreKnownPage, startProbe]);
+  }, [restoreKnownPage, startProbe]);
 
   useEffect(() => {
     const onScroll = () => schedulePersist();
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') persistVisiblePreview();
     };
+    const onPageHide = () => persistVisiblePreview();
+
     window.addEventListener('scroll', onScroll, true);
     document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pagehide', persistVisiblePreview);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       window.removeEventListener('scroll', onScroll, true);
       document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pagehide', persistVisiblePreview);
+      window.removeEventListener('pagehide', onPageHide);
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
