@@ -217,6 +217,13 @@
     "author": "St. Bernard of Clairvaux"
   },
   {
+    "id": "Introduction_to_the_Devout_Life-Francis_de_Sales-1900.txt",
+    "filename": "Introduction_to_the_Devout_Life-Francis_de_Sales-1900.txt",
+    "type": "txt",
+    "title": "Introduction to the Devout Life",
+    "author": "St. Francis de Sales"
+  },
+  {
     "id": "Jeanne-de-Salzmann-The-Reality-of-Being-(OCR).pdf",
     "filename": "Jeanne-de-Salzmann-The-Reality-of-Being-(OCR).pdf",
     "type": "pdf",
@@ -418,6 +425,13 @@
     }
   },
   {
+    "id": "Rules_of_Christian_Decorum_and_Civility-La_Salle-1825_FR.txt",
+    "filename": "Rules_of_Christian_Decorum_and_Civility-La_Salle-1825_FR.txt",
+    "type": "txt",
+    "title": "Les règles de la bienséance et de la civilité chrétienne",
+    "author": "St. John Baptist de La Salle"
+  },
+  {
     "id": "Saint-Basil-and-his-rule-a-study-in-early-monasticism.pdf",
     "filename": "Saint-Basil-and-his-rule-a-study-in-early-monasticism.pdf",
     "type": "pdf",
@@ -612,6 +626,13 @@
     }
   },
   {
+    "id": "Thoughts_of_St_Therese_of_Lisieux-1915.txt",
+    "filename": "Thoughts_of_St_Therese_of_Lisieux-1915.txt",
+    "type": "txt",
+    "title": "Thoughts of Saint Thérèse of the Child Jesus",
+    "author": "St. Thérèse of Lisieux"
+  },
+  {
     "id": "Unravelling-the-Mysteries-of-Mind-and-Body-Through-Abhidhamma.pdf",
     "filename": "Unravelling-the-Mysteries-of-Mind-and-Body-Through-Abhidhamma.pdf",
     "type": "pdf",
@@ -630,6 +651,13 @@
       "attribution": "Wikimedia Commons; see source URL for photographer and license.",
       "updatedAt": 1786438591118
     }
+  },
+  {
+    "id": "Way_of_Perfection-Teresa_of_Avila-1919.txt",
+    "filename": "Way_of_Perfection-Teresa_of_Avila-1919.txt",
+    "type": "txt",
+    "title": "The Way of Perfection",
+    "author": "St. Teresa of Ávila"
   },
   {
     "id": "cce_1497.pdf",
