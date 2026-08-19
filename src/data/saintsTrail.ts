@@ -142,6 +142,14 @@ export const SAINTS_TRAIL: SaintsTrailNode[] = [
     match: 'Spiritual_Exercises-St_Ignatius_Loyola',
   },
   {
+    id: 'teresa-way',
+    year: 1566,
+    yearLabel: 'c. 1566',
+    title: 'The Way of Perfection',
+    author: 'St. Teresa of Ávila',
+    match: 'Way_of_Perfection-Teresa_of_Avila',
+  },
+  {
     id: 'teresa',
     year: 1577,
     yearLabel: 'c. 1577',
@@ -158,6 +166,22 @@ export const SAINTS_TRAIL: SaintsTrailNode[] = [
     stub: true,
   },
   {
+    id: 'francis-sales-devout',
+    year: 1609,
+    yearLabel: '1609',
+    title: 'Introduction to the Devout Life',
+    author: 'St. Francis de Sales',
+    match: 'Introduction_to_the_Devout_Life-Francis_de_Sales',
+  },
+  {
+    id: 'la-salle-civility',
+    year: 1703,
+    yearLabel: '1703',
+    title: 'Rules of Christian Decorum and Civility',
+    author: 'St. John Baptist de La Salle',
+    match: 'Rules_of_Christian_Decorum_and_Civility-La_Salle',
+  },
+  {
     id: 'alphonsus-glories',
     year: 1750,
     yearLabel: 'c. 1750',
@@ -172,6 +196,14 @@ export const SAINTS_TRAIL: SaintsTrailNode[] = [
     title: 'Ascetical Works',
     author: 'St. Alphonsus',
     match: 'thecompleteascet21',
+  },
+  {
+    id: 'therese-thoughts',
+    year: 1915,
+    yearLabel: '1915',
+    title: 'Thoughts of Saint Thérèse',
+    author: 'St. Thérèse of Lisieux',
+    match: 'Thoughts_of_St_Therese_of_Lisieux',
   },
 ];
 
