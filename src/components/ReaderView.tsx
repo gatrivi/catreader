@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, AlertCircle, Check, X, Crop } from 'lucide-react';
+import { Loader2, AlertCircle, Check, X, Crop, Share2 } from 'lucide-react';
 import { Document, Page, pdfjs as pdfjsLib } from 'react-pdf';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { EpubView } from './EpubView';
@@ -11,6 +11,7 @@ import { isPageInRenderWindow } from '../utils/reader';
 import { PaperLayer } from './PaperLayer';
 import { usePaperTexture } from '../hooks/usePaperTexture';
 import { applyInkVariance, stainsForPage } from '../utils/paperSoul';
+import { QuoteShareSheet, buildQuoteShareText, inferCurrentBookTitle } from './QuoteShareSheet';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -59,6 +60,13 @@ interface PageItemProps {
   onCapture?: (base64: string) => void;
   onRenderSuccess: (p: number) => void;
   onRenderError?: (p: number, error: Error) => void;
+}
+
+interface ShareSelection {
+  text: string;
+  x: number;
+  y: number;
+  page: number;
 }
 
 const RENDER_TIMEOUT_MS = 15000;
@@ -310,6 +318,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   paperPath,
 }) => {
   const [docError, setDocError] = useState<string | null>(null);
+  const [shareSelection, setShareSelection] = useState<ShareSelection | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const paperOn = theme === 'paper';
   // Grain+stains on all paths when paper theme; ink only on DOM text.
   const { manifest, active, grainUrl } = usePaperTexture(paperPath, pageNumber, paperOn);
@@ -331,7 +341,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   );
 
   useEffect(() => {
-    if (!onTextSelection || isCaptureMode) return;
+    if (isCaptureMode) return;
 
     const handleSelectionEnd = () => {
       const selection = window.getSelection();
@@ -344,12 +354,52 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       const rect = range.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) return;
 
-      onTextSelection(text, rect.left + rect.width / 2, rect.top);
+      const startNode = range.startContainer;
+      const startElement = startNode.nodeType === Node.ELEMENT_NODE
+        ? startNode as Element
+        : startNode.parentElement;
+      const pageElement = startElement?.closest<HTMLElement>('[data-page]');
+      const selectedPageRaw = pageElement?.dataset.page;
+      const selectedPage = selectedPageRaw ? parseInt(selectedPageRaw, 10) : pageNumber;
+      const x = rect.left + rect.width / 2;
+      const y = rect.top;
+
+      setShareOpen(false);
+      setShareSelection({ text, x, y, page: Number.isFinite(selectedPage) ? selectedPage : pageNumber });
+      onTextSelection?.(text, x, y);
+    };
+
+    const handleTouchEnd = () => {
+      window.setTimeout(handleSelectionEnd, 30);
     };
 
     document.addEventListener('mouseup', handleSelectionEnd);
-    return () => document.removeEventListener('mouseup', handleSelectionEnd);
-  }, [onTextSelection, isCaptureMode]);
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener('mouseup', handleSelectionEnd);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [onTextSelection, isCaptureMode, pageNumber]);
+
+  const openQuoteShare = useCallback(async () => {
+    if (!shareSelection) return;
+    const bookTitle = inferCurrentBookTitle();
+    const locationLabel = `Página ${shareSelection.page}`;
+    const shareText = buildQuoteShareText(shareSelection.text, bookTitle, locationLabel, window.location.href);
+    try {
+      await navigator.clipboard.writeText(shareText);
+    } catch {
+      // The share sheet repeats the copy attempt; clipboard permission may be unavailable here.
+    }
+    window.getSelection()?.removeAllRanges();
+    setShareOpen(true);
+  }, [shareSelection]);
+
+  const closeQuoteShare = useCallback(() => {
+    setShareOpen(false);
+    setShareSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }, []);
 
   return (
     <div
@@ -372,6 +422,36 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {shareSelection && !shareOpen && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.9, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 8 }}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => void openQuoteShare()}
+            className="fixed z-[110] flex min-h-9 items-center gap-1.5 rounded-xl border border-amber-400/30 bg-stone-900/95 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-300 shadow-2xl backdrop-blur-md hover:bg-stone-800"
+            style={{
+              left: `${Math.min(window.innerWidth - 54, Math.max(54, shareSelection.x + 92))}px`,
+              top: `${Math.max(8, shareSelection.y - 50)}px`,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <Share2 size={13} /> Compartir
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {shareSelection && shareOpen && (
+        <QuoteShareSheet
+          text={shareSelection.text}
+          bookTitle={inferCurrentBookTitle()}
+          locationLabel={`Página ${shareSelection.page}`}
+          url={window.location.href}
+          onClose={closeQuoteShare}
+        />
+      )}
 
       {isReaderMode || fileType === 'txt' ? (
         <div
