@@ -159,7 +159,23 @@ export const coverDB = {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(this.metadataStore, 'readwrite');
       tx.objectStore(this.metadataStore).put(meta, filename);
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = () => {
+        resolve();
+
+        // App.tsx uses this exact foundational stamp for newly imported files.
+        // Publish it immediately so another device can discover the book even
+        // when Gemini enrichment never runs (or the user walks away first).
+        if (meta.author === 'Desconocido' && meta.svg === '') {
+          void import('./syncService')
+            .then(({ syncService }) => syncService.upsertMetadata(filename, meta))
+            .then((saved) => {
+              if (!saved) console.warn('[Upload] Foundational metadata stayed local:', filename);
+            })
+            .catch((error) => {
+              console.warn('[Upload] Foundational metadata cloud sync failed:', filename, error);
+            });
+        }
+      };
       tx.onerror = () => reject(tx.error);
     });
   },
