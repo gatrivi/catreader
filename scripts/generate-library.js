@@ -179,12 +179,15 @@ const books = files
     const author = existing?.author;
     const source = existing?.coverSource;
     const sourceUrl = typeof source?.url === 'string' && source.url.trim() ? source.url.trim() : '';
-    const repeatedSource = !!sourceUrl && usedCoverUrls.has(sourceUrl);
+    const generatedSource = sourceUrl.startsWith('/generated-covers/');
+    const repeatedSource = !!sourceUrl && !generatedSource && usedCoverUrls.has(sourceUrl);
 
-    if (sourceUrl && !repeatedSource) usedCoverUrls.add(sourceUrl);
+    if (sourceUrl && !generatedSource && !repeatedSource) usedCoverUrls.add(sourceUrl);
     if (repeatedSource) duplicateCoverCount += 1;
 
-    let coverSource = sourceUrl && !repeatedSource ? source : undefined;
+    // Locally generated URLs must always be regenerated because this script
+    // starts by clearing generated-covers. That keeps repeated runs idempotent.
+    let coverSource = sourceUrl && !generatedSource && !repeatedSource ? source : undefined;
     if (!coverSource) {
       const url = writeGeneratedCover(title, author, file);
       generatedCoverCount += 1;
