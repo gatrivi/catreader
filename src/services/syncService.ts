@@ -25,6 +25,13 @@ export interface Highlight {
   createdAt: number;
 }
 
+export interface BookMetadata {
+  title: string;
+  author: string;
+  svg?: string;
+  coverSource?: any;
+}
+
 type CloudState = 'unknown' | 'online' | 'offline';
 
 const CLOUD_RETRY_MS = 30_000;
@@ -213,7 +220,7 @@ export const syncService = {
     });
   },
 
-  async saveMetadata(metadata: Record<string, { title: string; author: string; svg?: string; coverSource?: any }>) {
+  async saveMetadata(metadata: Record<string, BookMetadata>) {
     return runCloud('metadata save', false, async () => {
       const uid = await getUserId();
       const docRef = doc(db, 'users', uid, 'library', 'metadata');
@@ -225,7 +232,29 @@ export const syncService = {
     });
   },
 
-  async loadMetadata(): Promise<Record<string, { title: string; author: string; svg?: string; coverSource?: any }> | null> {
+  /**
+   * Register or update one book without replacing the rest of the cloud library.
+   * This is the safe primitive for freshly imported local files.
+   */
+  async upsertMetadata(filename: string, metadata: BookMetadata) {
+    return runCloud('metadata upsert', false, async () => {
+      const uid = await getUserId();
+      const docRef = doc(db, 'users', uid, 'library', 'metadata');
+      const snap = await getDoc(docRef);
+      const books = snap.exists() ? (snap.data().books || {}) : {};
+
+      await setDoc(docRef, {
+        books: {
+          ...books,
+          [filename]: metadata,
+        },
+        updatedAt: serverTimestamp(),
+      });
+      return true;
+    });
+  },
+
+  async loadMetadata(): Promise<Record<string, BookMetadata> | null> {
     return runCloud('metadata load', null, async () => {
       const uid = await getUserId();
       const docRef = doc(db, 'users', uid, 'library', 'metadata');
