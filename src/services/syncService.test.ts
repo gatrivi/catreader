@@ -11,7 +11,14 @@ vi.mock('firebase/firestore', () => ({
   doc: vi.fn(),
   getDoc: vi.fn(),
   setDoc: vi.fn(),
-  serverTimestamp: vi.fn()
+  serverTimestamp: vi.fn(),
+  writeBatch: vi.fn()
+}));
+
+vi.mock('firebase/storage', () => ({
+  ref: vi.fn(),
+  uploadString: vi.fn(),
+  getDownloadURL: vi.fn()
 }));
 
 import { getDoc, setDoc } from 'firebase/firestore';
@@ -95,5 +102,25 @@ describe('syncService', () => {
     const result = await syncService.loadHighlights();
 
     expect(result).toBe(null);
+  });
+
+  it('upserts imported-book metadata without dropping existing cloud books', async () => {
+    const existingBook = { title: 'Existing', author: 'Author' };
+    const importedBook = { title: 'Secret of Mary', author: 'Desconocido', svg: '' };
+
+    (getDoc as any).mockResolvedValue({
+      exists: () => true,
+      data: () => ({ books: { 'existing.txt': existingBook } })
+    });
+    (setDoc as any).mockResolvedValue(true);
+
+    const result = await syncService.upsertMetadata('secret-of-mary.txt', importedBook);
+
+    expect(result).toBe(true);
+    const payload = (setDoc as any).mock.calls.at(-1)[1];
+    expect(payload.books).toEqual({
+      'existing.txt': existingBook,
+      'secret-of-mary.txt': importedBook
+    });
   });
 });
