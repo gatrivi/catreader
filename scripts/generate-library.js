@@ -3,11 +3,15 @@ import path from 'path';
 
 const booksDir = path.join(process.cwd(), 'public', 'books');
 const outputFile = path.join(process.cwd(), 'public', 'books.json');
+const generatedCoversDir = path.join(process.cwd(), 'public', 'generated-covers');
 
 // Create the directory if it doesn't exist
 if (!fs.existsSync(booksDir)) {
   fs.mkdirSync(booksDir, { recursive: true });
 }
+
+fs.rmSync(generatedCoversDir, { recursive: true, force: true });
+fs.mkdirSync(generatedCoversDir, { recursive: true });
 
 const supportedExtensions = ['.pdf', '.txt', '.epub', '.docx', '.doc'];
 const files = fs.readdirSync(booksDir);
@@ -71,7 +75,7 @@ const palettes = [
 ];
 
 function motifFor(title, author) {
-  const text = `${title} ${author}`.toLowerCase();
+  const text = `${title} ${author || ''}`.toLowerCase();
   if (/passion|cross|cruc|holy week|salvation/.test(text)) return 'cross';
   if (/mary|maria|rosary|glories|montfort/.test(text)) return 'rose';
   if (/office|sermon|letter|rule|conference|catech/.test(text)) return 'book';
@@ -149,6 +153,18 @@ function createStainedGlassCover(title, author, filename) {
 </svg>`;
 }
 
+function writeGeneratedCover(title, author, filename) {
+  const seed = hashString(`${filename}|${title}|${author || ''}`);
+  const basename = paperSafeId(filename.replace(/\.[^/.]+$/, '')).slice(0, 72) || 'book';
+  const coverFilename = `${basename}-${seed.toString(16)}.svg`;
+  fs.writeFileSync(
+    path.join(generatedCoversDir, coverFilename),
+    createStainedGlassCover(title, author, filename),
+    'utf8',
+  );
+  return `/generated-covers/${coverFilename}`;
+}
+
 const usedCoverUrls = new Set();
 let generatedCoverCount = 0;
 let duplicateCoverCount = 0;
@@ -168,13 +184,19 @@ const books = files
     if (sourceUrl && !repeatedSource) usedCoverUrls.add(sourceUrl);
     if (repeatedSource) duplicateCoverCount += 1;
 
-    const needsGeneratedCover = !sourceUrl || repeatedSource;
-    const generatedSvg = needsGeneratedCover ? createStainedGlassCover(title, author, file) : undefined;
-    if (generatedSvg) generatedCoverCount += 1;
-
-    const preservedSource = !repeatedSource && sourceUrl
-      ? source
-      : (!repeatedSource && (source?.type === 'bundled' || source?.type === 'ai-generated') ? source : undefined);
+    let coverSource = sourceUrl && !repeatedSource ? source : undefined;
+    if (!coverSource) {
+      const url = writeGeneratedCover(title, author, file);
+      generatedCoverCount += 1;
+      // Compatibility note: runtime currently treats `wikimedia` as canonical
+      // catalogue artwork. Attribution keeps the actual provenance explicit.
+      coverSource = {
+        type: 'wikimedia',
+        url,
+        attribution: 'CatReader generated stained-glass artwork (bundled).',
+        updatedAt: 1,
+      };
+    }
 
     return {
       id: file,
@@ -182,14 +204,13 @@ const books = files
       type: ext.substring(1).toLowerCase(),
       title,
       author,
-      ...(generatedSvg ? { svg: generatedSvg } : {}),
       ...(existing?.audio ? { audio: existing.audio } : {}),
       ...(existing?.cattsBookId ? { cattsBookId: existing.cattsBookId } : {}),
-      ...(preservedSource ? { coverSource: preservedSource } : {}),
+      ...(coverSource ? { coverSource } : {}),
       ...(paper ? { paper } : {})
     };
   });
 
 fs.writeFileSync(outputFile, JSON.stringify(books, null, 2));
 console.log(`[Library Generator] Generated books.json with ${books.length} books.`);
-console.log(`[Library Generator] Stained-glass covers: ${generatedCoverCount}; repeated real covers replaced: ${duplicateCoverCount}.`);
+console.log(`[Library Generator] Stained-glass covers: ${generatedCoverCount}; repeated catalogue covers replaced: ${duplicateCoverCount}.`);
