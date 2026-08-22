@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route, ScrollText, Download, RefreshCw, Flag } from 'lucide-react';
+import { Library, Cloud, Upload, Loader2, Pencil, ChevronLeft, ChevronRight, Wand2, ImagePlus, User, Sparkles, X, Search, Package2, Route, ScrollText, Download, RefreshCw, Flag, Dices } from 'lucide-react';
 import { BookCover } from './BookCover';
 import { SaintsTrailView } from './SaintsTrailView';
 import { authService } from '../services/authService';
@@ -77,6 +77,7 @@ interface LibraryViewProps {
   releaseNotesUnread?: boolean;
   onOpenReleaseNotes?: () => void;
   onOpenFeed?: () => void;
+  onSurprise?: () => void;
   onOpenReports?: () => void;
   fragmentReportCount?: number;
 }
@@ -123,6 +124,7 @@ export const LibraryView = ({
   releaseNotesUnread = false,
   onOpenReleaseNotes,
   onOpenFeed,
+  onSurprise,
   onOpenReports,
   fragmentReportCount = 0,
   }: LibraryViewProps) => {
@@ -519,6 +521,17 @@ export const LibraryView = ({
                 >
                   <ScrollText size={12} />
                   <span className="whitespace-nowrap">Descubrir</span>
+                </button>
+              )}
+              {onSurprise && (
+                <button
+                  onClick={onSurprise}
+                  className="flex items-center gap-1.5 bg-emerald-900/60 text-emerald-200 hover:bg-emerald-800 hover:text-white transition-all px-2.5 py-1.5 rounded-xl text-[10px] font-bold border border-emerald-400/20 shrink-0"
+                  aria-label="Sorpréndeme: abrir un libro al azar"
+                  title="Sorpréndeme: abre un libro al azar, a ser posible en una página al azar"
+                >
+                  <Dices size={12} />
+                  <span className="whitespace-nowrap">Sorpréndeme</span>
                 </button>
               )}
               <button 

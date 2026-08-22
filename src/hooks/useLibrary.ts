@@ -316,6 +316,7 @@ export function useLibrary({
                 title: book.title,
                 author: book.author || '',
                 svg: bundledSvg,
+                coverSource: undefined,
               };
               metaUpdates[book.filename] = {
                 ...prev,

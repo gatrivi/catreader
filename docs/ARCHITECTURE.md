@@ -39,7 +39,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 
 | Component | Owns |
 |-----------|------|
-| `LibraryView` | Paged 4×4 racks, DnD, search (`/`), wallpaper, highlights strip |
+| `LibraryView` | Paged 4×4 racks, DnD, search (`/`), wallpaper, highlights strip, Sorpréndeme (random book/page) |
 | `BookCover` | Cover render, format badge, open |
 | `ReadingFeedView` | `/feed` Discover stream of book fragments; opens the source locator |
 | `ReaderView` | Virtualized PDF scroll, TXT/ghost text, PaperLayer |
@@ -68,6 +68,7 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `readingFeed` | Stable feed order and PDF/EPUB/TXT fragment locators |
 | `fragmentReports` | Local quality reports for bad feed fragments |
 | `reader` | clamp/offset page, `PDF_RENDER_WINDOW=8`, library search filter |
+| — | Content cache LRU is budget-bounded (~400 MB / 40 books) so perusing does not thrash |
 | `progressGuard` | FEATURE #1: merge/save/observer guards — never clobber page |
 | `pdfParser` | Semantic page → HTML for “Modo lector” |
 | — | **TODO:** ghost extract must follow [`READER_MODE_LAZY.md`](READER_MODE_LAZY.md) |

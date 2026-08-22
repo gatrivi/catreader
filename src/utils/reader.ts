@@ -53,3 +53,47 @@ export function pageElementPrefix(isReaderMode: boolean, fileType: string): stri
   return isReaderMode || fileType === 'txt' ? 'text-page-' : 'page-';
 }
 
+
+/** Best-effort memory of PDF page counts, learned on each successful open,
+ * so "Sorpréndeme" can drop you at a random page instead of page 1. */
+const PAGE_COUNTS_KEY = 'catreader_page_counts';
+
+export function loadPageCounts(): Record<string, number> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(PAGE_COUNTS_KEY) || '{}');
+    if (typeof raw !== 'object' || raw === null) return {};
+    const counts: Record<string, number> = {};
+    for (const [filename, count] of Object.entries(raw)) {
+      if (typeof count === 'number' && Number.isFinite(count) && count >= 1) {
+        counts[filename] = Math.floor(count);
+      }
+    }
+    return counts;
+  } catch {
+    return {};
+  }
+}
+
+export function rememberPageCount(filename: string, numPages: number): void {
+  if (!filename || numPages < 1) return;
+  try {
+    const counts = loadPageCounts();
+    counts[filename] = numPages;
+    localStorage.setItem(PAGE_COUNTS_KEY, JSON.stringify(counts));
+  } catch {
+    // storage unavailable — page memory is best-effort
+  }
+}
+
+/** Indices [0..total-1] ordered outward from centerIndex — lets background
+ * work fix the layout around the page being read before anywhere else. */
+export function centerOutOrder(total: number, centerIndex: number): number[] {
+  const order: number[] = [];
+  if (total <= 0) return order;
+  const center = Math.min(Math.max(0, centerIndex), total - 1);
+  for (let d = 0; d < total; d++) {
+    if (center - d >= 0) order.push(center - d);
+    if (d > 0 && center + d < total) order.push(center + d);
+  }
+  return order;
+}

@@ -45,7 +45,7 @@ import { ReadingFeedView } from './components/ReadingFeedView';
 import { FragmentReportsModal } from './components/FragmentReportsModal';
 import type { ReadingFeedItem } from './utils/readingFeed';
 import { loadFragmentReports } from './utils/fragmentReports';
-import { clampPage, offsetPage, shouldBlockPageObserver, pageElementPrefix } from './utils/reader';
+import { clampPage, offsetPage, shouldBlockPageObserver, pageElementPrefix, loadPageCounts, rememberPageCount, centerOutOrder } from './utils/reader';
 import { PageInput } from './components/PageInput';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
@@ -1298,6 +1298,26 @@ export default function App() {
     }
   };
 
+  // --- Sorpréndeme: random book, ideally dropped mid-book ---
+  const surpriseMe = () => {
+    if (library.length === 0) return;
+    const pool = library.filter((b) => b.filename !== fileName);
+    const candidates = pool.length > 0 ? pool : library;
+    const book = candidates[Math.floor(Math.random() * candidates.length)];
+    showToast(`Sorpresa: ${book.title || book.filename}`);
+    if (book.type === 'txt') {
+      // Continuous text: land at a random scroll position instead of the top.
+      void openFromLibrary(book, undefined, undefined, false, undefined, Math.random());
+      return;
+    }
+    const knownPages = loadPageCounts()[book.filename];
+    if (book.type === 'pdf' && knownPages && knownPages > 1) {
+      void openFromLibrary(book, 1 + Math.floor(Math.random() * knownPages));
+      return;
+    }
+    void openFromLibrary(book);
+  };
+
   // --- Browser Navigation ---
   useEffect(() => {
     if (window.history.state?.view) return;
@@ -1728,6 +1748,7 @@ export default function App() {
             releaseNotesUnread={releaseNotesUnread}
             onOpenReleaseNotes={() => setShowReleaseNotes(true)}
             onOpenFeed={openFeed}
+            onSurprise={surpriseMe}
             onOpenReports={() => setShowFragmentReports(true)}
             fragmentReportCount={fragmentReportCount}
             onShareBook={(book) => { const shelf = shelves.find(s => s.bookIds.includes(book.id)); navigator.clipboard.writeText(buildBookShareUrl(shelf?.title || 'library', book.filename)); showToast('Enlace copiado'); }} dailyHighlight={dailyHighlight} onDismissHighlight={() => setDailyHighlight(null)} showCoverLabels={showCoverLabels} onToggleCoverLabels={handleToggleCoverLabels} onAddShelf={addShelf} onRemoveShelf={(id) => {
@@ -1756,6 +1777,7 @@ export default function App() {
             onLoadSuccess={async (pdf) => {
               const fallback = 595 / 842;
               const ratios = Array(pdf.numPages).fill(fallback);
+              rememberPageCount(fileName, pdf.numPages);
               try {
                 setNumPages(pdf.numPages);
                 const target = restoreTargetPageRef.current ?? pageNumber;
@@ -1771,26 +1793,29 @@ export default function App() {
                 setIsLoaded(true);
               }
 
-              // Fill page ratios in background (layout placeholders only)
-              (async () => {
+              // Fill page ratios in background — outward from the page being
+              // read, so placeholders around the open page correct first.
+              // Cancellable: stops the moment another book is opened.
+              const openRequestId = openRequestRef.current;
+              void (async () => {
                 try {
-                  const batchSize = 20;
-                  for (let i = 0; i < pdf.numPages; i += batchSize) {
-                    const batch: Promise<void>[] = [];
-                    for (let j = i; j < Math.min(i + batchSize, pdf.numPages); j++) {
-                      if (ratios[j] !== fallback) continue;
-                      batch.push(
-                        pdf.getPage(j + 1)
-                          .then(p => {
-                            const vp = p.getViewport({ scale: 1 });
-                            ratios[j] = vp.width / vp.height;
-                          })
-                          .catch(() => {})
-                      );
-                    }
-                    if (batch.length) await Promise.all(batch);
+                  const total = pdf.numPages;
+                  const centerPage = restoreTargetPageRef.current ?? pageNumber;
+                  const order = centerOutOrder(total, centerPage - 1);
+                  const batchSize = 8;
+                  for (let i = 0; i < order.length; i += batchSize) {
+                    if (openRequestRef.current !== openRequestId) return;
+                    await Promise.all(order.slice(i, i + batchSize).map((j) =>
+                      pdf.getPage(j + 1)
+                        .then((p) => {
+                          const vp = p.getViewport({ scale: 1 });
+                          ratios[j] = vp.width / vp.height;
+                        })
+                        .catch(() => {})
+                    ));
+                    setPageRatios([...ratios]);
+                    await yieldToUi();
                   }
-                  setPageRatios([...ratios]);
                 } catch (e) {
                   console.error('Background ratio extraction failed:', e);
                 }

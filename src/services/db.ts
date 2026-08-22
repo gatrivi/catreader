@@ -77,24 +77,39 @@ export const coverDB = {
 
   async saveBookContent(filename: string, blob: Blob): Promise<void> {
     const db = await this.init();
-    // Maintain LRU in localStorage
+    // Budget-bounded LRU in localStorage so perusing many books no longer
+    // evicts the whole cache on every open. Entries migrate from the old
+    // plain-string format with a conservative size estimate.
     const cacheKey = 'catreader_content_cache_list';
-    let cacheList: string[] = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-    
-    // Remove if already exists to move to end
-    cacheList = cacheList.filter(f => f !== filename);
-    cacheList.push(filename);
-
-    // Prune if more than 4
-    if (cacheList.length > 4) {
-      const toRemove = cacheList.shift();
-      if (toRemove) {
-        const tx = db.transaction(this.contentStore, 'readwrite');
-        tx.objectStore(this.contentStore).delete(toRemove);
+    const MAX_BYTES = 400 * 1024 * 1024;
+    const MAX_ENTRIES = 40;
+    type Entry = { f: string; s: number };
+    const stored: unknown = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+    const entries = Array.isArray(stored) ? stored : [];
+    let list: Entry[] = [];
+    for (const e of entries) {
+      if (typeof e === 'string') {
+        list.push({ f: e, s: 25 * 1024 * 1024 });
+      } else if (typeof e === 'object' && e !== null && 'f' in e && typeof e.f === 'string') {
+        const size = 's' in e ? e.s : undefined;
+        list.push({ f: e.f, s: typeof size === 'number' ? size : 0 });
       }
     }
 
-    localStorage.setItem(cacheKey, JSON.stringify(cacheList));
+    // Remove if already exists to move to end
+    list = list.filter((e) => e.f !== filename);
+    list.push({ f: filename, s: blob.size });
+
+    // Prune oldest until under budget (never below 4 entries)
+    let total = list.reduce((acc, e) => acc + e.s, 0);
+    while ((total > MAX_BYTES || list.length > MAX_ENTRIES) && list.length > 4) {
+      const evicted = list.shift()!;
+      total -= evicted.s;
+      const tx = db.transaction(this.contentStore, 'readwrite');
+      tx.objectStore(this.contentStore).delete(evicted.f);
+    }
+
+    localStorage.setItem(cacheKey, JSON.stringify(list));
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(this.contentStore, 'readwrite');

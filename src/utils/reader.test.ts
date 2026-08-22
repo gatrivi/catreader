@@ -8,6 +8,9 @@ import {
   PDF_RENDER_WINDOW,
   shouldBlockPageObserver,
   pageElementPrefix,
+  loadPageCounts,
+  rememberPageCount,
+  centerOutOrder,
 } from './reader';
 
 describe('reader utils', () => {
@@ -63,5 +66,44 @@ describe('reader utils', () => {
     expect(pageElementPrefix(true, 'pdf')).toBe('text-page-');
     expect(pageElementPrefix(false, 'pdf')).toBe('page-');
     expect(pageElementPrefix(false, 'txt')).toBe('text-page-');
+  });
+});
+
+describe('page-count memory', () => {
+  it('round-trips counts through localStorage', () => {
+    rememberPageCount('book.pdf', 320);
+    expect(loadPageCounts()['book.pdf']).toBe(320);
+  });
+
+  it('ignores invalid entries and corrupt JSON', () => {
+    localStorage.setItem('catreader_page_counts', '{"a.pdf": 0, "b.pdf": -3, "c.pdf": "x", "d.pdf": 12.9}');
+    expect(loadPageCounts()).toEqual({ 'd.pdf': 12 });
+    localStorage.setItem('catreader_page_counts', 'not json{');
+    expect(loadPageCounts()).toEqual({});
+  });
+
+  it('ignores invalid saves', () => {
+    localStorage.removeItem('catreader_page_counts');
+    rememberPageCount('', 100);
+    rememberPageCount('x.pdf', 0);
+    expect(loadPageCounts()).toEqual({});
+  });
+});
+
+describe('centerOutOrder', () => {
+  it('walks outward from center and visits every index once', () => {
+    const order = centerOutOrder(7, 3);
+    expect(order[0]).toBe(3);
+    expect(order).toEqual(expect.arrayContaining([0, 1, 2, 3, 4, 5, 6]));
+    expect(new Set(order).size).toBe(7);
+  });
+
+  it('clamps an out-of-range center into bounds', () => {
+    expect(centerOutOrder(4, 99)[0]).toBe(3);
+    expect(centerOutOrder(4, -5)[0]).toBe(0);
+  });
+
+  it('handles empty input', () => {
+    expect(centerOutOrder(0, 2)).toEqual([]);
   });
 });
