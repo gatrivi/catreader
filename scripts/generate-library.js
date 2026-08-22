@@ -38,7 +38,10 @@ const books = files
       type: ext.substring(1).toLowerCase(),
       title: existing?.title || file.replace(ext, ''),
       author: existing?.author,
-      // Legacy synthetic SVG covers are intentionally omitted from the runtime manifest.
+      // Keep existing SVG covers: the hydration path deletes stored synthetic
+      // placeholders on boot expecting a replacement — omitting them here left
+      // books permanently blank. Synthetic covers still auto-upgrade to real ones.
+      ...(existing?.svg ? { svg: existing.svg } : {}),
       ...(existing?.audio ? { audio: existing.audio } : {}),
       ...(existing?.cattsBookId ? { cattsBookId: existing.cattsBookId } : {}),
       ...(existing?.coverSource ? { coverSource: existing.coverSource } : {}),

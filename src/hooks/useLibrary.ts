@@ -3,7 +3,7 @@ import { syncService } from '../services/syncService';
 import { coverDB } from '../services/db';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
-import { preferredCoverSource, shouldReplaceStoredCover, shouldSkipCoverFetch, isUserCustomCover } from '../utils/covers';
+import { preferredCoverSource, shouldReplaceStoredCover, shouldSkipCoverFetch, isUserCustomCover, hasStoredCover, isSyntheticCover } from '../utils/covers';
 import {
   coverMem,
   coverMemMerge,
@@ -327,6 +327,14 @@ export function useLibrary({
             }
           }
 
+          // Instant baseline: no book renders a blank spine while waiting on the
+          // idle enrichment sweep — procedural parchment right after hydration.
+          for (const book of allBooks) {
+            if (!loadedCovers[book.filename]) {
+              await generateCoverFallback(book);
+            }
+          }
+
           coverMemMerge(loadedCovers);
           coverMemMarkHydrated();
           // Atomic: covers + library + hydrated in one paint window
@@ -574,34 +582,46 @@ export function useLibrary({
   };
 
   /**
-   * Fallback cover generator (Canvas gradient).
+   * Fallback cover generator — stable parchment SVG keyed off the filename,
+   * so no book is ever left with a blank spine. Synthetic (<svg>) by type,
+   * which means real cover sources can still upgrade over it later.
    */
   const generateCoverFallback = async (book: LibraryBook) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 300;
-    canvas.height = 400;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      const gradient = ctx.createLinearGradient(0, 0, 300, 400);
-      const randomHue = Math.floor(Math.random() * 360);
-      gradient.addColorStop(0, `hsl(${randomHue}, 40%, 40%)`);
-      gradient.addColorStop(1, `hsl(${randomHue}, 40%, 15%)`);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 300, 400);
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-      ctx.fillRect(0, 0, 15, 400);
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.font = 'bold 24px serif';
-      ctx.textAlign = 'center';
-      const titleLine = book.title.substring(0, 20);
-      ctx.fillText(titleLine, 150, 150);
-      if (book.title.length > 20) ctx.fillText(book.title.substring(20, 40), 150, 185);
-      ctx.font = 'italic 14px serif';
-      ctx.fillText(book.author || 'Desconocido', 150, 240);
-      const base64Image = canvas.toDataURL('image/jpeg');
-      await coverDB.saveCover(book.filename, base64Image);
-      putCover(book.filename, base64Image);
+    let h = 2166136261;
+    for (let i = 0; i < book.filename.length; i++) {
+      h = Math.imul(h ^ book.filename.charCodeAt(i), 16777619) >>> 0;
     }
+    const hue = h % 360;
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const words = esc(book.title || book.filename).split(/\s+/);
+    const lines: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      if (lines.length >= 4) break;
+      if (cur && `${cur} ${w}`.length > 16) {
+        lines.push(cur);
+        cur = w;
+      } else {
+        cur = `${cur} ${w}`.trim();
+      }
+    }
+    if (cur && lines.length < 4) lines.push(cur);
+    const tspans = lines.map((l, i) => `<tspan x="150" dy="${i === 0 ? 0 : 34}">${l}</tspan>`).join('');
+    const author = esc(book.author || 'Desconocido');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">` +
+      `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0" stop-color="hsl(${hue},32%,38%)"/><stop offset="1" stop-color="hsl(${hue},40%,16%)"/>` +
+      `</linearGradient></defs>` +
+      `<rect width="300" height="450" fill="url(#g)"/>` +
+      `<rect x="10" y="10" width="280" height="430" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>` +
+      `<rect x="16" y="16" width="268" height="418" fill="none" stroke="rgba(0,0,0,0.25)"/>` +
+      `<text x="150" y="150" text-anchor="middle" font-family="Georgia, serif" font-size="26" fill="#f5efe0">${tspans}</text>` +
+      `<text x="150" y="405" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="15" fill="rgba(245,239,224,0.75)">${author}</text>` +
+      `</svg>`;
+    try {
+      await coverDB.saveCover(book.filename, svg);
+      putCover(book.filename, svg);
+    } catch { /* IndexedDB failure must not crash the idle pass */ }
   };
 
   /**
@@ -954,8 +974,24 @@ export function useLibrary({
         setEnrichmentProgress({ current: idx + 1, total: library.length, filename: `Cover: ${book.title}` });
         await fetchEnhancedCover(book);
       }
-      setAutoCoverIndex(prev => prev + 1);
-      if (idx + 1 >= library.length) setEnrichmentProgress(null);
+
+      // Never leave a blank spine: procedural placeholder until a real cover lands.
+      const finalCover = coversRef.current[book.filename] || (await coverDB.getCover(book.filename));
+      if (!hasStoredCover(finalCover)) {
+        await generateCoverFallback(book);
+      }
+
+      // Fast-forward past books that already hold a real (non-synthetic) cover
+      // so one full sweep takes seconds instead of one tick per book.
+      let nextIdx = idx + 1;
+      while (nextIdx < library.length) {
+        const candidate = library[nextIdx];
+        const stored = coversRef.current[candidate.filename] || (await coverDB.getCover(candidate.filename));
+        if (!stored || !hasStoredCover(stored) || isSyntheticCover(stored)) break;
+        nextIdx++;
+      }
+      setAutoCoverIndex(nextIdx);
+      if (nextIdx >= library.length) setEnrichmentProgress(null);
     }, 10000);
     return () => clearInterval(timer);
   }, [isIdle, library.length, coverScanKey, fetchEnhancedCover, enrichBookWithGemini, putCover]);
