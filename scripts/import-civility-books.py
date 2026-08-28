@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Import Catholic civility / social-conduct classics into CatReader.
+
+The source works are public domain. For La Salle, use the Institute's clean
+French digital text layer and discard its modern editorial annotations, keeping
+only the underlying 1703 work.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parents[1]
+BOOKS_DIR = ROOT / "public" / "books"
+BOOKS_JSON = ROOT / "public" / "books.json"
+
+SOURCES = {
+    "lasalle": "https://www.lasalle.org/wp-content/uploads/2019/09/026_rb.pdf",
+    "sales": "https://archive.org/download/introductiontodefran/introductiontodefran_djvu.txt",
+    "teresa": "https://archive.org/download/wayofperfection00tereuoft/wayofperfection00tereuoft_djvu.txt",
+    "therese": "https://www.gutenberg.org/ebooks/63294.txt.utf-8",
+}
+
+BOOKS = [
+    {
+        "id": "Rules_of_Christian_Decorum_and_Civility-La_Salle-1703_FR.txt",
+        "filename": "Rules_of_Christian_Decorum_and_Civility-La_Salle-1703_FR.txt",
+        "type": "txt",
+        "title": "Les règles de la bienséance et de la civilité chrétienne",
+        "author": "St. John Baptist de La Salle",
+    },
+    {
+        "id": "Introduction_to_the_Devout_Life-Francis_de_Sales-1900.txt",
+        "filename": "Introduction_to_the_Devout_Life-Francis_de_Sales-1900.txt",
+        "type": "txt",
+        "title": "Introduction to the Devout Life",
+        "author": "St. Francis de Sales",
+    },
+    {
+        "id": "Way_of_Perfection-Teresa_of_Avila-1919.txt",
+        "filename": "Way_of_Perfection-Teresa_of_Avila-1919.txt",
+        "type": "txt",
+        "title": "The Way of Perfection",
+        "author": "St. Teresa of Ávila",
+    },
+    {
+        "id": "Thoughts_of_St_Therese_of_Lisieux-1915.txt",
+        "filename": "Thoughts_of_St_Therese_of_Lisieux-1915.txt",
+        "type": "txt",
+        "title": "Thoughts of Saint Thérèse of the Child Jesus",
+        "author": "St. Thérèse of Lisieux",
+    },
+]
+
+LEGACY_BAD_OCR = BOOKS_DIR / "Rules_of_Christian_Decorum_and_Civility-La_Salle-1825_FR.txt"
+
+
+def fetch_bytes(url: str) -> bytes:
+    req = Request(url, headers={"User-Agent": "CatReader/2 public-domain book importer"})
+    with urlopen(req, timeout=120) as response:
+        return response.read()
+
+
+def fetch_text(url: str) -> str:
+    return fetch_bytes(url).decode("utf-8", errors="replace")
+
+
+def clean(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x0c", "\n\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return re.sub(r"\n{4,}", "\n\n\n", text).strip()
+
+
+def trim_between(text: str, starts: tuple[str, ...], ends: tuple[str, ...] = ()) -> str:
+    low = text.lower()
+    start_hits = [low.find(s.lower()) for s in starts]
+    start_hits = [i for i in start_hits if i >= 0]
+    if start_hits:
+        text = text[min(start_hits):]
+        low = text.lower()
+    end_hits = [low.find(e.lower()) for e in ends]
+    end_hits = [i for i in end_hits if i > 2000]
+    if end_hits:
+        text = text[:min(end_hits)]
+    return text
+
+
+def pdftotext(pdf: Path, txt: Path) -> str:
+    if not shutil.which("pdftotext"):
+        raise RuntimeError("pdftotext is required (install poppler-utils)")
+    subprocess.run(["pdftotext", "-layout", str(pdf), str(txt)], check=True)
+    return txt.read_text(encoding="utf-8", errors="replace")
+
+
+def extract_lasalle_original(text: str) -> str:
+    """Keep RB source paragraphs/titles, omit the edition's footnotes and commentary."""
+    out: list[str] = []
+    collecting = False
+    marker = re.compile(r"^RB\s+[0-9]+(?:,[0-9]+){0,2}\s*(.*)$")
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        line = re.sub(r"^\d+(?=RB\s)", "", line)
+        match = marker.match(line)
+        if match:
+            tail = match.group(1).strip()
+            if tail:
+                out.extend(("", tail))
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        if line.startswith("*"):
+            collecting = False
+            continue
+        if line:
+            out.append(line)
+
+    result = "\n".join(out)
+    return re.sub(r"\n{3,}", "\n\n", result).strip()
+
+
+def write_book(index: int, text: str, note: str, required: tuple[str, ...]) -> None:
+    text = clean(text)
+    check = text.lower()
+    missing = [term for term in required if term.lower() not in check]
+    if len(text) < 12000 or missing:
+        raise RuntimeError(
+            f"Validation failed for {BOOKS[index]['filename']} ({len(text)} chars; missing={missing})"
+        )
+    out = BOOKS_DIR / BOOKS[index]["filename"]
+    out.write_text(f"{note}\n\n{text}\n", encoding="utf-8")
+    print(f"[import] {out.name}: {out.stat().st_size:,} bytes")
+
+
+def main() -> None:
+    BOOKS_DIR.mkdir(parents=True, exist_ok=True)
+    if LEGACY_BAD_OCR.exists():
+        LEGACY_BAD_OCR.unlink()
+        print(f"[import] removed poor OCR: {LEGACY_BAD_OCR.name}")
+
+    with tempfile.TemporaryDirectory(prefix="catreader-civility-") as td:
+        tmp = Path(td)
+        lasalle_pdf = tmp / "lasalle.pdf"
+        lasalle_txt = tmp / "lasalle.txt"
+        lasalle_pdf.write_bytes(fetch_bytes(SOURCES["lasalle"]))
+        lasalle = extract_lasalle_original(pdftotext(lasalle_pdf, lasalle_txt))
+
+    write_book(
+        0, lasalle,
+        "Original French text (1703) by St. John Baptist de La Salle, extracted from the official Lasallian digital edition; editorial notes removed. Source: La Salle Global.",
+        ("civilité", "prochain", "visite"),
+    )
+
+    sales = trim_between(
+        fetch_text(SOURCES["sales"]),
+        ("introduction to a devout life", "introduction to the devout life"),
+    )
+    write_book(
+        1, sales,
+        "Public-domain English edition of St. Francis de Sales, F. Pustet & Co., 1900. Source OCR: Internet Archive.",
+        ("conversation", "devout"),
+    )
+
+    teresa = trim_between(
+        fetch_text(SOURCES["teresa"]),
+        ("the way of perfection", "way of perfection"),
+    )
+    write_book(
+        2, teresa,
+        "Public-domain English edition, London: Thomas Baker, 1919. Source OCR: Internet Archive / University of Toronto.",
+        ("perfection", "charity"),
+    )
+
+    therese = trim_between(
+        fetch_text(SOURCES["therese"]),
+        ("*** start of the project gutenberg ebook",),
+        ("*** end of the project gutenberg ebook",),
+    )
+    write_book(
+        3, therese,
+        "Project Gutenberg eBook #63294; 1915 English translation by an Irish Carmelite; public domain in the USA.",
+        ("love of our neighbour", "charity"),
+    )
+
+    current = json.loads(BOOKS_JSON.read_text(encoding="utf-8"))
+    old_name = LEGACY_BAD_OCR.name
+    by_filename = {book["filename"]: book for book in current if book.get("filename") != old_name}
+    for book in BOOKS:
+        by_filename[book["filename"]] = {**by_filename.get(book["filename"], {}), **book}
+    BOOKS_JSON.write_text(
+        json.dumps(list(by_filename.values()), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"[import] metadata prepared for {len(BOOKS)} civility books")
+
+
+if __name__ == "__main__":
+    main()
