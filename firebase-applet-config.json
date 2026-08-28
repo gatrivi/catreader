@@ -1,6 +1,7 @@
 {
   "apiKey": "AIzaSyCXbtgTHACiRuU4Fdr0x3dcD21XsLFgtLg",
   "authDomain": "catreader-devtrivi.firebaseapp.com",
+  "databaseURL": "https://catreader-devtrivi-default-rtdb.firebaseio.com",
   "projectId": "catreader-devtrivi",
   "storageBucket": "catreader-devtrivi.firebasestorage.app",
   "messagingSenderId": "960761990978",
