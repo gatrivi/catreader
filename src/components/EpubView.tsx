@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ePub, { Rendition } from 'epubjs';
-import { Loader2, ChevronLeft, ChevronRight, Link2, Search } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight, Link2, Search, Share2 } from 'lucide-react';
+import { QuoteShareSheet, buildQuoteShareText, inferCurrentBookTitle } from './QuoteShareSheet';
 
 interface EpubViewProps {
   fileUrl: string;
@@ -19,6 +20,11 @@ type EpubUrlState = {
 type EpubSearchHit = {
   cfi: string;
   excerpt?: string;
+};
+
+type EpubQuoteSelection = {
+  text: string;
+  cfi: string;
 };
 
 const HIGHLIGHT_CLASS = 'catreader-url-highlight';
@@ -111,6 +117,8 @@ export const EpubView: React.FC<EpubViewProps> = ({
   const searchStateRef = useRef<Pick<EpubUrlState, 'query' | 'index'>>({});
   const [loading, setLoading] = useState(true);
   const [shareUrl, setShareUrl] = useState<string>('');
+  const [quoteSelection, setQuoteSelection] = useState<EpubQuoteSelection | null>(null);
+  const [quoteShareOpen, setQuoteShareOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHits, setSearchHits] = useState<EpubSearchHit[]>([]);
   const [searchIndex, setSearchIndex] = useState<number>(0);
@@ -202,6 +210,8 @@ export const EpubView: React.FC<EpubViewProps> = ({
 
     setLoading(true);
     setShareUrl('');
+    setQuoteSelection(null);
+    setQuoteShareOpen(false);
     setSearchHits([]);
     setSearchIndex(0);
     highlightedCfiRef.current = undefined;
@@ -266,6 +276,7 @@ export const EpubView: React.FC<EpubViewProps> = ({
 
     rendition.on('selected', (cfiRange: string, contents: any) => {
       if (!cfiRange) return;
+      const selectedText = contents?.window?.getSelection?.()?.toString?.().trim?.() || '';
       highlightedCfiRef.current = cfiRange;
       addUrlHighlight(rendition, cfiRange);
       writeEpubUrlState({
@@ -274,6 +285,10 @@ export const EpubView: React.FC<EpubViewProps> = ({
         highlight: cfiRange,
       });
       setShareUrl(window.location.href);
+      if (selectedText.length >= 2) {
+        setQuoteSelection({ text: selectedText, cfi: cfiRange });
+        setQuoteShareOpen(false);
+      }
 
       try {
         contents?.window?.getSelection()?.removeAllRanges();
@@ -304,6 +319,19 @@ export const EpubView: React.FC<EpubViewProps> = ({
     const url = shareUrl || window.location.href;
     await navigator.clipboard.writeText(url);
     setShareUrl(url);
+  };
+
+  const openQuoteShare = async () => {
+    if (!quoteSelection) return;
+    const url = shareUrl || window.location.href;
+    const bookTitle = inferCurrentBookTitle();
+    const shareText = buildQuoteShareText(quoteSelection.text, bookTitle, 'Ubicación EPUB', url);
+    try {
+      await navigator.clipboard.writeText(shareText);
+    } catch {
+      // The share sheet repeats the copy attempt.
+    }
+    setQuoteShareOpen(true);
   };
 
   const goToRelativeSearchHit = (offset: number) => {
@@ -359,7 +387,16 @@ export const EpubView: React.FC<EpubViewProps> = ({
         </form>
       )}
       
-      {shareUrl && !loading && (
+      {quoteSelection && !loading ? (
+        <button
+          onClick={() => void openQuoteShare()}
+          className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-amber-500/30 bg-stone-950/85 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-200 shadow-xl backdrop-blur-md hover:bg-stone-900"
+          title="Compartir esta selección"
+        >
+          <Share2 size={12} />
+          Compartir selección
+        </button>
+      ) : shareUrl && !loading ? (
         <button
           onClick={copyShareUrl}
           className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-amber-500/30 bg-stone-950/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-200 shadow-xl backdrop-blur-md hover:bg-stone-900"
@@ -368,6 +405,16 @@ export const EpubView: React.FC<EpubViewProps> = ({
           <Link2 size={12} />
           Copiar selección
         </button>
+      ) : null}
+
+      {quoteSelection && quoteShareOpen && (
+        <QuoteShareSheet
+          text={quoteSelection.text}
+          bookTitle={inferCurrentBookTitle()}
+          locationLabel="Ubicación EPUB"
+          url={shareUrl || window.location.href}
+          onClose={() => setQuoteShareOpen(false)}
+        />
       )}
 
       {/* EPUB Navigation Controls Overlay */}
