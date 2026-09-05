@@ -11,6 +11,11 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Advertise byte ranges before Vite's SPA middleware. Large PDFs can then
+  // open at the requested page without waiting for the entire file.
+  const booksRoot = path.join(process.cwd(), process.env.NODE_ENV === 'production' ? 'dist/books' : 'public/books');
+  app.use('/books', express.static(booksRoot, { fallthrough: false }));
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

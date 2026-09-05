@@ -10,7 +10,6 @@ import {
   coverMemMarkHydrated,
   coverMemSet,
 } from '../services/coverMem';
-import { primeCoverThumbnails } from '../utils/coverThumbCache';
 
 export interface LibraryBook {
   id: string;
@@ -40,6 +39,7 @@ interface UseLibraryProps {
   setGlobalError: (val: { message: string; details?: string } | null) => void;
   setIdentifyingBookId: (val: string | null) => void;
   isSyncing: boolean;
+  isReading?: boolean;
 }
 
 /**
@@ -52,7 +52,8 @@ export function useLibrary({
   setGlobalStatus,
   setGlobalError,
   setIdentifyingBookId,
-  isSyncing
+  isSyncing,
+  isReading = false
 }: UseLibraryProps) {
   const [library, setLibrary] = useState<LibraryBook[]>([]);
   const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string; coverSource?: any }>>({});
@@ -116,8 +117,9 @@ export function useLibrary({
       const initialCovers: Record<string, string> = { ...coverMem.map };
       for (const book of visibleData) {
         const src = book.coverSource;
-        if (!initialCovers[book.filename] && src?.url && ['openlibrary', 'google-books', 'wikimedia'].includes(src.type)) {
-          initialCovers[book.filename] = src.url;
+        if (!initialCovers[book.filename]) {
+          if (src?.url) initialCovers[book.filename] = src.url;
+          else if (src?.type !== 'user-custom' && book.svg) initialCovers[book.filename] = book.svg;
         }
       }
       coverMemMerge(initialCovers);
@@ -127,16 +129,7 @@ export function useLibrary({
       setIsLoadingLibrary(false);
       setGlobalStatus(null);
 
-      // Tiny shelf art is an offline UI asset, not content. Warm every known
-      // real cover only after first paint, with two requests max at a time.
-      primeCoverThumbnails(
-        visibleData.flatMap((book: LibraryBook) =>
-          book.coverSource?.url && ['openlibrary', 'google-books', 'wikimedia'].includes(book.coverSource.type)
-            ? [{ filename: book.filename, url: book.coverSource.url }]
-            : []
-        ),
-        (filename, thumb) => putCover(filename, thumb),
-      );
+      // Visible BookCover images warm their own thumbnails after loading.
 
       // Load enriched metadata in the background
       (async () => {
@@ -283,23 +276,10 @@ export function useLibrary({
 
             const src = chosenSource;
             if (src?.type === 'user-custom' && src.url) {
-              try {
-                const r = await fetch(src.url);
-                if (r.ok) {
-                  const blob = await r.blob();
-                  cover = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                  });
-                  await coverDB.saveCover(book.filename, cover);
-                  loadedCovers[book.filename] = cover;
-                  continue;
-                }
-              } catch (err) {
-                console.error('[Cover Sync] Failed to lazy download cover:', err);
-              }
+              // An image request must never hold the entire hydration loop open.
+              loadedCovers[book.filename] = src.url;
+              void coverDB.saveCover(book.filename, src.url).catch(() => {});
+              continue;
             }
 
             if (src?.url && (src.type === 'openlibrary' || src.type === 'google-books' || src.type === 'wikimedia')) {
@@ -916,7 +896,7 @@ export function useLibrary({
   }, [library.length, isSyncing]);
 
   useEffect(() => {
-    if (!isIdle) return;
+    if (!isIdle || isReading) return;
     const timer = setInterval(async () => {
       const idx = autoCoverIndexRef.current;
       if (idx >= library.length) {
@@ -994,7 +974,7 @@ export function useLibrary({
       if (nextIdx >= library.length) setEnrichmentProgress(null);
     }, 10000);
     return () => clearInterval(timer);
-  }, [isIdle, library.length, coverScanKey, fetchEnhancedCover, enrichBookWithGemini, putCover]);
+  }, [isIdle, isReading, library.length, coverScanKey, fetchEnhancedCover, enrichBookWithGemini, putCover]);
 
   return {
     library, setLibrary,

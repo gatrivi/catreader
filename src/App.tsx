@@ -45,7 +45,7 @@ import { ReadingFeedView } from './components/ReadingFeedView';
 import { FragmentReportsModal } from './components/FragmentReportsModal';
 import type { ReadingFeedItem } from './utils/readingFeed';
 import { loadFragmentReports } from './utils/fragmentReports';
-import { clampPage, offsetPage, shouldBlockPageObserver, pageElementPrefix, loadPageCounts, rememberPageCount, centerOutOrder } from './utils/reader';
+import { clampPage, offsetPage, shouldBlockPageObserver, pageElementPrefix, loadPageCounts, rememberPageCount } from './utils/reader';
 import { PageInput } from './components/PageInput';
 import { parsePdfPageSemantically } from './utils/pdfParser';
 import { createThumbnail } from './utils/image';
@@ -63,11 +63,16 @@ import {
   yieldToUi,
   GHOST_PREFETCH,
   isGhostComplete,
+  isGhostReadyForRestore,
+  GHOST_ERROR_HTML,
 } from './utils/ghostText';
 import { loadLocalProgressMap } from './utils/localProgress';
 import { ReleaseNotesModal } from './components/ReleaseNotesModal';
 import { APP_VERSION, RELEASE_NOTES_SEEN_KEY } from './utils/releaseNotes';
 import { shouldOpenTextFirst } from './utils/openMode';
+import { pdfSource } from './utils/pdfSource';
+import { PdfTextSession } from './utils/pdfTextSession';
+import { cachePdfAfterOpening } from './utils/pdfOfflineCache';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { debugError, debugInfo, debugWarn, installGlobalDebugCapture } from './utils/debugLog';
 
@@ -200,8 +205,8 @@ export default function App() {
   const hasResumedRef = useRef(false);
   const textContentRef = useRef(textContent);
   textContentRef.current = textContent;
-  const ghostPdfRef = useRef<{ filename: string; pdf: any } | null>(null);
-  const ghostPdfLoadingRef = useRef<Promise<any> | null>(null);
+  const pdfTextSessionRef = useRef(new PdfTextSession());
+  const offlinePdfRef = useRef<{ pdf: any; cancel: () => void } | null>(null);
   const ghostInflightRef = useRef<Set<number>>(new Set());
   const ghostPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bookBlobPromisesRef = useRef<Map<string, Promise<Blob>>>(new Map());
@@ -245,7 +250,8 @@ export default function App() {
     setGlobalStatus,
     setGlobalError,
     setIdentifyingBookId,
-    isSyncing
+    isSyncing,
+    isReading: !!fileName
   });
 
   const {
@@ -560,8 +566,14 @@ export default function App() {
 
       const baseUrl = import.meta.env.BASE_URL || '/';
       const booksDirPath = baseUrl.endsWith('/') ? `${baseUrl}books/` : `${baseUrl}/books/`;
-      const fetchUrl = `${booksDirPath}${encodeURIComponent(book.filename)}`;
-      const candidates = [fetchUrl, `${fetchUrl}?v=${encodeURIComponent(APP_VERSION)}`];
+      // Raw filename first: encodeURIComponent turns ',' into '%2C', which the
+      // static layer does not map back — those requests fell through to the SPA
+      // fallback and every comma-containing book silently failed to open.
+      const rawUrl = `${booksDirPath}${book.filename}`;
+      const encodedUrl = `${booksDirPath}${encodeURIComponent(book.filename)}`;
+      const candidates = rawUrl === encodedUrl
+        ? [rawUrl, `${rawUrl}?v=${encodeURIComponent(APP_VERSION)}`]
+        : [rawUrl, encodedUrl, `${rawUrl}?v=${encodeURIComponent(APP_VERSION)}`];
       let lastError: unknown = null;
 
       for (let attempt = 0; attempt < candidates.length; attempt += 1) {
@@ -705,34 +717,31 @@ export default function App() {
     }, 800);
   };
 
-  const getGhostPdf = async (fileOrBlob: File | Blob, filename: string) => {
-    if (ghostPdfRef.current?.filename === filename && ghostPdfRef.current.pdf) {
-      return ghostPdfRef.current.pdf;
-    }
-    if (ghostPdfLoadingRef.current) return ghostPdfLoadingRef.current;
-
-    ghostPdfLoadingRef.current = (async () => {
-      const { getPdfJsRuntime } = await import('./utils/pdfRuntime');
-      const pdfjsBackground = await getPdfJsRuntime();
-      const data = new Uint8Array(await fileOrBlob.arrayBuffer());
-      const loadingTask = (pdfjsBackground as any).getDocument({ data, useSystemFonts: true });
-      const pdf = await loadingTask.promise;
-      ghostPdfRef.current = { filename, pdf };
-      ghostPdfLoadingRef.current = null;
-      return pdf;
-    })();
-
-    return ghostPdfLoadingRef.current;
+  const cacheOpenedPdf = (pdf: any, filename: string) => {
+    if (offlinePdfRef.current?.pdf === pdf) return;
+    offlinePdfRef.current?.cancel();
+    offlinePdfRef.current = {
+      pdf,
+      cancel: cachePdfAfterOpening(pdf, (blob) => coverDB.saveBookContent(filename, blob)),
+    };
   };
+
+  const getGhostPdf = (source: Blob | string, filename: string) =>
+    pdfTextSessionRef.current.load(source, filename);
 
   /** Progressive: word → snippet → full page → prefetch neighbors. docs/READER_MODE_LAZY.md */
   const ensureGhostAround = async (
-    fileOrBlob: File | Blob,
+    fileOrBlob: Blob | string,
     filename: string,
     centerPage: number
   ) => {
+    const requestId = openRequestRef.current;
+    const inflight = ghostInflightRef.current;
+    const isCurrent = () => requestId === openRequestRef.current;
     const paint = (pageNum: number, html: string, totalPages: number) => {
+      if (!isCurrent()) return;
       setTextContent((prev) => {
+        if (!isCurrent()) return prev;
         const base = prev && prev.length === totalPages ? prev : emptyGhostPages(totalPages);
         // Don't clobber a complete page with a draft
         if (isGhostComplete(base[pageNum - 1]) && !isGhostComplete(html)) return base;
@@ -744,11 +753,14 @@ export default function App() {
 
     try {
       const pdf = await getGhostPdf(fileOrBlob, filename);
+      if (!isCurrent()) return;
+      if (typeof fileOrBlob === 'string' && !fileOrBlob.startsWith('blob:')) cacheOpenedPdf(pdf, filename);
       const totalPages = pdf.numPages as number;
+      setNumPages(totalPages);
 
       let pages = textContentRef.current;
       if (!pages || pages.length !== totalPages) {
-        if (isReaderModeRef.current) freezePageForRemount(pageNumberRef.current);
+        if (isReaderModeRef.current) freezePageForRemount(restoreTargetPageRef.current ?? centerPage);
         pages = emptyGhostPages(totalPages);
         if (textContentRef.current?.length) {
           for (let i = 0; i < Math.min(textContentRef.current.length, totalPages); i++) {
@@ -763,8 +775,8 @@ export default function App() {
       const center = Math.min(Math.max(1, centerPage || 1), totalPages);
 
       // --- Stage A: current page only, word → snippet → semantic ---
-      if (!isGhostComplete(textContentRef.current?.[center - 1]) && !ghostInflightRef.current.has(center)) {
-        ghostInflightRef.current.add(center);
+      if (!isGhostComplete(textContentRef.current?.[center - 1]) && !inflight.has(center)) {
+        inflight.add(center);
         try {
           const page = await pdf.getPage(center);
           const tc = await page.getTextContent();
@@ -781,27 +793,30 @@ export default function App() {
 
           if (!isGhostComplete(textContentRef.current?.[center - 1])) {
             const full = await parsePdfPageSemantically(page, tc);
-            paint(center, full || snippetHtml(tc), totalPages);
-            persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
+            paint(center, full || '<p>Esta pagina no contiene texto seleccionable. Usa Ver original PDF para leerla.</p>', totalPages);
+            if (isCurrent()) persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
           }
         } catch (e) {
+          paint(center, GHOST_ERROR_HTML, totalPages);
           console.warn(`[Ghost] Failed page ${center}:`, e);
         } finally {
-          ghostInflightRef.current.delete(center);
+          inflight.delete(center);
         }
       }
 
       // --- Stage B: prefetch ±1 in background (full pages only) ---
+      if (!isCurrent()) return;
       const neighbors = pagesNeededAround(center, totalPages, GHOST_PREFETCH).filter((p) => p !== center);
       const todo = incompleteGhostPages(textContentRef.current || [], neighbors)
-        .filter((p) => !ghostInflightRef.current.has(p));
+        .filter((p) => !inflight.has(p));
       if (todo.length === 0) return;
 
       // Don't block UI — fire and forget neighbor fills
       void (async () => {
         for (const p of todo) {
-          if (ghostInflightRef.current.has(p)) continue;
-          ghostInflightRef.current.add(p);
+          if (!isCurrent()) return;
+          if (inflight.has(p)) continue;
+          inflight.add(p);
           try {
             const page = await pdf.getPage(p);
             const tc = await page.getTextContent();
@@ -809,16 +824,22 @@ export default function App() {
             paint(p, snippetHtml(tc), totalPages);
             await yieldToUi();
             const full = await parsePdfPageSemantically(page, tc);
-            paint(p, full || snippetHtml(tc), totalPages);
-            persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
+            paint(p, full || '<p>Esta pagina no contiene texto seleccionable. Usa Ver original PDF para leerla.</p>', totalPages);
+            if (isCurrent()) persistGhostPartial(filename, textContentRef.current || emptyGhostPages(totalPages));
           } catch (e) {
+            paint(p, GHOST_ERROR_HTML, totalPages);
             console.warn(`[Ghost] Prefetch failed page ${p}:`, e);
           } finally {
-            ghostInflightRef.current.delete(p);
+            inflight.delete(p);
           }
         }
       })();
     } catch (err) {
+      if (isCurrent()) {
+        const count = Math.max(centerPage, textContentRef.current?.length || 0);
+        setNumPages(count);
+        paint(centerPage, GHOST_ERROR_HTML, count);
+      }
       console.error('[Ghost] ensureGhostAround error:', err);
     }
   };
@@ -837,35 +858,15 @@ export default function App() {
   const toggleReaderMode = async () => {
     // Freeze page before remount — observer would otherwise see top of text view (p~1–3)
     // and saveProgress would overwrite synced progress (feature #1).
+    const requestId = openRequestRef.current;
     const keepPage = pageNumber;
     modeSwitchPageRef.current = keepPage;
     restoreTargetPageRef.current = keepPage;
     setIsRestoring(true);
 
-    // Text-first uses a tiny text blob as a mount sentinel until the actual PDF
-    // arrives. Never hand that sentinel to PDF.js when the user asks for the original.
     if (isReaderMode && fileType === 'pdf') {
-      const book = library.find((candidate) => candidate.filename === fileName);
-      if (!book) {
-        setIsRestoring(false);
-        return;
-      }
-      showToast('Cargando PDF original…');
-      try {
-        const blob = await getBookBlob(book);
-        const realUrl = URL.createObjectURL(blob);
-        setFileUrl((current) => {
-          if (current?.startsWith('blob:')) URL.revokeObjectURL(current);
-          return realUrl;
-        });
-        setIsReaderMode(false);
-      } catch (e) {
-        console.error('[ReaderMode] Failed original PDF load:', e);
-        restoreTargetPageRef.current = null;
-        modeSwitchPageRef.current = null;
-        setIsRestoring(false);
-        showToast('No se pudo cargar el PDF original');
-      }
+      // The mounted source is already a real PDF, including uploaded blobs.
+      setIsReaderMode(false);
       return;
     }
 
@@ -875,11 +876,10 @@ export default function App() {
     if (nextMode && fileType === 'pdf') {
       try {
         const text = await coverDB.getGhostText(fileName);
+        if (requestId !== openRequestRef.current) return;
         if (text) loadGhostTextToState(text);
 
-        const blob =
-          (await coverDB.getBookContent(fileName)) ||
-          (fileUrl ? await fetch(fileUrl).then((r) => r.blob()) : null);
+        const blob = fileUrl;
         if (blob) {
           // Fill holes around synced page — do NOT start at page 1
           await ensureGhostAround(blob, fileName, keepPage);
@@ -898,22 +898,22 @@ export default function App() {
     if (!isReaderMode || fileType !== 'pdf' || !fileName) return;
     let cancelled = false;
     (async () => {
-      // During text-first startup fileUrl can be a text sentinel, not a PDF.
-      // Only parse a PDF that is already present in the verified book cache.
-      const blob = await coverDB.getBookContent(fileName);
-      if (cancelled || !blob) return;
-      await ensureGhostAround(blob, fileName, pageNumber);
+      // Opening establishes the actual PDF source before mounting this view.
+      if (cancelled || !fileUrl || isRestoring) return;
+      await ensureGhostAround(fileUrl, fileName, pageNumber);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isReaderMode, fileType, fileName, fileUrl, pageNumber]);
+  }, [isReaderMode, fileType, fileName, fileUrl, pageNumber, isRestoring]);
 
   // After reader↔PDF switch, scroll back to frozen page once DOM exists
   useEffect(() => {
     const target = modeSwitchPageRef.current;
     if (target == null || !fileUrl) return;
-    if (isReaderMode && fileType === 'pdf' && (!textContent || textContent.length === 0)) return;
+    // A placeholder is not a restored page. Keep the freeze until the target
+    // text has actually arrived, otherwise a cold deep link can save page 1.
+    if (isReaderMode && fileType === 'pdf' && (!isGhostReadyForRestore(textContent?.[target - 1]) || numPages === 0)) return;
 
     let cancelled = false;
     const settle = () => {
@@ -942,7 +942,7 @@ export default function App() {
       cancelAnimationFrame(raf);
       clearTimeout(safety);
     };
-  }, [isReaderMode, textContent, fileType, fileUrl, zoom, setIsRestoring, setPageNumber]);
+  }, [isReaderMode, textContent, numPages, fileType, fileUrl, zoom, setIsRestoring, setPageNumber]);
 
   const resolvePageTextForTts = async (): Promise<string> => {
     const fromState = textContentRef.current?.[pageNumber - 1];
@@ -1021,9 +1021,11 @@ export default function App() {
     }
     restoreTargetPageRef.current = null;
     modeSwitchPageRef.current = null;
-    ghostPdfRef.current = null;
-    ghostPdfLoadingRef.current = null;
-    ghostInflightRef.current.clear();
+    offlinePdfRef.current?.cancel();
+    offlinePdfRef.current = null;
+    pdfTextSessionRef.current.reset();
+    ghostInflightRef.current = new Set();
+    if (ghostPersistTimerRef.current) clearTimeout(ghostPersistTimerRef.current);
     if (fileUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileUrl);
     }
@@ -1094,6 +1096,15 @@ export default function App() {
     }
 
     const requestId = ++openRequestRef.current;
+    offlinePdfRef.current?.cancel();
+    offlinePdfRef.current = null;
+    pdfTextSessionRef.current.reset();
+    ghostInflightRef.current = new Set();
+    if (ghostPersistTimerRef.current) clearTimeout(ghostPersistTimerRef.current);
+    setTextContent(null);
+    textContentRef.current = null;
+    setNumPages(0);
+    setIsLoaded(false);
     resetCommittedPage();
 
     debugInfo('reader', 'open requested', { filename, type: book.type, forcedPage: forcePage ?? fallbackPage ?? null });
@@ -1128,94 +1139,65 @@ export default function App() {
       ? Promise.resolve(null)
       : loadProgress(filename);
 
-    // Discover PDFs paint a readable text view before downloading/parsing the PDF.
-    // fileUrl is only a mounted-reader sentinel while ReaderView is in text mode;
-    // it is atomically replaced with the real PDF URL in the background.
     if (textFirstPdf) {
-      const previewText = initialReaderHtml || 'Preparando texto…';
-      const previewUrl = URL.createObjectURL(new Blob([previewText], { type: 'text/plain' }));
-      setFileUrl(previewUrl);
-      setIsFeedView(false);
-
-      if (skipHistory) {
-        const onBookUrl = !!resolveBookRoute(window.location.pathname, window.location.search);
-        const hasReaderState = window.history.state?.view === 'reader';
-        if (!onBookUrl || !hasReaderState || window.history.length <= 1) {
-          seedReaderHistoryStack(bookPath, filename);
-        }
-      } else {
-        pushReaderHistory(bookPath, filename);
-      }
-
-      let cachedGhost: string | null = null;
       try {
-        cachedGhost = await coverDB.getGhostText(filename);
-      } catch { /* IndexedDB failure must not block opening */ }
-      if (requestId !== openRequestRef.current) return;
-
-      if (cachedGhost) {
-        loadGhostTextToState(cachedGhost);
-        if (cachedGhost.startsWith('[')) {
+        const [source, progress, cachedGhost] = await Promise.all([
+          pdfSource(filename, (id) => coverDB.getBookContent(id)),
+          progressPromise,
+          coverDB.getGhostText(filename).catch(() => null),
+        ]);
+        if (requestId !== openRequestRef.current) {
+          if (source.startsWith('blob:')) URL.revokeObjectURL(source);
+          return;
+        }
+        const target = forcePage ?? progress?.page ?? fallbackPage ?? 1;
+        restoreTargetPageRef.current = target;
+        modeSwitchPageRef.current = target;
+        setPageNumber(target);
+        commitPage(target);
+        setIsRestoring(true);
+        if (cachedGhost) {
+          loadGhostTextToState(cachedGhost);
           try {
             const pages = JSON.parse(cachedGhost);
-            if (Array.isArray(pages) && pages.length > 0) setNumPages(pages.length);
-          } catch { /* legacy ghost formats are handled by loadGhostTextToState */ }
+            if (Array.isArray(pages)) setNumPages(pages.length);
+          } catch { /* Older text caches are normalized by the loader. */ }
         }
-      } else {
-        // The Discover fragment is already in memory: show it now instead of a spinner.
-        const previewPages = [previewText];
-        textContentRef.current = previewPages;
-        setTextContent(previewPages);
-        setNumPages(1);
-        restoreTargetPageRef.current = null;
-        modeSwitchPageRef.current = null;
-      }
-
-      if (hasForcedPage && cachedGhost) {
-        restoreTargetPageRef.current = forcePage;
-        modeSwitchPageRef.current = forcePage;
-        setPageNumber(forcePage);
-        commitPage(forcePage);
-      } else {
-        setPageNumber(1);
-      }
-      setIsLoaded(true);
-      setIsRestoring(false);
-
-      // Full PDF work happens only after the readable view has painted.
-      void getBookBlob(book).then(async (blob) => {
+        else {
+          // Keep the fragment at its actual page, never at a transient page one.
+          const preview = emptyGhostPages(target);
+          if (initialReaderHtml) preview[target - 1] = `<div class="ghost-draft">${initialReaderHtml}</div>`;
+          textContentRef.current = preview;
+          setTextContent(preview);
+          setNumPages(target);
+        }
+        setFileUrl(source);
+        setIsFeedView(false);
+        if (skipHistory) seedReaderHistoryStack(bookPath, filename);
+        else pushReaderHistory(bookPath, filename);
+        setIsLoaded(true);
+        void ensureGhostAround(source, filename, target);
+      } catch (err) {
         if (requestId !== openRequestRef.current) return;
-        const targetPage = forcePage || fallbackPage || pageNumberRef.current || 1;
-        restoreTargetPageRef.current = targetPage;
-        modeSwitchPageRef.current = targetPage;
-        setIsRestoring(true);
-
-        const realUrl = URL.createObjectURL(blob);
-        setFileUrl((current) => {
-          if (current?.startsWith('blob:')) URL.revokeObjectURL(current);
-          return realUrl;
-        });
-
-        await ensureGhostAround(blob, filename, targetPage);
-        if (requestId !== openRequestRef.current) return;
-        setPageNumber(targetPage);
-        commitPage(targetPage);
-      }).catch((err) => {
-        debugWarn('reader', 'background PDF warm failed', { filename, error: err instanceof Error ? err.message : String(err) });
-        restoreTargetPageRef.current = null;
-        modeSwitchPageRef.current = null;
         setIsRestoring(false);
-        // Keep the already-visible fragment/text cache usable offline.
-      });
+        restoreTargetPageRef.current = null;
+        modeSwitchPageRef.current = null;
+        showToast('No se pudo abrir el libro.');
+      }
       return;
     }
 
-    const blobPromise = getBookBlob(book);
+    const sourcePromise = book.type === 'pdf'
+      ? pdfSource(filename, (id) => coverDB.getBookContent(id))
+      : getBookBlob(book);
 
     try {
-      const [blob, progress] = await Promise.all([blobPromise, progressPromise]);
-      if (requestId !== openRequestRef.current) return;
-      const url = URL.createObjectURL(blob);
+      const [source, progress] = await Promise.all([sourcePromise, progressPromise]);
+      if (requestId !== openRequestRef.current) {
+        if (typeof source === 'string' && source.startsWith('blob:')) URL.revokeObjectURL(source);
+        return;
+      }
+      const url = typeof source === 'string' ? source : URL.createObjectURL(source);
       setFileUrl(url);
       setIsFeedView(false);
 
@@ -1229,7 +1211,7 @@ export default function App() {
         pushReaderHistory(bookPath, filename);
       }
       if (book.type === 'txt') {
-        const text = await blob.text();
+        const text = await (source as Blob).text();
         if (requestId !== openRequestRef.current) return;
         setTextContent([text]);
         setNumPages(1);
@@ -1489,7 +1471,7 @@ export default function App() {
     <div className={cn("fixed inset-0 overflow-hidden flex flex-col transition-colors duration-500", themeStyles[theme])} onMouseMove={resetUITimer} onTouchStart={resetUITimer}>
       <button
         onClick={() => setShowDiagnostics(true)}
-        className="fixed top-1 right-2 z-40 min-w-11 min-h-11 px-2 grid place-items-center text-[10px] font-mono opacity-45 select-none hover:opacity-100 focus:opacity-100 transition-opacity uppercase tracking-[0.12em] cursor-help"
+        className="fixed top-1 right-2 z-[300] min-w-11 min-h-8 px-2 rounded bg-stone-950/80 text-stone-200 grid place-items-center text-[10px] font-mono opacity-80 select-none hover:opacity-100 focus:opacity-100 transition-opacity uppercase tracking-[0.12em] cursor-help"
         aria-label="Abrir diagnóstico"
         title="Diagnóstico"
       >{APP_VERSION}</button>
@@ -1541,7 +1523,7 @@ export default function App() {
             top: 0,
             paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
             paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
-            paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+            paddingRight: 'max(6rem, env(safe-area-inset-right))',
           }}
         >
           <button
@@ -1775,6 +1757,7 @@ export default function App() {
             paperPath={library.find(b => b.filename === fileName)?.paper ?? null}
             pageRatios={pageRatios} 
             onLoadSuccess={async (pdf) => {
+              if (!fileUrl.startsWith('blob:')) cacheOpenedPdf(pdf, fileName);
               const fallback = 595 / 842;
               const ratios = Array(pdf.numPages).fill(fallback);
               rememberPageCount(fileName, pdf.numPages);
@@ -1793,34 +1776,13 @@ export default function App() {
                 setIsLoaded(true);
               }
 
-              // Fill page ratios in background — outward from the page being
-              // read, so placeholders around the open page correct first.
-              // Cancellable: stops the moment another book is opened.
-              const openRequestId = openRequestRef.current;
-              void (async () => {
-                try {
-                  const total = pdf.numPages;
-                  const centerPage = restoreTargetPageRef.current ?? pageNumber;
-                  const order = centerOutOrder(total, centerPage - 1);
-                  const batchSize = 8;
-                  for (let i = 0; i < order.length; i += batchSize) {
-                    if (openRequestRef.current !== openRequestId) return;
-                    await Promise.all(order.slice(i, i + batchSize).map((j) =>
-                      pdf.getPage(j + 1)
-                        .then((p) => {
-                          const vp = p.getViewport({ scale: 1 });
-                          ratios[j] = vp.width / vp.height;
-                        })
-                        .catch(() => {})
-                    ));
-                    setPageRatios([...ratios]);
-                    await yieldToUi();
-                  }
-                } catch (e) {
-                  console.error('Background ratio extraction failed:', e);
-                }
-              })();
-            }} 
+            }}
+            onPageRatio={(page, ratio) => setPageRatios((current) => {
+              if (current[page - 1] === ratio) return current;
+              const next = [...current];
+              next[page - 1] = ratio;
+              return next;
+            })}
             onLoadError={(err) => {
               console.error('PDF Load Error:', err);
               setIsLoaded(true); // Dismiss overlay so error message in ReaderView is visible

@@ -12,7 +12,20 @@ export interface AutoCoverBook {
 }
 
 const STORAGE_KEY = 'catreader_auto_covers_v1';
-const MAX_CONCURRENT_LOOKUPS = 4;
+const MAX_CONCURRENT_LOOKUPS = 2;
+const LOOKUP_TIMEOUT_MS = 5000;
+const misses = new Map<string, number>();
+
+async function fetchCoverJson(url: string): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LOOKUP_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return response.ok ? await response.json() : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const UNKNOWN_AUTHORS = new Set(['', 'desconocido', 'autor desconocido', 'unknown', 'unknown author']);
 
 let activeLookups = 0;
@@ -160,9 +173,8 @@ async function lookupGoogleBooks(book: AutoCoverBook): Promise<AutoCoverResult |
   if (!title) return null;
 
   const q = `intitle:${title}${author ? ` inauthor:${author}` : ''}`;
-  const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&printType=books`);
-  if (!response.ok) return null;
-  const data = await response.json();
+  const data = await fetchCoverJson(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&printType=books`);
+  if (!data) return null;
   const items = Array.isArray(data.items) ? data.items : [];
 
   const ranked = items
@@ -188,9 +200,8 @@ async function lookupOpenLibrary(book: AutoCoverBook): Promise<AutoCoverResult |
 
   const params = new URLSearchParams({ title, limit: '5' });
   if (author) params.set('author', author);
-  const response = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
-  if (!response.ok) return null;
-  const data = await response.json();
+  const data = await fetchCoverJson(`https://openlibrary.org/search.json?${params.toString()}`);
+  if (!data) return null;
   const docs = Array.isArray(data.docs) ? data.docs : [];
 
   const ranked = docs
@@ -230,6 +241,7 @@ async function resolveNetwork(book: AutoCoverBook): Promise<AutoCoverResult | nu
  * capped so a 4x4 mobile rack does not stampede Google Books/Open Library.
  */
 export function resolveAutoCover(book: AutoCoverBook): Promise<AutoCoverResult | null> {
+  if (Date.now() - (misses.get(book.filename) ?? -Infinity) < 60000) return Promise.resolve(null);
   const cached = readCache()[book.filename];
   if (cached?.url && !badUrls.has(cached.url)) return Promise.resolve(cached);
 
@@ -239,6 +251,7 @@ export function resolveAutoCover(book: AutoCoverBook): Promise<AutoCoverResult |
   const promise = schedule(() => resolveNetwork(book))
     .then((result) => {
       if (result) saveCached(book.filename, result);
+      else misses.set(book.filename, Date.now());
       return result;
     })
     .finally(() => inflight.delete(book.filename));

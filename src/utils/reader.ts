@@ -1,6 +1,6 @@
 /** Page clamp / nav / PDF render-window helpers. */
 
-export const PDF_RENDER_WINDOW = 8;
+export const PDF_RENDER_WINDOW = 2;
 
 export function clampPage(page: number, numPages: number): number {
   if (numPages <= 0) return 1;

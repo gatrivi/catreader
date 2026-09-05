@@ -85,9 +85,16 @@ async function imageFromBlob(blob: Blob): Promise<HTMLImageElement> {
 
 async function createTinyThumb(url: string): Promise<string | null> {
   if (!url.startsWith('http')) return null;
-  const response = await fetch(url, { cache: 'force-cache', mode: 'cors' });
-  if (!response.ok) return null;
-  const blob = await response.blob();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  let blob: Blob;
+  try {
+    const response = await fetch(url, { cache: 'force-cache', mode: 'cors', signal: controller.signal });
+    if (!response.ok) return null;
+    blob = await response.blob();
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!blob.type.startsWith('image/')) return null;
   const image = await imageFromBlob(blob);
   const canvas = document.createElement('canvas');

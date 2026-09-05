@@ -1,8 +1,12 @@
-export const APP_VERSION = 'v2.10.20';
+export const APP_VERSION = 'v2.10.21';
 
 export const RELEASE_NOTES_SEEN_KEY = `catreader_release_notes_seen_${APP_VERSION}`;
 
 export const RELEASE_NOTES = [
+  'PDFs por demanda: sin esperar la descarga completa ni recorrer todo el libro.',
+  'Menos paginas simultaneas y un solo runtime PDF para reducir memoria y carga.',
+  'Modo lector conserva la pagina al abrir y cancela trabajo de libros anteriores.',
+  'Portadas disponibles visibles desde el inicio; busquedas con limite de espera.',
   'El PDF original vuelve a usar el worker recomendado por React-PDF.',
   'Firebase ya no inventa usuarios guest cuando Auth tarda o la red falla.',
   'El sync cloud corta rápido si Firebase está offline y CatReader sigue local-first.',

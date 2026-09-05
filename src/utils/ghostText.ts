@@ -2,6 +2,13 @@
 
 export const GHOST_PREFETCH = 1;
 
+export const GHOST_ERROR_HTML = '<p class="ghost-draft ghost-error">No se pudo cargar el texto. Vuelve a abrir el libro o usa Ver original PDF.</p>';
+
+/** A placeholder must not release the progress freeze; errors offer recovery. */
+export function isGhostReadyForRestore(html: string | null | undefined): boolean {
+  return isGhostComplete(html) || !!html?.includes('ghost-error');
+}
+
 export const GHOST_DRAFT_CLASS = 'ghost-draft';
 
 /** 1-based page numbers around center (inclusive). window=0 → only center. */

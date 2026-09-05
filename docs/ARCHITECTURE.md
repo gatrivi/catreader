@@ -1,4 +1,4 @@
-# CatReader architecture (v2.10.19)
+# CatReader architecture (v2.10.21)
 
 TLDR map of the live app. Prefer this over README fluff / old session notes.
 
@@ -67,9 +67,10 @@ TLDR map of the live app. Prefer this over README fluff / old session notes.
 | `routing` | `/shelf/book[/page[/quad]]`, legacy `?book=&page=`, share URLs |
 | `readingFeed` | Stable feed order and PDF/EPUB/TXT fragment locators |
 | `fragmentReports` | Local quality reports for bad feed fragments |
-| `reader` | clamp/offset page, `PDF_RENDER_WINDOW=8`, library search filter |
+| `reader` | clamp/offset page, `PDF_RENDER_WINDOW=2`, library search filter |
 | — | Content cache LRU is budget-bounded (~400 MB / 40 books) so perusing does not thrash |
 | `progressGuard` | FEATURE #1: merge/save/observer guards — never clobber page |
+| `pdfSource` / `pdfTextSession` | Cached blob or range URL; one retryable, cancellable text document per book |
 | `pdfParser` | Semantic page → HTML for “Modo lector” |
 | — | **TODO:** ghost extract must follow [`READER_MODE_LAZY.md`](READER_MODE_LAZY.md) |
 | `paperSoul` | Stain falloff, ink-variance wrappers, safe book ids |

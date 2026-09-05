@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { isPageInRenderWindow } from '../utils/reader';
+import { PDF_LOAD_OPTIONS } from '../utils/pdfSource';
 import { PaperLayer } from './PaperLayer';
 import { usePaperTexture } from '../hooks/usePaperTexture';
 import { applyInkVariance, stainsForPage } from '../utils/paperSoul';
@@ -35,6 +36,7 @@ interface ReaderViewProps {
   onLoadSuccess: (pdf: any) => void;
   onLoadError?: (error: Error) => void;
   onPageRenderSuccess: (p: number) => void;
+  onPageRatio: (p: number, ratio: number) => void;
   onPageRenderError?: (p: number, error: Error) => void;
   onTextSelection?: (text: string, x: number, y: number) => void;
   onEpubLocationChange?: (cfi: string) => void;
@@ -58,6 +60,7 @@ interface PageItemProps {
   isCaptureMode?: boolean;
   onCapture?: (base64: string) => void;
   onRenderSuccess: (p: number) => void;
+  onPageRatio: (p: number, ratio: number) => void;
   onRenderError?: (p: number, error: Error) => void;
 }
 
@@ -73,6 +76,7 @@ const PageItem: React.FC<PageItemProps> = ({
   isCaptureMode,
   onCapture,
   onRenderSuccess,
+  onPageRatio,
   onRenderError,
 }) => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'rendered' | 'error'>('idle');
@@ -233,6 +237,11 @@ const PageItem: React.FC<PageItemProps> = ({
             pageNumber={pageNum}
             scale={zoom}
             width={800}
+            devicePixelRatio={Math.min(window.devicePixelRatio || 1, 1.5)}
+            onLoadSuccess={(page) => {
+              const viewport = page.getViewport({ scale: 1 });
+              onPageRatio(pageNum, viewport.width / viewport.height);
+            }}
             renderTextLayer={true}
             renderAnnotationLayer={true}
             loading={null}
@@ -298,6 +307,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   onLoadSuccess,
   onLoadError,
   onPageRenderSuccess,
+  onPageRatio,
   onPageRenderError,
   onTextSelection,
   onEpubLocationChange,
@@ -454,6 +464,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         >
           <Document
             file={fileUrl}
+            options={PDF_LOAD_OPTIONS}
             onLoadSuccess={handleLoadSuccess}
             onLoadError={handleLoadError}
             loading={null}
@@ -493,6 +504,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                         isCaptureMode={isCaptureMode}
                         onCapture={onCapture}
                         onRenderSuccess={onPageRenderSuccess}
+                        onPageRatio={onPageRatio}
                         onRenderError={onPageRenderError}
                       />
                     </div>

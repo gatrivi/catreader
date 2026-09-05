@@ -52,7 +52,7 @@ interface BookCoverProps {
   showLabels?: boolean;
   /** Fit cover height inside a fixed grid cell (library rack) */
   fillHeight?: boolean;
-  /** After library hydrate: never fall back to book.svg (covers map is SoT) */
+  /** Whether persisted covers have finished loading. */
   coversHydrated?: boolean;
 }
 
@@ -77,7 +77,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   React.useEffect(() => {
     setCoverLoadFailed(false);
-  }, [cover]);
+  }, [book.filename, cover]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -100,7 +100,6 @@ export const BookCover: React.FC<BookCoverProps> = ({
     void resolveAutoCover(book).then((result) => {
       if (cancelled || !result) return;
       setAutoCover(result);
-      void coverDB.saveCover(book.filename, result.url).catch(() => {});
       debugInfo('cover', 'auto cover resolved', {
         filename: book.filename,
         source: result.source,
@@ -115,6 +114,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
 
   const handleCoverLoad = () => {
     const source = autoCover?.url || cover;
+    if (autoCover) void coverDB.saveCover(book.filename, autoCover.url).catch(() => {});
     if (!source?.startsWith('http')) return;
     void cacheCoverThumbnail(book.filename, source);
   };
@@ -122,11 +122,12 @@ export const BookCover: React.FC<BookCoverProps> = ({
   const handleCoverLoadError = () => {
     if (autoCover) {
       invalidateAutoCover(book.filename, autoCover.url);
-      void coverDB.deleteCover(book.filename).catch(() => {});
       setAutoCover(null);
       setAutoCoverRetry((value) => value + 1);
+    } else {
+      if (cover) invalidateAutoCover(book.filename, cover);
+      setCoverLoadFailed(true);
     }
-    setCoverLoadFailed(true);
     debugWarn('cover', 'image failed to load', {
       filename: book.filename,
       source: autoCover?.source || book.coverSource?.type || 'unknown',
@@ -150,22 +151,17 @@ export const BookCover: React.FC<BookCoverProps> = ({
     return effectiveCover;
   }, [effectiveCover]);
 
-  const isGeneratedCover = !autoCover && (
-    book.coverSource?.type === 'ai-generated' ||
-    cover?.includes('<svg') ||
-    cover?.startsWith('data:image/svg')
-  );
-  const usableDisplayCover = (coverLoadFailed && !autoCover) || isGeneratedCover ? null : displayCover;
+  const usableDisplayCover = coverLoadFailed && !autoCover ? null : displayCover;
 
   const svgDataUrl = React.useMemo(() => {
-    if (coversHydrated || !book.svg || usableDisplayCover || isGeneratedCover) return null;
+    if (!book.svg || usableDisplayCover || book.coverSource?.type === 'user-custom') return null;
     try {
       return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(book.svg)))}`;
     } catch (e) {
       console.error('Failed to encode book.svg:', e);
       return null;
     }
-  }, [book.svg, usableDisplayCover, coversHydrated, isGeneratedCover]);
+  }, [book.svg, usableDisplayCover, book.coverSource?.type]);
 
   const isSupported = SUPPORTED_TYPES.includes(book.type.toLowerCase());
 
