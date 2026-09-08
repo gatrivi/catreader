@@ -1,8 +1,11 @@
-export const APP_VERSION = 'v2.10.21';
+export const APP_VERSION = 'v2.10.22';
 
 export const RELEASE_NOTES_SEEN_KEY = `catreader_release_notes_seen_${APP_VERSION}`;
 
 export const RELEASE_NOTES = [
+  'PDFs: una sola descarga con progreso (antes: decenas de pedidos de 64KB → apertura de ~20s).',
+  'La descarga queda en cache: segundas aperturas al instante.',
+  'Sin descarga duplicada en segundo plano mientras leés.',
   'PDFs por demanda: sin esperar la descarga completa ni recorrer todo el libro.',
   'Menos paginas simultaneas y un solo runtime PDF para reducir memoria y carga.',
   'Modo lector conserva la pagina al abrir y cancela trabajo de libros anteriores.',

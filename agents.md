@@ -36,6 +36,7 @@ Completed tasks are moved to [completed_tasks.md](file:///c:/zengatrivi/REACTJS/
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 **FEATURE #1:** [docs/PROGRESS_SACRED.md](docs/PROGRESS_SACRED.md)
 **READER MODE:** [docs/READER_MODE_LAZY.md](docs/READER_MODE_LAZY.md)
+**PDF OPEN SLOWNESS:** [docs/PDF_OPEN_PERFORMANCE.md](docs/PDF_OPEN_PERFORMANCE.md)
 
 ### CATTS / PC stack (audiolibros)
 - PC repo: `E:\zengatrivi-drive-e\catts` · Tailscale `100.87.252.18`

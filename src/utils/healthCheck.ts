@@ -150,7 +150,7 @@ export async function runCriticalSelfTest(
     const assetFailures: string[] = [];
     for (const book of sampleFiles) {
       try {
-        const response = await fetcher(assetUrl(baseUrl, `books/${encodeURIComponent(book.filename)}`), {
+        const response = await fetcher(assetUrl(baseUrl, `books/${book.filename}`), {
           method: 'HEAD',
           cache: 'no-store',
         });

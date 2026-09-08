@@ -549,6 +549,22 @@ export default function App() {
     }
   };
 
+  /** Throttled download indicator for the one-shot PDF fetch. */
+  const downloadProgressStampRef = useRef(0);
+  const reportDownloadProgress = useCallback((received: number, total: number) => {
+    const now = Date.now();
+    if (received !== total && now - downloadProgressStampRef.current < 250) return;
+    downloadProgressStampRef.current = now;
+    const pct = total > 0 ? Math.min(99, Math.floor((received / total) * 100)) : 0;
+    setGlobalStatus(pct > 0 ? `Descargando libro… ${pct}%` : 'Descargando libro…');
+  }, []);
+
+  const downloadPdfSource = useCallback((filename: string) =>
+    pdfSource(filename, (id) => coverDB.getBookContent(id), {
+      writeCache: (f, b) => coverDB.saveBookContent(f, b),
+      onProgress: reportDownloadProgress,
+    }), [reportDownloadProgress]);
+
   const getBookBlob = (book: LibraryBook): Promise<Blob> => {
     const existing = bookBlobPromisesRef.current.get(book.filename);
     if (existing) return existing;
@@ -1142,10 +1158,11 @@ export default function App() {
     if (textFirstPdf) {
       try {
         const [source, progress, cachedGhost] = await Promise.all([
-          pdfSource(filename, (id) => coverDB.getBookContent(id)),
+          downloadPdfSource(filename),
           progressPromise,
           coverDB.getGhostText(filename).catch(() => null),
         ]);
+        setGlobalStatus(null);
         if (requestId !== openRequestRef.current) {
           if (source.startsWith('blob:')) URL.revokeObjectURL(source);
           return;
@@ -1179,6 +1196,7 @@ export default function App() {
         void ensureGhostAround(source, filename, target);
       } catch (err) {
         if (requestId !== openRequestRef.current) return;
+        setGlobalStatus(null);
         setIsRestoring(false);
         restoreTargetPageRef.current = null;
         modeSwitchPageRef.current = null;
@@ -1188,11 +1206,12 @@ export default function App() {
     }
 
     const sourcePromise = book.type === 'pdf'
-      ? pdfSource(filename, (id) => coverDB.getBookContent(id))
+      ? downloadPdfSource(filename)
       : getBookBlob(book);
 
     try {
       const [source, progress] = await Promise.all([sourcePromise, progressPromise]);
+      setGlobalStatus(null);
       if (requestId !== openRequestRef.current) {
         if (typeof source === 'string' && source.startsWith('blob:')) URL.revokeObjectURL(source);
         return;
@@ -1258,6 +1277,7 @@ export default function App() {
       // A failed network request must return the user to a usable shelf, not
       // leave a fake loading state running for another five seconds.
       setGlobalError(null);
+      setGlobalStatus(null);
       setFileUrl(null);
       setFileName('');
       setIsLoaded(true);

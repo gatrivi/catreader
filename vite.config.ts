@@ -45,25 +45,10 @@ export default defineConfig(({mode}) => {
           // Exclude books from precache to avoid build errors and huge initial downloads
           globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,json}'],
           globIgnores: ['**/books/*.pdf', '**/books/*.epub', '**/feed.json'],
-          // Use runtime caching for books instead. EPUB/TXT should be just as
-          // resilient offline as PDFs once the user has opened them.
+          // Books are NOT runtime-cached here: pdf.js range requests return 206,
+          // which CacheFirst refuses to cache, so a books-cache route could never
+          // fill. Offline books live in IndexedDB (see utils/pdfSource.ts).
           runtimeCaching: [
-            {
-              urlPattern: /\/books\/.*\.(pdf|epub|txt)$/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'books-cache',
-                // Serve correct byte slices when a full PDF is already cached.
-                rangeRequests: true,
-                expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Days
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
             {
               urlPattern: /\/feed\.json$/,
               handler: 'NetworkFirst',

@@ -13,7 +13,7 @@ describe('text PDF lifecycle', () => {
     expect(session.load('/books/a.pdf', 'a.pdf')).toBe(first);
     await first;
     expect(runtime.getDocument).toHaveBeenCalledTimes(1);
-    expect(runtime.getDocument).toHaveBeenCalledWith(expect.objectContaining({ url: '/books/a.pdf', disableAutoFetch: true }));
+    expect(runtime.getDocument).toHaveBeenCalledWith(expect.objectContaining({ url: '/books/a.pdf', useSystemFonts: true }));
     session.reset();
     expect(task.destroy).toHaveBeenCalledTimes(1);
   });

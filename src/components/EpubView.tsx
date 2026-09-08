@@ -114,6 +114,7 @@ export const EpubView: React.FC<EpubViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHits, setSearchHits] = useState<EpubSearchHit[]>([]);
   const [searchIndex, setSearchIndex] = useState<number>(0);
+  const [openFailed, setOpenFailed] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
   const applyTheme = () => {
@@ -200,6 +201,8 @@ export const EpubView: React.FC<EpubViewProps> = ({
   useEffect(() => {
     if (!viewerRef.current) return;
 
+    let disposed = false;
+
     setLoading(true);
     setShareUrl('');
     setSearchHits([]);
@@ -215,23 +218,85 @@ export const EpubView: React.FC<EpubViewProps> = ({
     }
 
     const targetLocation = urlState.cfi || initialLocation;
-    const book = ePub(fileUrl);
-    bookRef.current = book;
 
-    const rendition = book.renderTo(viewerRef.current, {
-      width: '100%',
-      height: '100%',
-      flow: 'paginated',
-      manager: 'default',
-    });
+    const setup = async () => {
+      // epubjs never resolves `book.opened` for blob: URLs — the reader hangs
+      // on its spinner forever. Hand it raw bytes for locally-held files;
+      // http(s) URLs stay as-is.
+      const input = /^blob:/.test(fileUrl)
+        ? await fetch(fileUrl).then((r) => r.arrayBuffer())
+        : fileUrl;
+      if (disposed || !viewerRef.current) return;
+      const book = ePub(input);
+      bookRef.current = book;
 
-    renditionRef.current = rendition;
+      const rendition = book.renderTo(viewerRef.current, {
+        width: '100%',
+        height: '100%',
+        flow: 'paginated',
+        manager: 'default',
+      });
+      renditionRef.current = rendition;
 
-    const displayPromise = targetLocation 
-      ? rendition.display(targetLocation.toString()) 
-      : rendition.display();
+      rendition.on('relocated', (location: { start?: { cfi?: string } } | undefined) => {
+        const cfi = location?.start?.cfi;
+        if (!cfi) return;
+        currentCfiRef.current = cfi;
+        if (onLocationChange) onLocationChange(cfi);
+        writeEpubUrlState({
+          ...searchStateRef.current,
+          cfi,
+          highlight: highlightedCfiRef.current,
+        });
+        if (highlightedCfiRef.current || searchStateRef.current.query) {
+          setShareUrl(window.location.href);
+        }
+      });
 
-    displayPromise.then(async () => {
+      rendition.on('selected', (cfiRange: string, contents: { window?: { getSelection?: () => { removeAllRanges: () => void } } } | undefined) => {
+        if (!cfiRange) return;
+        highlightedCfiRef.current = cfiRange;
+        addUrlHighlight(rendition, cfiRange);
+        writeEpubUrlState({
+          ...searchStateRef.current,
+          cfi: currentCfiRef.current || cfiRange,
+          highlight: highlightedCfiRef.current,
+        });
+        setShareUrl(window.location.href);
+
+        try {
+          contents?.window?.getSelection()?.removeAllRanges();
+        } catch {
+          // Selection cleanup is non-critical.
+        }
+      });
+
+      // Handle internal links
+      rendition.on('linkClicked', (href: string) => {
+        rendition.display(href);
+      });
+
+      try {
+        // Corrupt files (e.g. an HTML file saved as .epub) make epubjs hang
+        // instead of rejecting — race a timeout so the reader fails visibly.
+        const displayWork = targetLocation
+          ? rendition.display(targetLocation.toString())
+          : rendition.display();
+        await Promise.race([
+          displayWork,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('EPUB open timed out')), 45000)
+          ),
+        ]);
+      } catch (error) {
+        console.error('[EPUB] Display failed:', error);
+        if (!disposed) {
+          setOpenFailed(true);
+          setLoading(false);
+        }
+        return;
+      }
+      if (disposed) return;
       setLoading(false);
       applyTheme();
 
@@ -244,50 +309,12 @@ export const EpubView: React.FC<EpubViewProps> = ({
       if (urlState.query) {
         await runSearch(urlState.query, urlState.index || 1);
       }
-    }).catch((error) => {
-      console.error('[EPUB] Display failed:', error);
-      setLoading(false);
-    });
+    };
 
-    rendition.on('relocated', (location: any) => {
-      const cfi = location?.start?.cfi;
-      if (!cfi) return;
-      currentCfiRef.current = cfi;
-      if (onLocationChange) onLocationChange(cfi);
-      writeEpubUrlState({
-        ...searchStateRef.current,
-        cfi,
-        highlight: highlightedCfiRef.current,
-      });
-      if (highlightedCfiRef.current || searchStateRef.current.query) {
-        setShareUrl(window.location.href);
-      }
-    });
-
-    rendition.on('selected', (cfiRange: string, contents: any) => {
-      if (!cfiRange) return;
-      highlightedCfiRef.current = cfiRange;
-      addUrlHighlight(rendition, cfiRange);
-      writeEpubUrlState({
-        ...searchStateRef.current,
-        cfi: currentCfiRef.current || cfiRange,
-        highlight: cfiRange,
-      });
-      setShareUrl(window.location.href);
-
-      try {
-        contents?.window?.getSelection()?.removeAllRanges();
-      } catch {
-        // Selection cleanup is non-critical.
-      }
-    });
-
-    // Handle internal links
-    rendition.on('linkClicked', (href: string) => {
-      rendition.display(href);
-    });
+    void setup();
 
     return () => {
+      disposed = true;
       if (bookRef.current) {
         bookRef.current.destroy();
         bookRef.current = null;
@@ -320,6 +347,13 @@ export const EpubView: React.FC<EpubViewProps> = ({
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <Loader2 className="animate-spin text-amber-600" size={48} />
+        </div>
+      )}
+      {openFailed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 text-center p-8">
+          <p className="text-sm font-serif text-stone-300 max-w-sm">
+            No pudimos abrir este EPUB — el archivo parece dañado. Probá volver a subirlo o abrir otra edición.
+          </p>
         </div>
       )}
       
