@@ -1,16 +1,25 @@
+import { coverDB } from '../services/db';
+
 export interface CoverThumbEntry {
   filename: string;
   url: string;
 }
 
-const STORAGE_KEY = 'catreader_cover_thumbs_v1';
-const WIDTH = 48;
-const HEIGHT = 72;
+// v2 = display-size thumbs. v1 held 48×72 paint seeds — too blurry to display.
+const STORAGE_KEY = 'catreader_cover_thumbs_v2';
+const LEGACY_STORAGE_KEY = 'catreader_cover_thumbs_v1';
+// Display quality: crisp on the 4×4 rack and search grid at 2× DPR.
+// ~10-20KB webp per book — the whole 40-book library costs less than one photo.
+const WIDTH = 176;
+const HEIGHT = 264;
 const MAX_CONCURRENT = 2;
+// localStorage is only the sync fast-path; IDB holds the durable copy.
+const MAX_LOCAL_ENTRIES = 120;
 
 let cache: Record<string, string> = {};
 try {
   if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) cache = JSON.parse(raw);
   }
@@ -66,7 +75,21 @@ export function getAllCoverThumbs(): Record<string, string> {
 export function setCoverThumb(filename: string, dataUrl: string) {
   if (!dataUrl.startsWith('data:image/')) return;
   cache[filename] = dataUrl;
+  // Bound the sync fast-path; the durable copy lives in IndexedDB.
+  const keys = Object.keys(cache);
+  if (keys.length > MAX_LOCAL_ENTRIES) {
+    for (const key of keys.slice(0, keys.length - MAX_LOCAL_ENTRIES)) {
+      delete cache[key];
+    }
+  }
   schedulePersist();
+  persistToIdb(filename, dataUrl);
+}
+
+/** Durable copy so covers survive localStorage eviction and load fully offline. */
+function persistToIdb(filename: string, dataUrl: string) {
+  if (typeof indexedDB === 'undefined') return;
+  coverDB.saveCoverThumb(filename, dataUrl).catch(() => { /* Shelf falls back to the network URL. */ });
 }
 
 async function imageFromBlob(blob: Blob): Promise<HTMLImageElement> {

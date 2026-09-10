@@ -8,6 +8,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { Shelf } from '../hooks/useShelves';
 import type { PwaUpdateStatus } from '../hooks/usePwaUpdate';
+import { useCachedFilenames } from '../hooks/useCachedFilenames';
 import { filterLibraryBooks } from '../utils/reader';
 
 const LIBRARY_MODE_KEY = 'catreader_library_mode';
@@ -66,6 +67,9 @@ interface LibraryViewProps {
   savedBookCovers?: Record<string, boolean>;
   showCoverLabels?: boolean;
   onToggleCoverLabels?: () => void;
+  /** Filenames already stored on this device (cache badge). */
+  pinnedFiles?: Set<string>;
+  onTogglePin?: (filename: string) => void;
   onAddShelf?: () => void;
   onRemoveShelf?: (shelfId: string) => { count: number; destinationIndex: number } | null | void;
   coversHydrated?: boolean;
@@ -116,6 +120,8 @@ export const LibraryView = ({
   savedBookCovers,
   showCoverLabels,
   onToggleCoverLabels,
+  pinnedFiles,
+  onTogglePin,
   onAddShelf,
   onRemoveShelf,
   coversHydrated = false,
@@ -140,6 +146,7 @@ export const LibraryView = ({
   const settingsRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pfp = authService.getPFP();
+  const cachedFiles = useCachedFilenames();
 
   const setMode = (mode: LibraryMode) => {
     setLibraryMode(mode);
@@ -801,7 +808,7 @@ export const LibraryView = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-x-6 gap-y-16">
                   {filteredBooks.map(book => (
                     <div key={book.id} className="relative flex flex-col group/item">
-                       <BookCover 
+                       <BookCover
                           book={book}
                           cover={covers[book.filename]}
                           coversHydrated={coversHydrated}
@@ -813,6 +820,9 @@ export const LibraryView = ({
                           isSimplified={isSimplified}
                           isIdentifying={identifyingBookId === book.id}
                           isSavedInDb={savedBookCovers?.[book.filename]}
+                          cached={cachedFiles.has(book.filename)}
+                          pinned={pinnedFiles?.has(book.filename)}
+                          onTogglePin={() => onTogglePin?.(book.filename)}
                         />
                         {!isSimplified && <ShelfLedge />}
                     </div>
@@ -919,7 +929,7 @@ export const LibraryView = ({
                                 }
                               }}
                             >
-                              <BookCover 
+                              <BookCover
                                 book={book}
                                 cover={covers[book.filename]}
                                 coversHydrated={coversHydrated}
@@ -935,6 +945,9 @@ export const LibraryView = ({
                                 isSavedInDb={savedBookCovers?.[book.filename]}
                                 showLabels={showCoverLabels}
                                 fillHeight
+                                cached={cachedFiles.has(book.filename)}
+                                pinned={pinnedFiles?.has(book.filename)}
+                                onTogglePin={() => onTogglePin?.(book.filename)}
                               />
                               {!isSimplified && <ShelfLedge compact />}
                             </div>

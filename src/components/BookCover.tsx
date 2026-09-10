@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Share2, Sparkles, CassetteTape } from 'lucide-react';
+import { Check, Download, Pencil, Pin, PinOff, Share2, Sparkles, CassetteTape } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -54,6 +54,11 @@ interface BookCoverProps {
   fillHeight?: boolean;
   /** Whether persisted covers have finished loading. */
   coversHydrated?: boolean;
+  /** Book file is already stored on this device (no download needed). */
+  cached?: boolean;
+  /** Pinned books are never evicted from the device cache. */
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 export const BookCover: React.FC<BookCoverProps> = ({ 
@@ -70,6 +75,9 @@ export const BookCover: React.FC<BookCoverProps> = ({
   showLabels,
   fillHeight = false,
   coversHydrated = true,
+  cached,
+  pinned,
+  onTogglePin,
 }) => {
   const [coverLoadFailed, setCoverLoadFailed] = React.useState(false);
   const [autoCover, setAutoCover] = React.useState<AutoCoverResult | null>(null);
@@ -318,6 +326,35 @@ export const BookCover: React.FC<BookCoverProps> = ({
                 </div>
               )}
 
+              {!isSimplified && (cached === false || pinned) && (
+                <div className="absolute bottom-1.5 left-1.5 z-30 flex items-center gap-1">
+                  {cached === false && (
+                    <div
+                      className="p-1 rounded bg-black/60 backdrop-blur-md border border-amber-400/30 text-amber-300"
+                      title="Se descarga al abrir"
+                    >
+                      <Download size={9} />
+                    </div>
+                  )}
+                  {cached && (
+                    <div
+                      className="p-1 rounded bg-black/60 backdrop-blur-md border border-emerald-400/30 text-emerald-300"
+                      title="En el dispositivo"
+                    >
+                      <Check size={9} />
+                    </div>
+                  )}
+                  {pinned && (
+                    <div
+                      className="p-1 rounded bg-black/60 backdrop-blur-md border border-sky-400/30 text-sky-300"
+                      title="Fijado: nunca se borra del dispositivo"
+                    >
+                      <Pin size={9} className="fill-current" />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {!isSupported && (
                 <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-stone-900/40 backdrop-blur-[2px]">
                   <SadMonkIcon size={48} className="text-amber-500" />
@@ -350,7 +387,18 @@ export const BookCover: React.FC<BookCoverProps> = ({
           "absolute bottom-2 right-2 flex items-center gap-1.5 z-40 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 shadow-xl transition-all duration-300 transform",
           "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 translate-y-2 group-hover:translate-y-0"
         )}>
-          <button 
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin?.();
+            }}
+            className={cn("transition-colors", pinned ? "text-sky-300" : "text-white/80 hover:text-sky-300")}
+            title={pinned ? "Desfijar del dispositivo" : "Fijar en el dispositivo (nunca se borra)"}
+          >
+            {pinned ? <PinOff size={12} /> : <Pin size={12} />}
+          </button>
+          <div className="w-px h-3 bg-white/20 mx-0.5" />
+          <button
             onClick={(e) => {
               e.stopPropagation();
               onEdit();
@@ -361,7 +409,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
             <Pencil size={12} />
           </button>
           <div className="w-px h-3 bg-white/20 mx-0.5" />
-          <button 
+          <button
             onClick={(e) => {
               e.stopPropagation();
               if (onShare) onShare();

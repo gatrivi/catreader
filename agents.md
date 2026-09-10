@@ -57,9 +57,10 @@ keep a version number always visible in the upper right corneer of the app, and 
 
 [] implementation plans should really be little more than tldr
 
-### SESSION CONTEXT (2026-07-14)
+### SESSION CONTEXT (2026-09-09)
 
-- **Version:** `v2.10.19`
+- **Version:** `v2.10.23`
+- **OFFLINE:** books + cover thumbs cached in IDB; `navigator.storage.persist()` requested; pins ("keep on device") sync via metadata `pinned`.
 - **FEATURE #1 SACRED:** synced reading progress — see `docs/PROGRESS_SACRED.md`. NEVER clobber page on remount.
 - **READER MODE:** word→snippet→page→±1 prefetch — `docs/READER_MODE_LAZY.md`.
 - Live audio: headphones btn → CATTS `100.87.252.18:59200` `/tts/live`; selection or page start; wav cache IDB `ttsAudio`.

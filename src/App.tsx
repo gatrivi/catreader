@@ -75,6 +75,7 @@ import { PdfTextSession } from './utils/pdfTextSession';
 import { cachePdfAfterOpening } from './utils/pdfOfflineCache';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { debugError, debugInfo, debugWarn, installGlobalDebugCapture } from './utils/debugLog';
+import { requestPersistentStorage } from './utils/persistentStorage';
 
 const ReaderView = React.lazy(() =>
   import('./components/ReaderView').then((module) => ({ default: module.ReaderView }))
@@ -167,6 +168,8 @@ export default function App() {
 
   const [showDiagnostics, setShowDiagnostics] = useState(() => new URLSearchParams(window.location.search).get('debug') === '1');
   useEffect(() => installGlobalDebugCapture(), []);
+  // Keep downloaded books/covers on the device — browsers silently evict otherwise.
+  useEffect(() => { void requestPersistentStorage(); }, []);
   const [isSimplified, setIsSimplified] = useState(localStorage.getItem('catreader_simplified') === 'true');
   const [wallpaper, setWallpaper] = useState(localStorage.getItem('catreader_wallpaper') || 'gaston');
   const [customWallpaper, setCustomWallpaper] = useState<string | null>(localStorage.getItem('catreader_custom_wallpaper'));
@@ -243,6 +246,8 @@ export default function App() {
     enrichBookWithGemini,
     savedBookCovers,
     markCoverAsSaved,
+    pinnedFiles,
+    toggleBookPin,
     removeBook,
   } = useLibrary({
     showToast: (msg) => showToast(msg),
@@ -1745,6 +1750,8 @@ export default function App() {
             isSyncing={isSyncing} 
             enrichmentProgress={enrichmentProgress} 
             savedBookCovers={savedBookCovers}
+            pinnedFiles={pinnedFiles}
+            onTogglePin={(filename) => void toggleBookPin(filename)}
             pwaUpdate={{ status: pwaUpdate.status, onCheckForUpdate: pwaUpdate.checkForUpdate }}
             releaseNotesVersion={APP_VERSION}
             releaseNotesUnread={releaseNotesUnread}

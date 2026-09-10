@@ -4,6 +4,8 @@ import { coverDB } from '../services/db';
 import { createThumbnail } from '../utils/image';
 import { filterDeletedBooks } from '../utils/shelves';
 import { preferredCoverSource, shouldReplaceStoredCover, shouldSkipCoverFetch, isUserCustomCover, hasStoredCover, isSyntheticCover } from '../utils/covers';
+import { getCoverThumb, setCoverThumb } from '../utils/coverThumbCache';
+import { applyPinnedMap, getPinnedBookFilenames, isBookPinned, setBookPinned } from '../utils/pinnedBooks';
 import {
   coverMem,
   coverMemMerge,
@@ -56,7 +58,8 @@ export function useLibrary({
   isReading = false
 }: UseLibraryProps) {
   const [library, setLibrary] = useState<LibraryBook[]>([]);
-  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string; coverSource?: any }>>({});
+  const [enrichedMetadata, setEnrichedMetadata] = useState<Record<string, { title: string; author: string; svg?: string; coverSource?: any; pinned?: boolean }>>({});
+  const [pinnedFiles, setPinnedFiles] = useState<Set<string>>(() => new Set(getPinnedBookFilenames()));
   const [covers, setCovers] = useState<Record<string, string>>(() => ({ ...coverMem.map }));
   const [coversHydrated, setCoversHydrated] = useState(() => coverMem.hydrated);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(true);
@@ -134,7 +137,7 @@ export function useLibrary({
       // Load enriched metadata in the background
       (async () => {
         try {
-          let metadata: Record<string, { title: string; author: string; svg?: string; coverSource?: any }> = {};
+          let metadata: Record<string, { title: string; author: string; svg?: string; coverSource?: any; pinned?: boolean }> = {};
           
           // 1. Load from local IndexedDB (robust, persistent cache)
           try {
@@ -235,7 +238,7 @@ export function useLibrary({
           // Hydrate covers: IDB → cloud URL → seed bundled svg once
           console.log(`[Covers] Hydrating covers for ${allBooks.length} books...`);
           const loadedCovers: Record<string, string> = { ...coverMem.map };
-          const metaUpdates: Record<string, { title: string; author: string; svg?: string; coverSource?: any }> = { ...metadata };
+          const metaUpdates: Record<string, { title: string; author: string; svg?: string; coverSource?: any; pinned?: boolean }> = { ...metadata };
 
           for (const book of allBooks) {
             const rawBook = withSvg.find((b) => b.filename === book.filename) || book;
@@ -249,10 +252,24 @@ export function useLibrary({
               metaUpdates[book.filename] = { ...prev, coverSource: chosenSource };
             }
 
-            let cover = loadedCovers[book.filename] || (await coverDB.getCover(book.filename));
+            let cover = loadedCovers[book.filename];
+            let fromThumb = false;
+            if (!cover) {
+              // Display thumb first — offline and zero network. URL covers keep
+              // living in the covers store and refresh the thumb on image load.
+              const thumb = await coverDB.getCoverThumb(book.filename);
+              if (thumb) {
+                cover = thumb;
+                fromThumb = true;
+                // Backfill the sync fast-path from the durable IDB copy.
+                if (!getCoverThumb(book.filename)) setCoverThumb(book.filename, thumb);
+              }
+            }
+            if (!cover) cover = await coverDB.getCover(book.filename);
             if (cover && shouldReplaceStoredCover(cover, chosenSource)) {
               delete loadedCovers[book.filename];
               await coverDB.deleteCover(book.filename).catch(() => {});
+              void coverDB.deleteCoverThumb(book.filename).catch(() => {});
               cover = null;
             }
             if (cover) {
@@ -262,7 +279,7 @@ export function useLibrary({
                 title: book.title,
                 author: book.author || '',
               };
-              if (!prev.coverSource?.type) {
+              if (!prev.coverSource?.type && !fromThumb) {
                 const inferred =
                   cover.startsWith('http')
                     ? { type: 'openlibrary' as const, url: cover, updatedAt: Date.now() }
@@ -292,7 +309,7 @@ export function useLibrary({
             if (bundledSvg && bundledSvg.includes('<svg')) {
               await coverDB.saveCover(book.filename, bundledSvg);
               loadedCovers[book.filename] = bundledSvg;
-              const prev: { title: string; author: string; svg?: string; coverSource?: any } = metaUpdates[book.filename] || {
+              const prev: { title: string; author: string; svg?: string; coverSource?: any; pinned?: boolean } = metaUpdates[book.filename] || {
                 title: book.title,
                 author: book.author || '',
                 svg: bundledSvg,
@@ -338,6 +355,12 @@ export function useLibrary({
           // Background cloud: titles/custom books only — never replace existing covers
           void cloudPromise.then(async (merged) => {
             if (!merged) return;
+            // Pins ride on cloud metadata — "keep on device" follows the user across devices.
+            const pinMap: Record<string, boolean | undefined> = {};
+            for (const [fname, m] of Object.entries(merged)) {
+              if (m && typeof m === 'object' && 'pinned' in m) pinMap[fname] = m.pinned;
+            }
+            if (Object.keys(pinMap).length) setPinnedFiles(new Set(applyPinnedMap(pinMap)));
             setEnrichedMetadata((prev) => {
               const next = { ...prev };
               for (const [k, m] of Object.entries(merged)) {
@@ -396,7 +419,7 @@ export function useLibrary({
 
           const loadedCovers: Record<string, string> = { ...coverMem.map };
           for (const book of data) {
-            const cover = await coverDB.getCover(book.filename);
+            const cover = (await coverDB.getCoverThumb(book.filename)) || (await coverDB.getCover(book.filename));
             if (cover) loadedCovers[book.filename] = cover;
             else if ((book as LibraryBook).svg?.includes('<svg')) {
               const svg = (book as LibraryBook).svg as string;
@@ -776,6 +799,9 @@ export function useLibrary({
     localStorage.setItem('catreader_deleted_books', JSON.stringify([...deletedSet]));
     
     // 3. Clear localStorage metadata and progress
+    if (isBookPinned(filename)) {
+      setPinnedFiles(new Set(setBookPinned(filename, false)));
+    }
     const metaKey = 'catreader_enriched_metadata';
     const storedMeta = localStorage.getItem(metaKey);
     if (storedMeta) {
@@ -816,13 +842,14 @@ export function useLibrary({
   const updateBookMetadata = async (filename: string, title: string, author: string, svg?: string, coverSource?: LibraryBook['coverSource']) => {
     console.log(`[Metadata] Updating ${filename}: title="${title}" author="${author}" hasCoverSource=${!!coverSource}`);
     const existingSource = coverSource || enrichedMetadataRef.current[filename]?.coverSource;
-    const enrichedItem = { 
-      title, 
-      author, 
+    const enrichedItem = {
+      title,
+      author,
       svg: existingSource?.type === 'user-custom'
         ? undefined
         : (svg || enrichedMetadataRef.current[filename]?.svg),
-      coverSource: existingSource
+      coverSource: existingSource,
+      pinned: enrichedMetadataRef.current[filename]?.pinned
     };
     const newMetadata = { 
       ...enrichedMetadataRef.current, 
@@ -844,6 +871,30 @@ export function useLibrary({
       } : book
     ));
   };
+
+  /**
+   * Pin/unpin a book — pinned books are never evicted from the device cache.
+   * Local set is instant (drives badges + LRU); cloud metadata syncs the pin.
+   */
+  const toggleBookPin = useCallback(async (filename: string) => {
+    const next = !isBookPinned(filename);
+    setPinnedFiles(new Set(setBookPinned(filename, next)));
+    const prevMeta = enrichedMetadataRef.current[filename];
+    const enrichedItem = {
+      ...(prevMeta || { title: filename.replace(/\.[^/.]+$/, ''), author: 'Desconocido' }),
+      pinned: next,
+    };
+    const newMetadata = { ...enrichedMetadataRef.current, [filename]: enrichedItem };
+    setEnrichedMetadata(newMetadata);
+    localStorage.setItem('catreader_enriched_metadata', JSON.stringify(newMetadata));
+    try {
+      await coverDB.saveBookMetadata(filename, enrichedItem);
+    } catch (dbErr) {}
+    try {
+      await syncService.saveMetadata(newMetadata);
+    } catch (err) {}
+    showToast(next ? 'Libro fijado en el dispositivo' : 'Libro desfijado');
+  }, [showToast]);
 
   const enrichWithOpenLibrary = async () => {
     if (library.length === 0) return;
@@ -995,6 +1046,8 @@ export function useLibrary({
     setAutoCoverIndex,
     setCoverScanKey,
     savedBookCovers,
-    markCoverAsSaved
+    markCoverAsSaved,
+    pinnedFiles,
+    toggleBookPin
   };
 }

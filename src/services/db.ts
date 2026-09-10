@@ -3,18 +3,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {
+  notifyContentCacheChanged,
+  readContentCacheIndex,
+  writeContentCacheIndex,
+  type ContentCacheEntry,
+} from '../utils/contentCacheIndex';
+import { getPinnedBookFilenames } from '../utils/pinnedBooks';
+
 export const coverDB = {
   dbName: 'CatReaderDB',
   storeName: 'covers',
   contentStore: 'content',
+  coverThumbStore: 'coverThumbs',
   ghostStore: 'ghostText',
   highlightsStore: 'highlights',
   metadataStore: 'bookMetadata',
   ttsAudioStore: 'ttsAudio',
-  
+
   async init(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 6); // v6: ttsAudio cache
+      const request = indexedDB.open(this.dbName, 7); // v7: coverThumbs (offline library covers)
       request.onupgradeneeded = (e: any) => {
         const db = request.result;
         const oldVersion = e.oldVersion || 0;
@@ -48,6 +57,11 @@ export const coverDB = {
             if (!db.objectStoreNames.contains(this.ttsAudioStore)) {
               db.createObjectStore(this.ttsAudioStore);
             }
+            // fall through
+          case oldVersion < 7:
+            if (!db.objectStoreNames.contains(this.coverThumbStore)) {
+              db.createObjectStore(this.coverThumbStore);
+            }
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -77,39 +91,38 @@ export const coverDB = {
 
   async saveBookContent(filename: string, blob: Blob): Promise<void> {
     const db = await this.init();
-    // Budget-bounded LRU in localStorage so perusing many books no longer
-    // evicts the whole cache on every open. Entries migrate from the old
-    // plain-string format with a conservative size estimate.
-    const cacheKey = 'catreader_content_cache_list';
+    // Budget-bounded LRU so perusing many books no longer evicts the whole
+    // cache on every open. Pinned books ("keep on device") are never evicted.
     const MAX_BYTES = 400 * 1024 * 1024;
     const MAX_ENTRIES = 40;
-    type Entry = { f: string; s: number };
-    const stored: unknown = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-    const entries = Array.isArray(stored) ? stored : [];
-    let list: Entry[] = [];
-    for (const e of entries) {
-      if (typeof e === 'string') {
-        list.push({ f: e, s: 25 * 1024 * 1024 });
-      } else if (typeof e === 'object' && e !== null && 'f' in e && typeof e.f === 'string') {
-        const size = 's' in e ? e.s : undefined;
-        list.push({ f: e.f, s: typeof size === 'number' ? size : 0 });
-      }
-    }
+    const list: ContentCacheEntry[] = readContentCacheIndex();
 
     // Remove if already exists to move to end
-    list = list.filter((e) => e.f !== filename);
+    const existing = list.findIndex((e) => e.f === filename);
+    if (existing >= 0) list.splice(existing, 1);
     list.push({ f: filename, s: blob.size });
 
-    // Prune oldest until under budget (never below 4 entries)
+    // Prune oldest unpinned until under budget (never below 4 entries)
+    const pinned = new Set(getPinnedBookFilenames());
     let total = list.reduce((acc, e) => acc + e.s, 0);
+    const evicted: string[] = [];
     while ((total > MAX_BYTES || list.length > MAX_ENTRIES) && list.length > 4) {
-      const evicted = list.shift()!;
-      total -= evicted.s;
-      const tx = db.transaction(this.contentStore, 'readwrite');
-      tx.objectStore(this.contentStore).delete(evicted.f);
+      const victim = list.findIndex((e) => !pinned.has(e.f));
+      if (victim === -1) break; // everything left is pinned — keep over budget
+      const [evictedEntry] = list.splice(victim, 1);
+      total -= evictedEntry.s;
+      evicted.push(evictedEntry.f);
     }
 
-    localStorage.setItem(cacheKey, JSON.stringify(list));
+    writeContentCacheIndex(list);
+
+    if (evicted.length) {
+      const tx = db.transaction(this.contentStore, 'readwrite');
+      const store = tx.objectStore(this.contentStore);
+      for (const f of evicted) store.delete(f);
+    }
+
+    notifyContentCacheChanged();
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(this.contentStore, 'readwrite');
@@ -126,6 +139,37 @@ export const coverDB = {
       const request = tx.objectStore(this.contentStore).get(filename);
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
+    });
+  },
+
+  /** Display-quality cover thumbnail (small data URL) so the shelf never touches the network. */
+  async saveCoverThumb(filename: string, dataUrl: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.coverThumbStore, 'readwrite');
+      tx.objectStore(this.coverThumbStore).put(dataUrl, filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async getCoverThumb(filename: string): Promise<string | null> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.coverThumbStore, 'readonly');
+      const request = tx.objectStore(this.coverThumbStore).get(filename);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async deleteCoverThumb(filename: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.coverThumbStore, 'readwrite');
+      tx.objectStore(this.coverThumbStore).delete(filename);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
   },
 
@@ -268,6 +312,7 @@ export const coverDB = {
   async deleteBook(filename: string): Promise<void> {
     await Promise.all([
       this.deleteCover(filename).catch(() => {}),
+      this.deleteCoverThumb(filename).catch(() => {}),
       this.deleteBookContent(filename).catch(() => {}),
       this.deleteGhostText(filename).catch(() => {}),
       this.deleteBookMetadata(filename).catch(() => {})

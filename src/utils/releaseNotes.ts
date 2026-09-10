@@ -1,8 +1,12 @@
-export const APP_VERSION = 'v2.10.22';
+export const APP_VERSION = 'v2.10.23';
 
 export const RELEASE_NOTES_SEEN_KEY = `catreader_release_notes_seen_${APP_VERSION}`;
 
 export const RELEASE_NOTES = [
+  'Almacenamiento persistente: pedimos al navegador que no borre tus libros y portadas descargados.',
+  'Fijá libros (pin): un libro fijado nunca se borra del dispositivo, y el pin se sincroniza.',
+  'Insignias de caché en la biblioteca: check verde = en el dispositivo, flecha = se descarga al abrir.',
+  'Miniaturas de portadas guardadas localmente: la biblioteca no vuelve a tocar la red tras la primera carga.',
   'PDFs: una sola descarga con progreso (antes: decenas de pedidos de 64KB → apertura de ~20s).',
   'La descarga queda en cache: segundas aperturas al instante.',
   'Sin descarga duplicada en segundo plano mientras leés.',

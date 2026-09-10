@@ -30,6 +30,8 @@ export interface BookMetadata {
   author: string;
   svg?: string;
   coverSource?: any;
+  /** "Keep on device" — pinned books are never evicted from the content cache. */
+  pinned?: boolean;
 }
 
 type CloudState = 'unknown' | 'online' | 'offline';
